@@ -7,7 +7,7 @@ const CORS = {
   "Access-Control-Allow-Headers": "Content-Type, Authorization",
 };
 
-const GITHUB_REPO = "muqoddammtb/server";
+const GITHUB_REPO = "dickypagesdev/server";
 const FILE_PATH   = "autoUpdateAllJuz.json"; // ganti jika file di subfolder
 const BRANCH      = "main";
 
