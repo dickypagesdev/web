@@ -2,7 +2,7 @@
 // Endpoint: POST /api/saveData
 // Body: { tanggal, kelas, data: [...] }
 
-const DEFAULT_REPO   = "muqoddammtb/server";
+const DEFAULT_REPO   = "dickypagesdev/server";
 const DEFAULT_BRANCH = "main";
 
 const enc = new TextEncoder();
