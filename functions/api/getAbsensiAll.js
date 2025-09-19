@@ -8,7 +8,7 @@ const CORS = {
   "Access-Control-Allow-Headers": "Content-Type,Authorization",
 };
 
-const OWNER_REPO = "muqoddammtb/server";
+const OWNER_REPO = "dickypagesdev/server";
 const DEFAULT_BRANCH = "main";
 
 const ghHeaders = (token) => ({
