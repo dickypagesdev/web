@@ -650,10 +650,14 @@ function tutupModal(id) {
 
 
 	<!-- Daftar User Kelas -->
-<div id="modalAdmin" class="modal" style="display:none;">
-  <div class="modal-content">
+<div id="modalAdmin" class="modal"
+     style="display:none; position:fixed; top:0; left:0; width:100%; height:100%;
+            background:rgba(0,0,0,0.5); justify-content:center; align-items:center; z-index:9999;">
+  <div class="modal-content"
+       style="background:#fff; padding:20px; border-radius:8px; width:min(420px,92%);
+              max-height:80%; overflow:auto;">
     <h3>Masukkan Password Admin</h3>
-     <label>Password Admin: <input type="password" id="adminPasswordInput"></label>
+    <label>Password Admin: <input type="password" id="adminPasswordInput"></label>
     <p id="adminError" style="color:red;"></p>
     <button onclick="cekPasswordAdmin()">Submit</button>
     <button onclick="tutupModal('modalAdmin')">Close</button>
@@ -661,14 +665,19 @@ function tutupModal(id) {
 </div>
 
 <!-- Modal Form Daftar Akun -->
-<div id="modalDaftar" class="modal" style="display:none;">
-  <div class="modal-content">
+<div id="modalDaftar" class="modal"
+     style="display:none; position:fixed; top:0; left:0; width:100%; height:100%;
+            background:rgba(0,0,0,0.5); justify-content:center; align-items:center; z-index:9999;">
+  <div class="modal-content"
+       style="background:#fff; padding:20px; border-radius:8px; width:min(560px,96%);
+              max-height:80%; overflow:auto;">
     <h3>Daftar User Kelas</h3>
     <label>Username: <input type="text" id="newUsername"></label><br>
     <label>Password: <input type="password" id="newPassword"></label>
-    <br></br>
+    <br><br>
     <label><input type="checkbox" onclick="toggleLihatPassword()"> Lihat Password</label><br><br>
 
+    <!-- Kontainer daftar kelas (akan diisi <select multiple> oleh ambilDaftarKelas) -->
     <div id="kelasCheckboxContainer">🔄 Memuat daftar kelas...</div><br>
 
     <button onclick="buatAkunBaru()">Create Account</button>
@@ -678,7 +687,7 @@ function tutupModal(id) {
   </div>
 </div>
 
-	<script>
+<script>
 function munculkanValidasiAdmin() {
   document.getElementById("modalAdmin").style.display = "flex";
   document.getElementById("adminPasswordInput").value = "";
@@ -717,7 +726,7 @@ function bukaFormDaftar(adminPass) {
   document.getElementById("modalDaftar").style.display = "flex";
   document.getElementById("daftarError").textContent = "";
   document.getElementById("daftarSuccess").textContent = "";
-  ambilDaftarKelas(); // Load daftar kelas dari GitHub
+  ambilDaftarKelas(); // Load daftar kelas
 }
 
 // Tutup modal
@@ -730,75 +739,55 @@ function toggleLihatPassword() {
   const pwField = document.getElementById("newPassword");
   pwField.type = pwField.type === "password" ? "text" : "password";
 }
-</script>
 
-  <script>
+/* ===========================
+   REVISI: ambilDaftarKelas()
+   =========================== */
 async function ambilDaftarKelas() {
   const container = document.getElementById("kelasCheckboxContainer");
-  container.innerHTML = "🔄 Memuat daftar kelas...";
+  // render SELECT scrollable
+  container.innerHTML = '<select id="kelasSelect" multiple size="10" style="width:100%;margin:6px 0;"></select>';
+  const sel = document.getElementById("kelasSelect");
 
   try {
-    const res = await fetch("https://api.github.com/repos/dickypagesdev/server/contents");
-    const data = await res.json();
+    // 1) Endpoint internal (utama)
+    let list = [];
+    try {
+      const r = await fetch("/api/ambil-kelas");
+      list = await r.json();
+    } catch (_) {}
 
-    // Filter nama file seperti: kelas_1.json
-    const kelasFiles = data.filter(file => /^kelas_\d+\.json$/.test(file.name));
+    // 2) Fallback GitHub jika kosong
+    if (!Array.isArray(list) || list.length === 0) {
+      const gh = await fetch("https://api.github.com/repos/dickypagesdev/server/contents");
+      const data = await gh.json();
+      list = (Array.isArray(data) ? data : [])
+        .filter(file => /^kelas_\d+\.json$/i.test(file.name))
+        .map(file => file.name.replace(/\.json$/,''));
+    }
 
-    if (kelasFiles.length === 0) {
-      container.innerHTML = "❌ Tidak ada file kelas_{}.json ditemukan.";
+    if (!Array.isArray(list) || list.length === 0) {
+      sel.outerHTML = "❌ Tidak ada kelas ditemukan.";
       return;
     }
 
-    container.innerHTML = ""; // Bersihkan
-
-    kelasFiles.forEach(file => {
-      const kelas = file.name.replace(".json", ""); // contoh: kelas_1
-      const label = document.createElement("label");
-      label.innerHTML = `<input type="checkbox" value="${kelas}"> ${kelas}<br>`;
-      container.appendChild(label);
-    });
+    sel.innerHTML = list.map(kelas => `<option value="${kelas}">${kelas}</option>`).join('');
   } catch (err) {
-    container.innerHTML = "❌ Gagal memuat kelas.";
-    console.error("Gagal fetch kelas:", err);
+    console.error("Gagal memuat kelas:", err);
+    sel.outerHTML = "❌ Gagal memuat kelas.";
   }
 }
-</script>
-  
-  <script>
-    async function ambilDaftarKelas() {
-  const container = document.getElementById("kelasCheckboxContainer");
-  container.innerHTML = "🔄 Memuat daftar kelas...";
 
-  try {
-    const res = await fetch("/api/ambil-kelas");
-    const kelasList = await res.json();
-
-    if (!Array.isArray(kelasList) || kelasList.length === 0) {
-      container.innerHTML = "❌ Tidak ada kelas ditemukan.";
-      return;
-    }
-
-    container.innerHTML = ""; // Bersihkan
-
-    kelasList.forEach(kelas => {
-      const label = document.createElement("label");
-      label.innerHTML = `<input type="checkbox" value="${kelas}"> ${kelas}<br>`;
-      container.appendChild(label);
-    });
-  } catch (err) {
-    container.innerHTML = "❌ Gagal memuat kelas.";
-    console.error("Gagal fetch kelas:", err);
-  }
-}
-  </script>
-
-  <script>
+/* ===========================
+   REVISI: buatAkunBaru() — ambil kelas dari <select multiple>
+   =========================== */
 async function buatAkunBaru() {
   const username = document.getElementById("newUsername").value.trim();
   const password = document.getElementById("newPassword").value.trim();
-  const kelasChecked = Array.from(
-    document.querySelectorAll('#kelasCheckboxContainer input:checked')
-  ).map(cb => cb.value);
+
+  // ambil dari <select multiple>
+  const kelasChecked = Array.from(document.getElementById('kelasSelect')?.selectedOptions || [])
+    .map(o => o.value);
 
   const errorEl = document.getElementById("daftarError");
   const successEl = document.getElementById("daftarSuccess");
@@ -832,8 +821,9 @@ async function buatAkunBaru() {
       // Reset form
       document.getElementById("newUsername").value = "";
       document.getElementById("newPassword").value = "";
-      document.querySelectorAll('#kelasCheckboxContainer input:checked')
-              .forEach(cb => cb.checked = false);
+      // kosongkan pilihan
+      const sel = document.getElementById('kelasSelect');
+      if (sel) Array.from(sel.options).forEach(o => o.selected = false);
     } else {
       errorEl.textContent = result.message || "❌ Gagal membuat akun.";
     }
@@ -843,6 +833,7 @@ async function buatAkunBaru() {
   }
 }
 </script>
+
 
 
 <!-- Tambah Kelas -->
