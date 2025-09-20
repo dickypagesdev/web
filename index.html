@@ -1499,11 +1499,10 @@ async function buatUserNIS() {
       <label><b>Pilih Kelas Tujuan:</b></label>
       <div id="listKelasTujuan" style="margin-top:6px;"></div>
     </div>
-  </br>
-    <div style="display:flex;gap:8px;align-items:center;margin-top:10px;flex-wrap:wrap;">
-  <button id="doPindah" style="padding:8px 12px;">Pindahkan</button>
-  <span id="statusPindah" style="font-size:.95rem;"></span>
-</div>
+  <div style="display:flex;gap:12px;align-items:flex-end;margin-top:10px;flex-wrap:wrap;">
+      <button id="doPindah" style="padding:8px 12px;">Pindahkan</button>
+      <span id="statusPindah" style="font-size:.95rem;"></span>
+    </div>
   </div>
 </div>
 
@@ -7557,21 +7556,22 @@ function ensureStartDateInput() {
   if (!elStart) {
     const holder = document.createElement('div');
 
-    // ⬇️ bikin berdampingan rapi & ada jarak
+    // blok tanggal yang tidak melebar & punya jarak ke tombol
     holder.style.display = 'inline-flex';
-    holder.style.flexDirection = 'column';     // label di atas input
-    holder.style.flex = '0 0 auto';            // jangan melebar 100%
-    holder.style.margin = '0 8px 0 0';         // jarak ke tombol (kanan 8px)
+    holder.style.flexDirection = 'column'; // label di atas input
+    holder.style.flex = '0 0 auto';        // JANGAN width:100%
+    holder.style.margin = '0 12px 0 0';    // jarak ke tombol
 
     holder.innerHTML = `
       <label style="margin-bottom:4px;"><b>Mulai dari tanggal (opsional):</b></label>
-      <input type="date" id="startDateMove"
-             style="width:260px;max-width:100%;">  <!-- lebar tetap, tidak 100% kontainer -->
+      <input type="date" id="startDateMove" style="width:260px;max-width:100%;">
     `;
 
-    const row = elDo.parentElement;            // div flex yang berisi tombol
-    row.style.gap = '8px';                     // pastikan ada gap
-    row.style.flexWrap = 'wrap';               // aman di layar sempit (opsional)
+    const row = elDo.parentElement; // div flex yang berisi tombol & status
+    // pastikan properti baris sudah di-set (kalau belum diubah di HTML)
+    row.style.gap = '12px';
+    row.style.alignItems = 'flex-end';
+    row.style.flexWrap = 'wrap';
 
     row.insertBefore(holder, elDo);
     elStart = holder.querySelector('#startDateMove');
