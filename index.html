@@ -1500,7 +1500,7 @@ async function buatUserNIS() {
       <div id="listKelasTujuan" style="margin-top:6px;"></div>
     </div>
 
-    <div style="display:flex;gap:8px;align-items:right;margin-top:10px;">
+    <div style="display:flex;gap:8px;align-items:center;margin-top:10px;">
       <button id="doPindah" style="padding:8px 12px;">Pindahkan</button>
       <span id="statusPindah" style="font-size:.95rem;"></span>
     </div>
@@ -7553,18 +7553,30 @@ btnHapusTerpilih.addEventListener("click", async () => {
   }
 
   let elStart = document.getElementById('startDateMove');
-  function ensureStartDateInput() {
-    if (!elStart) {
-      const holder = document.createElement('div');
-      holder.style.margin = '8px 0';
-      holder.innerHTML = `
-        <label><b>Mulai dari tanggal (opsional):</b></label><br/>
-        <input type="date" id="startDateMove" style="width:100%;max-width:260px;">
-      `;
-      elDo.parentElement.insertBefore(holder, elDo);
-      elStart = holder.querySelector('#startDateMove');
-    }
+function ensureStartDateInput() {
+  if (!elStart) {
+    const holder = document.createElement('div');
+
+    // ⬇️ bikin berdampingan rapi & ada jarak
+    holder.style.display = 'inline-flex';
+    holder.style.flexDirection = 'column';     // label di atas input
+    holder.style.flex = '0 0 auto';            // jangan melebar 100%
+    holder.style.margin = '0 8px 0 0';         // jarak ke tombol (kanan 8px)
+
+    holder.innerHTML = `
+      <label style="margin-bottom:4px;"><b>Mulai dari tanggal (opsional):</b></label>
+      <input type="date" id="startDateMove"
+             style="width:260px;max-width:100%;">  <!-- lebar tetap, tidak 100% kontainer -->
+    `;
+
+    const row = elDo.parentElement;            // div flex yang berisi tombol
+    row.style.gap = '8px';                     // pastikan ada gap
+    row.style.flexWrap = 'wrap';               // aman di layar sempit (opsional)
+
+    row.insertBefore(holder, elDo);
+    elStart = holder.querySelector('#startDateMove');
   }
+}
 
   elBtnOpen.addEventListener('click', openModal);
   elClose.addEventListener('click', () => elModal.style.display = 'none');
