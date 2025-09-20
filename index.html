@@ -1483,23 +1483,27 @@ async function buatUserNIS() {
 
 
 
-	<!-- Modal Sederhana -->
-<div id="modalPindahKelas" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.4);align-items:center;justify-content:center;z-index:9999;">
-  <div style="background:#fff;padding:16px;border-radius:10px;max-width:520px;width:92%;">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+	<!-- Modal Pindah Kelas -->
+<div id="modalPindahKelas"
+     style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.4);
+            align-items:center; justify-content:center; z-index:9999; display:flex;">
+  <div style="background:#fff; padding:16px; border-radius:10px; max-width:520px; width:92%;
+              max-height:80%; overflow:auto;">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
       <h3 style="margin:0;">Pindah Kelas</h3>
       <button id="closePindah" title="Tutup">✕</button>
     </div>
 
     <label><b>Pilih Santri (multi pilih):</b></label>
-    <select id="selectSantriPindah" multiple size="8" style="width:100%;margin:6px 0;"></select>
+    <select id="selectSantriPindah" multiple size="8" style="width:100%; margin:6px 0;"></select>
 
     <div style="margin:8px 0;">
       <label><b>Pilih Kelas Tujuan:</b></label>
+      <!-- akan diisi <select id="selectKelasTujuan"> oleh JS -->
       <div id="listKelasTujuan" style="margin-top:6px;"></div>
     </div>
 
-    <div style="display:flex;gap:8px;align-items:center;margin-top:10px;">
+    <div style="display:flex; gap:8px; align-items:center; margin-top:10px;">
       <button id="doPindah" style="padding:8px 12px;">Pindahkan</button>
       <span id="statusPindah" style="font-size:.95rem;"></span>
     </div>
@@ -7594,16 +7598,20 @@ btnHapusTerpilih.addEventListener("click", async () => {
       elSantriSel.innerHTML = '';
     }
 
-    // 2) load kelas tujuan
+    // 2) load kelas tujuan → render sebagai <select size="8"> (scrollable)
     try {
       const rK = await fetch(`/api/ambilKelas?t=${Date.now()}`);
       const kelasList = await rK.json();
-      elKelasWrap.innerHTML = (Array.isArray(kelasList) ? kelasList : [])
+      elKelasWrap.innerHTML = '<select id="selectKelasTujuan" size="8" style="width:100%; margin:6px 0;"></select>';
+      const selTujuan = document.getElementById('selectKelasTujuan');
+      const arr = (Array.isArray(kelasList) ? kelasList : [])
         .map(normKelas)
-        .filter(k => k !== kelasAsal)
-        .map(k => `<label style="display:block;margin:4px 0;">
-            <input type="radio" name="kelasTujuan" value="${k}"> ${k}
-          </label>`).join('');
+        .filter(k => k !== kelasAsal);
+      if (arr.length) {
+        selTujuan.innerHTML = arr.map(k => `<option value="${k}">${k}</option>`).join('');
+      } else {
+        elKelasWrap.innerHTML = '<em>Tidak ada kelas tujuan tersedia.</em>';
+      }
     } catch {
       elKelasWrap.innerHTML = '<em>Gagal memuat daftar kelas.</em>';
     }
@@ -7622,7 +7630,7 @@ btnHapusTerpilih.addEventListener("click", async () => {
 
   elDo.addEventListener('click', async () => {
     const kelasAsal   = normKelas(kelasSelect.value);
-    const kelasTujuan = normKelas(document.querySelector('input[name="kelasTujuan"]:checked')?.value || '');
+    const kelasTujuan = normKelas(document.getElementById('selectKelasTujuan')?.value || '');
     const selected    = Array.from(elSantriSel.selectedOptions);
 
     if (!selected.length) { alert('Pilih minimal satu santri.'); return; }
@@ -7640,7 +7648,7 @@ btnHapusTerpilih.addEventListener("click", async () => {
     elStatus.textContent = startDate ? `Memproses mulai ${startDate}…` : 'Memproses semua tanggal…';
 
     try {
-      // 1) Pindah ROSTER (dapat idMap untuk remap absensi)
+      // 1) Pindah ROSTER
       const { res: r1, out: o1 } = await postJSON('/api/pindahRosterKelas', {
         kelasAsal, kelasTujuan, identifiers
       });
@@ -7661,7 +7669,6 @@ btnHapusTerpilih.addEventListener("click", async () => {
           body: JSON.stringify({ ...payloadCommon, startDate })
         });
         if (r2.status === 404) {
-          // fallback: semua tanggal
           r2 = await fetch('/api/pindahKelasSemuaTanggal', {
             method: 'POST', headers: {'Content-Type':'application/json'},
             body: JSON.stringify(payloadCommon)
@@ -7708,7 +7715,6 @@ btnHapusTerpilih.addEventListener("click", async () => {
   });
 })();
 </script>
-
   
 
   <script>
