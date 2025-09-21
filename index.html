@@ -809,19 +809,19 @@ async function ambilDaftarKelas() {
       list = await r.json();
     } catch (_) {}
 
-    // 2) Fallback GitHub jika kosong
-    if (!Array.isArray(list) || list.length === 0) {
-      const gh = await fetch("https://api.github.com/repos/dickypagesdev/server/contents");
-      const data = await gh.json();
-      list = (Array.isArray(data) ? data : [])
-        .filter(file => /^kelas_\d+\.json$/i.test(file.name))
-        .map(file => file.name.replace(/\.json$/,''));
-    }
+    // 2. sesudah: hanya D1, tanpa fallback GitHub
+let list = [];
+try {
+  const r = await fetch("/api/ambil-kelas");
+  list = await r.json();
+} catch (_) {}
 
-    if (!Array.isArray(list) || list.length === 0) {
-      sel.outerHTML = "❌ Tidak ada kelas ditemukan.";
-      return;
-    }
+if (!Array.isArray(list) || list.length === 0) {
+  sel.outerHTML = "❌ Tidak ada kelas di database. Tambahkan dulu lewat menu Tambah Kelas.";
+  return;
+}
+sel.innerHTML = list.map(kelas => `<option value="${kelas}">${kelas}</option>`).join('');
+
 
     sel.innerHTML = list.map(kelas => `<option value="${kelas}">${kelas}</option>`).join('');
   } catch (err) {
