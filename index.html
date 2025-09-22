@@ -797,36 +797,28 @@ function toggleLihatPassword() {
    =========================== */
 async function ambilDaftarKelas() {
   const container = document.getElementById("kelasCheckboxContainer");
-  // render SELECT scrollable
   container.innerHTML = '<select id="kelasSelect" multiple size="10" style="width:100%;margin:6px 0;"></select>';
   const sel = document.getElementById("kelasSelect");
 
   try {
-    // 1) Endpoint internal (utama)
+    // Ambil daftar kelas dari API D1
     let list = [];
-    try {
-      const r = await fetch("/api/ambil-kelas");
-      list = await r.json();
-    } catch (_) {}
+    const r = await fetch("/api/ambil-kelas");
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    list = await r.json();
 
-    // 2. sesudah: hanya D1, tanpa fallback GitHub
-let list = [];
-try {
-  const r = await fetch("/api/ambil-kelas");
-  list = await r.json();
-} catch (_) {}
+    // Validasi isi
+    if (!Array.isArray(list) || list.length === 0) {
+      sel.outerHTML = "❌ Tidak ada kelas di database. Tambahkan dulu lewat menu Tambah Kelas.";
+      return;
+    }
 
-if (!Array.isArray(list) || list.length === 0) {
-  sel.outerHTML = "❌ Tidak ada kelas di database. Tambahkan dulu lewat menu Tambah Kelas.";
-  return;
-}
-sel.innerHTML = list.map(kelas => `<option value="${kelas}">${kelas}</option>`).join('');
-
-
+    // Render opsi sekali saja
     sel.innerHTML = list.map(kelas => `<option value="${kelas}">${kelas}</option>`).join('');
   } catch (err) {
     console.error("Gagal memuat kelas:", err);
-    sel.outerHTML = "❌ Gagal memuat kelas.";
+    // Ganti select dengan pesan error jika gagal
+    if (sel) sel.replaceWith(document.createTextNode("❌ Gagal memuat kelas."));
   }
 }
 
