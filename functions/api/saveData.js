@@ -1,52 +1,65 @@
-export async function onRequestPost({ request, env }) {
-  const { tanggal, kelas, data } = await request.json().catch(()=>({}));
-  if (!kelas || !tanggal || !Array.isArray(data)) {
-    return new Response(JSON.stringify({ success:false, error:'payload tidak valid' }), {
-      status:400, headers: { 'Content-Type':'application/json' }
-    });
-  }
+// functions/api/saveData.js
+import { ok, bad, serverErr, str, parseNum, studentKeyOf, totalMurFromPayload } from "./_utils";
 
-  // fungsi bantu: bikin student_key stabil
-  const toKey = (obj) => {
-    const nis = (obj?.nis ?? '').toString().trim();
-    const id  = (obj?.id  ?? '').toString().trim();
-    const nm  = (obj?.nama?? '').toString().trim().toLowerCase();
-    if (nis) return `NIS:${nis}`;
-    if (id)  return `ID:${id}`;
-    if (nm)  return `NAME:${nm}`;
-    return `ROW:${cryptoRandom()}`; // fallback ekstrem; kecil kemungkinan terpakai
-  };
-
-  const cryptoRandom = () => Math.random().toString(36).slice(2);
-
-  // siapkan batch UPSERT semua baris santri
-  const stmt = env.DB.prepare(
-    `INSERT INTO attendance_v2 (class_name, tanggal, student_key, payload_json, updated_at)
-     VALUES (?1, ?2, ?3, ?4, datetime('now'))
-     ON CONFLICT(class_name, tanggal, student_key)
-     DO UPDATE SET payload_json=excluded.payload_json, updated_at=datetime('now')`
-  );
-
-  const ops = [];
-  for (const row of data) {
-    // simpan seluruh objek yang sudah kamu bangun di frontend (tanpa hilang satupun field)
-    const key = toKey(row);
-    ops.push(
-      stmt.bind(
-        String(kelas), String(tanggal), String(key),
-        JSON.stringify(row)
-      )
-    );
-  }
-
+export async function onRequestPost(ctx) {
+  const db = ctx.env.ABSENSI_DB;
   try {
-    await env.DB.batch(ops);
-    return new Response(JSON.stringify({ success:true, saved:data.length }), {
-      headers: { 'Content-Type':'application/json' }
-    });
+    const body = await ctx.request.json();
+    const kelas = str(body?.kelas).trim();
+    const tanggal = str(body?.tanggal).trim();
+    const list = Array.isArray(body?.data) ? body.data : [];
+
+    if (!kelas || !tanggal) return bad("kelas & tanggal wajib.");
+
+    const now = new Date().toISOString();
+
+    // SQLite/D1 upsert
+    const sql = `
+      INSERT INTO attendance_snapshots
+      (class_name, tanggal, student_key, nama, jenjang, semester, payload_json, total_juz_num, total_mur_num, created_at, updated_at)
+      VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?10)
+      ON CONFLICT(class_name, tanggal, student_key)
+      DO UPDATE SET
+        nama = excluded.nama,
+        jenjang = excluded.jenjang,
+        semester = excluded.semester,
+        payload_json = excluded.payload_json,
+        total_juz_num = excluded.total_juz_num,
+        total_mur_num = excluded.total_mur_num,
+        updated_at = excluded.updated_at
+    `;
+
+    const stmt = db.prepare(sql);
+
+    for (const p of list) {
+      const sKey = studentKeyOf(p);
+      if (!sKey) continue; // lewati jika tidak punya kunci
+
+      const nama = str(p?.nama).trim();
+      const jenjang = str(p?.jenjang).trim();
+      const semester = str(p?.semester).trim();
+
+      const totalJuzNum = parseNum(p?.totalJuz, 0);
+      const totalMurNum = totalMurFromPayload(p);
+
+      const payload_json = JSON.stringify(p);
+
+      await stmt.bind(
+        kelas,            // 1
+        tanggal,          // 2
+        sKey,             // 3
+        nama,             // 4
+        jenjang,          // 5
+        semester,         // 6
+        payload_json,     // 7
+        totalJuzNum,      // 8
+        totalMurNum,      // 9
+        now               // 10
+      ).run();
+    }
+
+    return ok({ success: true, saved: list.length });
   } catch (e) {
-    return new Response(JSON.stringify({ success:false, error:String(e?.message||e) }), {
-      status:500, headers: { 'Content-Type':'application/json' }
-    });
+    return serverErr(e.message || e);
   }
 }
