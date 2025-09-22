@@ -62,4 +62,6 @@ export const onRequestPost = async ({ request, env }) => {
     return json({ success:true, totalMoved: rows.length });
 
   } catch (err) {
-    return json({ error:"Internal Error", detail: en
+    return json({ error:"Internal Error", detail: env?.DEBUG==="1" ? (err?.message || String(err)) : undefined }, 500);
+  }
+};
