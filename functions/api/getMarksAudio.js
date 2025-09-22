@@ -1,6 +1,4 @@
-// GET /api/getMarksAudio?kelas=KLS_XXXX&tanggal=YYYY-MM-DD&id=123
-// Opsional: ?nis=102016009
-// Sumber data: D1 (attendance.payload_json)
+import { ok, bad, serverErr, str } from "./_utils";
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -8,74 +6,115 @@ const CORS = {
   "Access-Control-Allow-Headers": "Content-Type, Authorization",
 };
 
+const OWNER_REPO = "dickypagesdev/server";
+const BRANCH = "main";
+
+const ghHeaders = (token) => ({
+  Authorization: `Bearer ${token}`,
+  Accept: "application/vnd.github.v3+json",
+  "User-Agent": "cf-pages-functions",
+});
+
+const dec = new TextDecoder();
+const b64decode = (b64 = "") => {
+  const bin = atob(b64);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return dec.decode(bytes);
+};
+
+async function getAllPayloadsD1(db, kelas, tanggal){
+  const rows = await db.prepare(
+    `SELECT payload_json
+     FROM attendance_snapshots
+     WHERE class_name=?1 AND tanggal=?2`
+  ).bind(kelas, tanggal).all();
+
+  const out=[];
+  for(const r of rows.results||[]){
+    try{ out.push(JSON.parse(r.payload_json)); }catch{}
+  }
+  return out;
+}
+
+async function getAllPayloadsGitHub(token, kelas, tanggal){
+  const fileName = `${encodeURIComponent(kelas)}_${encodeURIComponent(tanggal)}.json`;
+  const apiUrl = `https://api.github.com/repos/${OWNER_REPO}/contents/absensi/${fileName}?ref=${encodeURIComponent(BRANCH)}`;
+  const res = await fetch(apiUrl, { headers: ghHeaders(token) });
+
+  if (res.status === 404) return null; // ikuti perilaku lama: 404 jika file tidak ada
+
+  if (!res.ok) {
+    const t = await res.text().catch(()=> "");
+    throw new Error(`GitHub error ${res.status}: ${t.slice(0,300)}`);
+  }
+
+  const json = await res.json(); // { content: base64, ... }
+  try {
+    const content = b64decode(json.content || "");
+    return JSON.parse(content || "[]");
+  } catch {
+    return [];
+  }
+}
+
+function findSantriByIdOrNis(list, id){
+  if(!Array.isArray(list)) return null;
+  // longgar: cocokkan id atau nis
+  return list.find(s => s && (String(s.id) == id || String(s.nis) == id)) || null;
+}
+
 export async function onRequest({ request, env }) {
-  // CORS preflight
-  if (request.method === "OPTIONS") {
-    return new Response(null, { status: 204, headers: CORS });
-  }
-  if (request.method !== "GET") {
-    return new Response("Method Not Allowed", { status: 405, headers: CORS });
-  }
-  if (!env.ABSENSI_DB) {
-    return new Response(JSON.stringify({ error: "Binding D1 absensi_db belum tersedia." }), {
-      status: 500, headers: { "Content-Type": "application/json", ...CORS },
-    });
-  }
+  if (request.method === "OPTIONS")
+    return new Response(null, { status:204, headers:CORS });
 
-  const url = new URL(request.url);
-  const kelas   = (url.searchParams.get("kelas")   || "").trim();
-  const tanggal = (url.searchParams.get("tanggal") || "").trim();
-  const idParam = (url.searchParams.get("id")      || "").trim();
-  const nisParam= (url.searchParams.get("nis")     || "").trim();
-
-  if (!kelas || !tanggal || (!idParam && !nisParam)) {
-    return new Response(JSON.stringify({
-      error: "Parameter 'kelas', 'tanggal', dan salah satu dari 'id' atau 'nis' wajib ada."
-    }), { status: 400, headers: { "Content-Type": "application/json", ...CORS } });
-  }
+  if (request.method !== "GET")
+    return new Response("Method Not Allowed", { status:405, headers:CORS });
 
   try {
-    // Ambil snapshot array absensi pada (kelas,tanggal)
-    const row = await env.ABSENSI_DB
-      .prepare("SELECT payload_json FROM attendance WHERE class_name = ? AND tanggal = ? LIMIT 1")
-      .bind(kelas, tanggal)
-      .first();
+    const url = new URL(request.url);
+    const id      = str(url.searchParams.get("id")).trim();
+    const tanggal = str(url.searchParams.get("tanggal")).trim();
+    const kelas   = str(url.searchParams.get("kelas")).trim();
 
-    if (!row || !row.payload_json) {
-      return new Response(JSON.stringify({ error: "Data absensi tidak ditemukan untuk kelas/tanggal ini." }), {
-        status: 404, headers: { "Content-Type": "application/json", ...CORS },
-      });
+    if (!id || !tanggal || !kelas) {
+      return new Response(JSON.stringify({ error:"Parameter 'id', 'tanggal', dan 'kelas' wajib ada." }),
+        { status:400, headers:{ "Content-Type":"application/json", ...CORS } });
     }
 
-    let list = [];
-    try { list = JSON.parse(row.payload_json); } catch { list = []; }
+    // 1) D1 first
+    const db = env.ABSENSI_DB;
+    let list = await getAllPayloadsD1(db, kelas, tanggal);
+    let santri = findSantriByIdOrNis(list, id);
 
-    // Cari santri berdasar id / nis (longgar)
-    const target = (list || []).find(s => {
-      const sid = (s?.id ?? "").toString().trim();
-      const snis = (s?.nis ?? "").toString().trim();
-      return (idParam && sid === idParam) || (nisParam && snis === nisParam);
+    // 2) fallback GitHub jika tidak ketemu
+    if (!santri) {
+      if (!env.GITHUB_TOKEN) {
+        // ikuti perilaku lama: jika file tidak ada → 404; di sini tanpa token kita tidak bisa cek GitHub
+        return new Response(JSON.stringify({ error:"Santri tidak ditemukan." }),
+          { status:404, headers:{ "Content-Type":"application/json", ...CORS } });
+      }
+      const ghList = await getAllPayloadsGitHub(env.GITHUB_TOKEN, kelas, tanggal);
+      if (ghList === null) {
+        return new Response(JSON.stringify({ error:"File absensi tidak ditemukan." }),
+          { status:404, headers:{ "Content-Type":"application/json", ...CORS } });
+      }
+      santri = findSantriByIdOrNis(ghList, id);
+      if (!santri) {
+        return new Response(JSON.stringify({ error:"Santri tidak ditemukan." }),
+          { status:404, headers:{ "Content-Type":"application/json", ...CORS } });
+      }
+    }
+
+    const marks = santri.marks || {};
+
+    return new Response(JSON.stringify({ nama: santri.nama, marks }), {
+      status:200, headers:{ "Content-Type":"application/json", ...CORS }
     });
 
-    if (!target) {
-      return new Response(JSON.stringify({ error: "Santri tidak ditemukan pada snapshot." }), {
-        status: 404, headers: { "Content-Type": "application/json", ...CORS },
-      });
-    }
-
-    const marks = target.marks || {};
-    const audio = Array.isArray(marks.audio) ? marks.audio : [];
-
-    // Output mirip versi lama agar frontend tidak berubah
-    return new Response(JSON.stringify({
-      nama: target.nama ?? "",
-      marks,
-      audio
-    }), { status: 200, headers: { "Content-Type": "application/json", ...CORS } });
-
-  } catch (err) {
-    return new Response(JSON.stringify({ error: String(err?.message || err) }), {
-      status: 500, headers: { "Content-Type": "application/json", ...CORS },
+  } catch (e) {
+    return new Response(JSON.stringify({ error:String(e?.message || e) }), {
+      status:500, headers:{ "Content-Type":"application/json", ...CORS }
     });
   }
 }
