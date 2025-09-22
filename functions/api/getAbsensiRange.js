@@ -1,4 +1,3 @@
-// functions/api/getAbsensiRange.js
 import { ok, bad, serverErr, str } from "./_utils";
 
 export async function onRequestGet(ctx) {
@@ -13,7 +12,6 @@ export async function onRequestGet(ctx) {
     if (!kelas || !start || !end) return bad("kelas, start, end wajib.");
 
     if (!aggregate) {
-      // Mode lama: kirim semua snapshot
       const rows = await db.prepare(
         `SELECT payload_json
          FROM attendance_snapshots
@@ -28,7 +26,6 @@ export async function onRequestGet(ctx) {
       return ok(out);
     }
 
-    // Mode agregat: per student_key
     const rows = await db.prepare(
       `SELECT student_key,
               SUM(total_juz_num) AS total_juz,
@@ -39,13 +36,11 @@ export async function onRequestGet(ctx) {
        ORDER BY student_key`
     ).bind(kelas, start, end).all();
 
-    // Bentuk respons agregat minimal (bisa disesuaikan UI-mu)
     const out = (rows.results || []).map(r => ({
       key: r.student_key,
       totalJuz: Number(r.total_juz || 0),
       totalMur: Number(r.total_mur || 0),
     }));
-
     return ok({ aggregate: true, kelas, start, end, list: out });
   } catch (e) {
     return serverErr(e.message || e);
