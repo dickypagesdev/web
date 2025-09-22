@@ -1,3 +1,4 @@
+// functions/api/saveData.js
 import { ok, bad, serverErr, str, parseNum, studentKeyOf, totalMurFromPayload } from "./_utils";
 
 export async function onRequestPost(ctx) {
@@ -11,6 +12,8 @@ export async function onRequestPost(ctx) {
     if (!kelas || !tanggal) return bad("kelas & tanggal wajib.");
 
     const now = new Date().toISOString();
+
+    // SQLite/D1 upsert
     const sql = `
       INSERT INTO attendance_snapshots
       (class_name, tanggal, student_key, nama, jenjang, semester, payload_json, total_juz_num, total_mur_num, created_at, updated_at)
@@ -25,25 +28,36 @@ export async function onRequestPost(ctx) {
         total_mur_num = excluded.total_mur_num,
         updated_at = excluded.updated_at
     `;
+
     const stmt = db.prepare(sql);
 
     for (const p of list) {
       const sKey = studentKeyOf(p);
-      if (!sKey) continue;
+      if (!sKey) continue; // lewati jika tidak punya kunci
+
+      const nama = str(p?.nama).trim();
+      const jenjang = str(p?.jenjang).trim();
+      const semester = str(p?.semester).trim();
+
+      const totalJuzNum = parseNum(p?.totalJuz, 0);
+      const totalMurNum = totalMurFromPayload(p);
+
+      const payload_json = JSON.stringify(p);
 
       await stmt.bind(
-        kelas,
-        tanggal,
-        sKey,
-        str(p?.nama).trim(),
-        str(p?.jenjang).trim(),
-        str(p?.semester).trim(),
-        JSON.stringify(p),
-        parseNum(p?.totalJuz, 0),
-        totalMurFromPayload(p),
-        now
+        kelas,            // 1
+        tanggal,          // 2
+        sKey,             // 3
+        nama,             // 4
+        jenjang,          // 5
+        semester,         // 6
+        payload_json,     // 7
+        totalJuzNum,      // 8
+        totalMurNum,      // 9
+        now               // 10
       ).run();
     }
+
     return ok({ success: true, saved: list.length });
   } catch (e) {
     return serverErr(e.message || e);
