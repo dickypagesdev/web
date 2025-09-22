@@ -19,19 +19,22 @@ export function parseNum(v, fallback = 0) {
   const n = parseFloat(s);
   return Number.isFinite(n) ? n : fallback;
 }
+
+// student_key = nis || id
 export function studentKeyOf(payload) {
   const nis = str(payload?.nis).trim();
   if (nis) return nis;
   const id = str(payload?.id).trim();
-  return id || "";
+  return id || ""; // boleh kosong (tapi sebaiknya selalu ada salah satu)
 }
+
+// hitung total mur dari payload
 export function totalMurFromPayload(p) {
-  const j1 = parseNum(p?.juzmur1, 0), j2 = parseNum(p?.juzmur2, 0), j3 = parseNum(p?.juzmur3, 0);
+  // prioritas: juzmurajaah; jika tidak, jumlahkan 1+2+3
+  const j1 = parseNum(p?.juzmur1, 0);
+  const j2 = parseNum(p?.juzmur2, 0);
+  const j3 = parseNum(p?.juzmur3, 0);
   const sum = j1 + j2 + j3;
   const tot = parseNum(p?.juzmurajaah, sum);
   return Number.isFinite(tot) ? tot : 0;
-}
-export function normKelas(k) {
-  const v = String(k || "").trim();
-  return v.startsWith("kelas_") ? v : `kelas_${v}`;
 }
