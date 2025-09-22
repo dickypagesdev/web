@@ -1,111 +1,87 @@
-// /functions/api/pindahRosterKelas.js  (D1)
-// POST /api/pindahRosterKelas
-// ENV: ABSENSI_DB
+// /functions/api/pindahRosterKelas.js
+// POST { kelasAsal, kelasTujuan, nises? | ids? | santriIds? }
+// Menerima string atau array; minimal satu identifier (nises/ids/santriIds)
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
   "Access-Control-Allow-Headers": "Content-Type, Authorization",
 };
-const json = (s, d) =>
-  new Response(JSON.stringify(d), { status: s, headers: { "Content-Type": "application/json", ...CORS } });
 
-const normKelas = (k) => (String(k || "").startsWith("kelas_") ? String(k) : `kelas_${k}`);
-const placeholders = (n) => Array.from({ length: n }, () => "?").join(",");
-const buildStudentKey = (nis, id, name) => {
-  const nNis = String(nis || "").trim();
-  const nId  = String(id  || "").trim();
-  const nNm  = String(name|| "").trim().toLowerCase();
-  return nNis || nId || nNm || "";
+const toArr = (v) => Array.isArray(v) ? v
+  : (v === undefined || v === null || v === '') ? []
+  : [v];
+
+const normKelas = (v) => {
+  const s = String(v || "").trim();
+  if (!s) return "";
+  return s.startsWith("kelas_") ? s : `kelas_${s}`;
 };
 
 export async function onRequest({ request, env }) {
-  if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: CORS });
-  if (request.method !== "POST")    return new Response("Method Not Allowed", { status: 405, headers: CORS });
-
-  const db = env.ABSENSI_DB || env.DB;
-  if (!db) return json(500, { error: "ABSENSI_DB binding tidak tersedia" });
+  if (request.method === "OPTIONS")
+    return new Response(null, { status: 204, headers: CORS });
+  if (request.method !== "POST")
+    return new Response("Method Not Allowed", { status: 405, headers: CORS });
 
   let body = {};
-  try { body = await request.json(); } catch { return json(400, { error: "Body bukan JSON valid" }); }
+  try { body = await request.json(); } catch {}
+  const kelasAsal   = normKelas(body.kelasAsal);
+  const kelasTujuan = normKelas(body.kelasTujuan);
 
-  let { kelasAsal, kelasTujuan, ids, nises, santriIds, idMap } = body || {};
-  if (!kelasAsal || !kelasTujuan) return json(400, { error: "Wajib: kelasAsal & kelasTujuan" });
+  const idsArr   = toArr(body.ids).map(String);
+  const nisesArr = toArr(body.nises).map(String);
+  const legacy   = toArr(body.santriIds).map(String); // alias lama
 
-  const asal   = normKelas(kelasAsal);
-  const tujuan = normKelas(kelasTujuan);
+  if (!kelasAsal || !kelasTujuan)
+    return new Response(JSON.stringify({ error: "kelasAsal & kelasTujuan wajib ada." }), { status: 400, headers: { "Content-Type": "application/json", ...CORS } });
 
-  const idsArr   = Array.isArray(ids) ? ids.map(String) : [];
-  const nisesArr = Array.isArray(nises) ? nises.map(String) : [];
-  const legacy   = Array.isArray(santriIds) ? santriIds.map(String) : [];
-  const rawKeys  = [...idsArr, ...nisesArr, ...legacy].map((v)=>String(v||"").trim()).filter(Boolean);
-  if (!rawKeys.length) return json(400, { error: "Minimal satu id/nis (ids/nises/santriIds)" });
+  const idList   = [...idsArr, ...legacy].filter(Boolean);
+  const nisList  = nisesArr.filter(Boolean);
 
-  // Bangun WHERE
-  const cond = [`class_name = ?`];
-  const binds = [asal];
+  if (idList.length === 0 && nisList.length === 0)
+    return new Response(JSON.stringify({ error: "Minimal satu id/nis (ids/nises/santriIds)" }), { status: 400, headers: { "Content-Type": "application/json", ...CORS } });
 
-  if (nisesArr.length) { cond.push(`(student_nis IN (${placeholders(nisesArr.length)}))`); binds.push(...nisesArr); }
-  if (idsArr.length || legacy.length) {
-    const unionIds = [...idsArr, ...legacy];
-    cond.push(`(student_id_text IN (${placeholders(unionIds.length)}))`);
-    binds.push(...unionIds);
-  }
-  const nameLikes = rawKeys.filter((x) => /[A-Za-z\u00C0-\u024F\u1E00-\u1EFF]/.test(x));
-  if (nameLikes.length) {
-    cond.push(`(LOWER(student_name) IN (${placeholders(nameLikes.length)}))`);
-    binds.push(...nameLikes.map((s) => s.toLowerCase()));
-  }
-
-  const sqlSel = `
-    SELECT rowid, student_nis, student_id_text, student_name,
-           jenjang, semester, keterangan, meta_json
-    FROM roster
-    WHERE ${cond.join(" AND ")}
-  `;
-  const q = await db.prepare(sqlSel).bind(...binds).all();
-  const rows = Array.isArray(q.results) ? q.results : [];
-  if (!rows.length) return json(404, { error: "Tidak ada entri roster yang cocok" });
-
-  const idMapArr = Array.isArray(idMap) ? idMap : [];
-  const mapByOldId = new Map(idMapArr.map((m) => [String(m.oldId || ""), String(m.newId || "")]));
-
-  await db.exec("BEGIN");
   try {
-    for (const r of rows) {
-      const oldId = String(r.student_id_text || "");
-      const newId = mapByOldId.get(oldId) || oldId;
+    const db = env.ABSENSI_DB;
 
-      const nStuKey = buildStudentKey(r.student_nis, newId, r.student_name);
+    // Bangun klausa WHERE dinamis
+    const whereParts = [];
+    const binds = [];
 
-      await db.prepare(
-        `INSERT INTO roster
-           (class_name, student_key, student_nis, student_id_text, student_name,
-            jenjang, semester, keterangan, meta_json, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, unixepoch(), unixepoch())
-         ON CONFLICT(class_name, student_key) DO NOTHING`
-      ).bind(
-        tujuan,
-        nStuKey,
-        r.student_nis || null,
-        newId || null,
-        r.student_name || null,
-        r.jenjang || null,
-        r.semester || null,
-        r.keterangan || null,
-        r.meta_json || null
-      ).run();
+    if (nisList.length) {
+      whereParts.push(`student_nis IN (${nisList.map(() => '?').join(',')})`);
+      binds.push(...nisList);
     }
+    if (idList.length) {
+      whereParts.push(`(student_id_text IN (${idList.map(() => '?').join(',')}))`);
+      binds.push(...idList);
+    }
+    const whereClause = whereParts.length ? `AND (${whereParts.join(' OR ')})` : "";
 
-    // Hapus dari asal
-    const rowids = rows.map((x) => x.rowid);
-    await db.prepare(`DELETE FROM roster WHERE rowid IN (${placeholders(rowids.length)})`).bind(...rowids).run();
+    const sql = `
+      UPDATE roster_master
+         SET class_name = ?
+       WHERE class_name = ?
+         ${whereClause}
+    `;
+    const stmt = db.prepare(sql).bind(kelasTujuan, kelasAsal, ...binds);
+    const info = await stmt.run();
 
-    await db.exec("COMMIT");
-  } catch (e) {
-    await db.exec("ROLLBACK");
-    return json(500, { error: `Gagal pindah roster: ${e.message || e}` });
+    return new Response(JSON.stringify({
+      success: true,
+      moved: info.changes || 0,
+      from: kelasAsal,
+      to: kelasTujuan,
+      by: {
+        nises: nisList.length,
+        ids: idList.length
+      }
+    }), { status: 200, headers: { "Content-Type": "application/json", ...CORS } });
+
+  } catch (err) {
+    return new Response(JSON.stringify({ error: String(err?.message || err) }), {
+      status: 500, headers: { "Content-Type": "application/json", ...CORS },
+    });
   }
-
-  return json(200, { success: true, moved: rows.length });
 }
