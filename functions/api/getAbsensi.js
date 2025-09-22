@@ -1,4 +1,3 @@
-// functions/api/getAbsensi.js
 import { ok, bad, serverErr, str } from "./_utils";
 
 export async function onRequestGet(ctx) {
@@ -7,7 +6,6 @@ export async function onRequestGet(ctx) {
     const url = new URL(ctx.request.url);
     const kelas   = str(url.searchParams.get("kelas")).trim();
     const tanggal = str(url.searchParams.get("tanggal")).trim();
-
     if (!kelas || !tanggal) return bad("kelas & tanggal wajib.");
 
     const rows = await db.prepare(
@@ -18,11 +16,7 @@ export async function onRequestGet(ctx) {
 
     const out = [];
     for (const r of rows.results || []) {
-      try {
-        out.push(JSON.parse(r.payload_json));
-      } catch {
-        // skip baris rusak
-      }
+      try { out.push(JSON.parse(r.payload_json)); } catch {}
     }
     return ok(out);
   } catch (e) {
