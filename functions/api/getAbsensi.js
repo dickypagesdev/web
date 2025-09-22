@@ -1,18 +1,31 @@
-export async function onRequestGet({ request, env }) {
-  const u = new URL(request.url);
-  const kelas   = u.searchParams.get('kelas');
-  const tanggal = u.searchParams.get('tanggal');
-  if (!kelas || !tanggal) {
-    return new Response(JSON.stringify([]), { headers:{ 'Content-Type':'application/json' }});
+// functions/api/getAbsensi.js
+import { ok, bad, serverErr, str } from "./_utils";
+
+export async function onRequestGet(ctx) {
+  const db = ctx.env.ABSENSI_DB;
+  try {
+    const url = new URL(ctx.request.url);
+    const kelas   = str(url.searchParams.get("kelas")).trim();
+    const tanggal = str(url.searchParams.get("tanggal")).trim();
+
+    if (!kelas || !tanggal) return bad("kelas & tanggal wajib.");
+
+    const rows = await db.prepare(
+      `SELECT payload_json FROM attendance_snapshots
+       WHERE class_name=?1 AND tanggal=?2
+       ORDER BY student_key`
+    ).bind(kelas, tanggal).all();
+
+    const out = [];
+    for (const r of rows.results || []) {
+      try {
+        out.push(JSON.parse(r.payload_json));
+      } catch {
+        // skip baris rusak
+      }
+    }
+    return ok(out);
+  } catch (e) {
+    return serverErr(e.message || e);
   }
-  const { results } = await env.DB.prepare(
-    `SELECT payload_json FROM attendance_v2
-     WHERE class_name=? AND tanggal=?`
-  ).bind(kelas, tanggal).all();
-
-  const list = (results||[]).map(r => {
-    try { return JSON.parse(r.payload_json); } catch { return null; }
-  }).filter(Boolean);
-
-  return new Response(JSON.stringify(list), { headers:{ 'Content-Type':'application/json' }});
 }
