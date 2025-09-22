@@ -7192,6 +7192,7 @@ function fillJuzSelect(id){
       if (tr.querySelector('.total-mur-range')) return;
       const td = document.createElement('td');
       td.className = 'total-mur-range';
+      // placeholder awal; akan ditimpa oleh hitung()
       td.innerHTML = `0.00&nbsp;juz <span class="mur-range-badge" style="color:#999; font-size:12px">total 0%</span> <small class="mur-range-count" style="color:#6b7280">(0)</small>`;
       const murCell = tr.querySelector('.murajaah-cell');
       if (murCell && murCell.nextSibling) tr.insertBefore(td, murCell.nextSibling);
@@ -7213,7 +7214,6 @@ function fillJuzSelect(id){
     try{ localStorage.setItem(LS_KEY(kelas), JSON.stringify({ fromDate, toDate, t: Date.now() })); }catch{}
   }
   async function getRangeForKelas(kelas){
-    // coba D1 dulu
     try{
       const r = await fetch('/api/getAutoUpdateAllJuzMur?t='+Date.now());
       if (r.ok){
@@ -7222,7 +7222,6 @@ function fillJuzSelect(id){
         if (it && (it.fromDate || it.toDate)) return { fromDate: it.fromDate||"", toDate: it.toDate||"" };
       }
     }catch(_){}
-    // fallback local
     try{
       const raw = localStorage.getItem(LS_KEY(kelas));
       if (raw){ const obj = JSON.parse(raw); return { fromDate: obj.fromDate||"", toDate: obj.toDate||"" }; }
@@ -7240,7 +7239,7 @@ function fillJuzSelect(id){
     const dari = $('#murRangeDari'); const sampai = $('#murRangeSampai');
     if (dari){ dari.max = todayStr; if (!dari.value || dari.value > todayStr) dari.value = todayStr; }
     if (sampai){ sampai.removeAttribute('max'); if (!sampai.value) sampai.value = todayStr; }
-    $('#murRangeStatus').textContent = '';
+    $('#murRangeStatus') && ($('#murRangeStatus').textContent = '');
     el.style.display = 'flex';
   }
 
@@ -7327,6 +7326,7 @@ function fillJuzSelect(id){
           <span class="mur-range-badge" style="color:#6b7280; font-size:12px">total ${pSum}%</span>
           <small class="mur-range-count" style="color:#6b7280">(${rec?.cAll||0})</small>`;
 
+        // simpan jejak di dataset agar tidak "mentul"
         cell.dataset.murRangeTotal = totalNum.toFixed(2);
         cell.dataset.murRangePsum  = String(pSum);
         const pAvg = Math.floor((p1+p2+p3)/3);
@@ -7348,9 +7348,48 @@ function fillJuzSelect(id){
   window.bukaOverlayTotalMurRange = bukaOverlayTotalMurRange;
   $('#btnHitungTotalMur')?.addEventListener('click', hitungTotalMurRangeFromTable);
 
-  // ===== AUTO-APPLY setelah refresh (fix timing) =====
+  // ===== SCHEDULER & OBSERVER TABEL (fix “muncul lalu mentul 0.00”) =====
   let autoRanForKelas = "";
   let autoApplyLock = false;
+  let recalcTimer = null;
+  let runningCalc = false;
+  let tbodyObserver = null;
+
+  function debounce(fn, ms){
+    return function(...args){
+      clearTimeout(recalcTimer);
+      recalcTimer = setTimeout(()=>fn.apply(this,args), ms);
+    };
+  }
+
+  async function scheduleRecalcMurRange(){
+    // only if range tersedia
+    const kelas = kelasNow();
+    if (!kelas) return;
+    const dari = $('#murRangeDari')?.value;
+    const sampai = $('#murRangeSampai')?.value;
+    if (!dari || !sampai) return;
+
+    if (runningCalc) return;
+    runningCalc = true;
+    try { await hitungTotalMurRangeFromTable(); }
+    finally { runningCalc = false; }
+  }
+  const scheduleRecalcMurRangeDebounced = debounce(scheduleRecalcMurRange, 100);
+
+  function watchTableBody(){
+    const table = getSantriTable();
+    const tbody = table?.tBodies?.[0];
+    if (!tbody) return;
+    if (tbodyObserver) { try{tbodyObserver.disconnect();}catch{} }
+    tbodyObserver = new MutationObserver((mut)=>{
+      // kalau baris berubah (render ulang), hitung lagi pakai rentang yang sudah diset
+      if (mut.some(m=>m.type==='childList')) {
+        scheduleRecalcMurRangeDebounced();
+      }
+    });
+    tbodyObserver.observe(tbody, { childList:true, subtree:false });
+  }
 
   function waitForRows(timeoutMs=7000){
     return new Promise(resolve=>{
@@ -7382,12 +7421,14 @@ function fillJuzSelect(id){
       const ok = await waitForRows(7000);
       if (!ok){ autoApplyLock=false; return; }
 
+      // mulai mengawasi tbody; jika render ulang -> recalc
+      watchTableBody();
+
       const { fromDate, toDate } = await getRangeForKelas(kelas);
       if (fromDate && toDate){
         if ($('#murRangeDari'))   $('#murRangeDari').value   = fromDate;
         if ($('#murRangeSampai')) $('#murRangeSampai').value = toDate;
 
-        // biarkan DOM settle, lalu hitung
         requestAnimationFrame(()=> setTimeout(async ()=>{
           try{
             await hitungTotalMurRangeFromTable();
@@ -7412,19 +7453,20 @@ function fillJuzSelect(id){
   // Hook ke loadSantriData
   const _origLoad = window.loadSantriData;
   window.loadSantriData = async function(...args){
-    // reset guard jika kelas berubah
-    const before = autoRanForKelas;
+    const kelasBefore = kelasNow();
     await (_origLoad?.apply ? _origLoad.apply(this, args) : Promise.resolve());
     setTimeout(afterTableRenderedMurRange, 30);
-    // jika loadSantriData dipanggil untuk kelas lain, izinkan auto-run lagi
-    const nowKelas = kelasNow();
-    if (before && nowKelas && nowKelas !== before){ autoRanForKelas = ""; }
+    const kelasAfter = kelasNow();
+    if (kelasBefore !== kelasAfter){ autoRanForKelas = ""; }
   };
 
   // Reset guard saat user mengganti kelas secara manual
   ['#kelasSelect','#kelas','select[name="kelas"]','.kelas','.kelasSelect','.kelas-select'].forEach(sel=>{
     const el = document.querySelector(sel);
-    if (el) el.addEventListener('change', ()=>{ autoRanForKelas = ""; setTimeout(autoApplyMurRangeIfAvailable, 200); });
+    if (el) el.addEventListener('change', ()=>{
+      autoRanForKelas = "";
+      setTimeout(()=>{ autoApplyMurRangeIfAvailable(); }, 200);
+    });
   });
 
   if (document.readyState === 'loading'){
@@ -7433,11 +7475,10 @@ function fillJuzSelect(id){
     afterTableRenderedMurRange();
   }
 
-  // Ekspos fungsi hitung (sudah dipakai tombol)
+  // Ekspos fungsi hitung (dipakai tombol)
   window.hitungTotalMurRangeFromTable = hitungTotalMurRangeFromTable;
 })();
 </script>
-
 
 
 
