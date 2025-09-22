@@ -1,67 +1,98 @@
 // /functions/api/pindahKelasMulaiTanggal.js
-// POST { kelasAsal, kelasTujuan, startDate:"YYYY-MM-DD", ids?:[], nises?:[], idMap?:[] }
-// Env: ABSENSI_DB (D1), DEBUG?=1
+// POST /api/pindahKelasMulaiTanggal
+// Body JSON: { kelasAsal, kelasTujuan, ids?, nises?, santriIds?, startDate, idMap? }
+//
+// >>> POTONGAN ATAS & GITHUB SECTION SAMA DENGAN VERSI LAMA <<<
 
-const CORS = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type, Authorization",
-};
-const json = (o, s=200) => new Response(JSON.stringify(o), { status:s, headers:{ "Content-Type":"application/json", ...CORS }});
-export const onRequestOptions = () => new Response(null, { status:204, headers: CORS });
+const CORS = { /* ... */ };
+const json = (status, data) =>
+  new Response(JSON.stringify(data), {
+    status,
+    headers: { "Content-Type": "application/json", ...CORS },
+  });
 
-export const onRequestPost = async ({ request, env }) => {
-  try {
-    if (!env.ABSENSI_DB) return json({ error:"ABSENSI_DB binding belum diset." }, 500);
-    const db = env.ABSENSI_DB;
+const placeholders = (n) => Array(n).fill("?").join(",");
+const uniqueClean = (arr=[]) => [...new Set((arr||[]).map(v => String(v||"").trim()).filter(Boolean))];
 
-    let body; try { body = await request.json(); } catch { return json({ error:"Body harus JSON." }, 400); }
-    const kelasAsal   = String(body?.kelasAsal || "").trim();
-    const kelasTujuan = String(body?.kelasTujuan || "").trim();
-    const startDate   = String(body?.startDate || "").trim();
-    let ids           = Array.isArray(body?.ids) ? body.ids : [];
-    let nises         = Array.isArray(body?.nises) ? body.nises : [];
-    const idMapArr    = Array.isArray(body?.idMap) ? body.idMap : [];
-    if (!kelasAsal || !kelasTujuan || !startDate) return json({ error:"kelasAsal, kelasTujuan, startDate wajib." }, 400);
+export async function onRequest({ request, env }) {
+  if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: CORS });
+  if (request.method !== "POST")   return new Response("Method Not Allowed", { status: 405, headers: CORS });
 
-    ids   = [...new Set(ids.map(x=> String(x ?? "").trim()).filter(Boolean))];
-    nises = [...new Set(nises.map(x=> String(x ?? "").trim()).filter(Boolean))];
+  // ... validasi & normalisasi input sama dgn file asli ...
+  // dapatkan: asal, tujuan, startDate, arrays ids/nises/santriIds ...
+  // jalankan keseluruhan proses pindah GitHub seperti file aslimu (commit src/dst) ...
+  // peroleh `report` & `totalMoved`.
+  // ===================================================================
 
-    const idMap = new Map();
-    for (const m of idMapArr) {
-      const oldId = m?.oldId != null ? String(m.oldId) : "";
-      const newId = m?.newId != null ? String(m.newId) : "";
-      if (oldId) idMap.set(oldId, newId || oldId);
+  const idsArr   = uniqueClean(ids);
+  const nisesArr = uniqueClean(nises);
+  const legacy   = uniqueClean(santriIds);
+  const allIds   = uniqueClean([...idsArr, ...legacy]);
+
+  let movedD1 = 0, touchedTotals = 0;
+
+  if (env.ABSENSI_DB) {
+    const tx = env.ABSENSI_DB;
+
+    // 1) D1 update dengan filter tanggal >= startDate
+    if (allIds.length) {
+      const sql = `
+        UPDATE absensi_daily
+        SET class_name = ?
+        WHERE class_name = ?
+          AND tanggal >= ?
+          AND student_id_text IN (${placeholders(allIds.length)})
+      `;
+      const res = await tx.prepare(sql).bind(tujuan, asal, startDate, ...allIds).run();
+      movedD1 += (res.meta?.changes || 0);
+    }
+    if (nisesArr.length) {
+      const sql = `
+        UPDATE absensi_daily
+        SET class_name = ?
+        WHERE class_name = ?
+          AND tanggal >= ?
+          AND student_nis IN (${placeholders(nisesArr.length)})
+      `;
+      const res = await tx.prepare(sql).bind(tujuan, asal, startDate, ...nisesArr).run();
+      movedD1 += (res.meta?.changes || 0);
     }
 
-    const makeIn = (arr) => arr.length ? `(${arr.map(()=>"?").join(",")})` : "(NULL)";
-    const idClause  = ids.length   ? `id IN ${makeIn(ids)}`    : "0";
-    const nisClause = nises.length ? `nis IN ${makeIn(nises)}` : "0";
-
-    const sqlSelect = `
-      SELECT rowid as row_id, id, nis
-      FROM absensi_rows
-      WHERE kelas   = ?
-        AND tanggal >= ?
-        AND ( ${idClause} OR ${nisClause} )
-    `;
-    const bind = [kelasAsal, startDate, ...ids, ...nises];
-    const { results: rows } = await db.prepare(sqlSelect).bind(...bind).all();
-    if (!rows?.length) return json({ success:true, totalMoved:0, info:"Tidak ada baris yang cocok." });
-
-    const stmts = [];
-    for (const r of rows) {
-      const oldId = String(r.id ?? "");
-      const newId = idMap.get(oldId) || oldId;
-      stmts.push(db.prepare(`UPDATE absensi_rows SET kelas=?, id=? WHERE rowid=?`).bind(kelasTujuan, newId, r.row_id));
-    }
-    await db.batch(stmts);
-
-    try { await db.prepare(`DELETE FROM totals_store WHERE kelas IN (?, ?)`).bind(kelasAsal, kelasTujuan).run(); } catch(_){}
-
-    return json({ success:true, totalMoved: rows.length });
-
-  } catch (err) {
-    return json({ error:"Internal Error", detail: env?.DEBUG==="1" ? (err?.message || String(err)) : undefined }, 500);
+    // 1.b (opsional) pindahkan cache agregat yang terkait rentang (jika dipakai)
+    try {
+      const tableExists = await tx.prepare(
+        `SELECT name FROM sqlite_master WHERE type='table' AND name='totals_store'`
+      ).first();
+      if (tableExists?.name === 'totals_store') {
+        if (allIds.length) {
+          const res1 = await tx.prepare(
+            `UPDATE totals_store
+             SET class_name = ?
+             WHERE class_name = ?
+               AND date_end >= ?
+               AND student_id_text IN (${placeholders(allIds.length)})`
+          ).bind(tujuan, asal, startDate, ...allIds).run();
+          touchedTotals += (res1.meta?.changes || 0);
+        }
+        if (nisesArr.length) {
+          const res2 = await tx.prepare(
+            `UPDATE totals_store
+             SET class_name = ?
+             WHERE class_name = ?
+               AND date_end >= ?
+               AND student_nis IN (${placeholders(nisesArr.length)})`
+          ).bind(tujuan, asal, startDate, ...nisesArr).run();
+          touchedTotals += (res2.meta?.changes || 0);
+        }
+      }
+    } catch(_){}
   }
-};
+
+  return json(200, {
+    success: true,
+    totalMoved,   // dari operasi GitHub (tidak berubah)
+    movedD1,      // baris D1 yang ikut pindah kelas
+    touchedTotals,
+    details: report
+  });
+}
