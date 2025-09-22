@@ -1,104 +1,100 @@
-// /functions/api/pindahKelasMulaiTanggal.js  (D1)
-// POST /api/pindahKelasMulaiTanggal
-// ENV: ABSENSI_DB
+// /functions/api/pindahKelasMulaiTanggal.js
+// POST { kelasAsal, kelasTujuan, startDate, nises? | ids? | santriIds? }
+// Tanggal format: YYYY-MM-DD (disimpan sebagai string)
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
   "Access-Control-Allow-Headers": "Content-Type, Authorization",
 };
-const json = (s, d) =>
-  new Response(JSON.stringify(d), { status: s, headers: { "Content-Type": "application/json", ...CORS } });
 
-const normKelas = (k) => (String(k || "").startsWith("kelas_") ? String(k) : `kelas_${k}`);
-const placeholders = (n) => Array.from({ length: n }, () => "?").join(",");
-const buildStudentKey = (nis, id, name) => {
-  const nNis = String(nis || "").trim();
-  const nId  = String(id  || "").trim();
-  const nNm  = String(name|| "").trim().toLowerCase();
-  return nNis || nId || nNm || "";
+const toArr = (v) => Array.isArray(v) ? v
+  : (v === undefined || v === null || v === '') ? []
+  : [v];
+
+const normKelas = (v) => {
+  const s = String(v || "").trim();
+  if (!s) return "";
+  return s.startsWith("kelas_") ? s : `kelas_${s}`;
 };
 
-export async function onRequest({ request, env }) {
-  if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: CORS });
-  if (request.method !== "POST")    return new Response("Method Not Allowed", { status: 405, headers: CORS });
+const validDate = (s) => /^\d{4}-\d{2}-\d{2}$/.test(String(s || ""));
 
-  const db = env.ABSENSI_DB || env.DB;
-  if (!db) return json(500, { error: "ABSENSI_DB binding tidak tersedia" });
+export async function onRequest({ request, env }) {
+  if (request.method === "OPTIONS")
+    return new Response(null, { status: 204, headers: CORS });
+  if (request.method !== "POST")
+    return new Response("Method Not Allowed", { status: 405, headers: CORS });
 
   let body = {};
-  try { body = await request.json(); } catch { return json(400, { error: "Body bukan JSON valid" }); }
+  try { body = await request.json(); } catch {}
+  const kelasAsal   = normKelas(body.kelasAsal);
+  const kelasTujuan = normKelas(body.kelasTujuan);
+  const startDate   = String(body.startDate || "").trim();
 
-  let { kelasAsal, kelasTujuan, ids, nises, santriIds, startDate, idMap } = body || {};
-  if (!kelasAsal || !kelasTujuan) return json(400, { error: "Wajib: kelasAsal & kelasTujuan" });
-  if (!startDate || !/^\d{4}-\d{2}-\d{2}$/.test(startDate)) return json(400, { error: "startDate wajib YYYY-MM-DD" });
+  const idsArr   = toArr(body.ids).map(String);
+  const nisesArr = toArr(body.nises).map(String);
+  const legacy   = toArr(body.santriIds).map(String);
 
-  const asal   = normKelas(kelasAsal);
-  const tujuan = normKelas(kelasTujuan);
+  if (!kelasAsal || !kelasTujuan)
+    return new Response(JSON.stringify({ error: "kelasAsal & kelasTujuan wajib ada." }), { status: 400, headers: { "Content-Type": "application/json", ...CORS } });
 
-  const idsArr   = Array.isArray(ids) ? ids.map(String) : [];
-  const nisesArr = Array.isArray(nises) ? nises.map(String) : [];
-  const legacy   = Array.isArray(santriIds) ? santriIds.map(String) : [];
-  const rawKeys  = [...idsArr, ...nisesArr, ...legacy].map((v)=>String(v||"").trim()).filter(Boolean);
-  if (rawKeys.length === 0) return json(400, { error: "Minimal satu id/nis (ids/nises/santriIds)" });
+  if (!validDate(startDate))
+    return new Response(JSON.stringify({ error: "startDate wajib format YYYY-MM-DD." }), { status: 400, headers: { "Content-Type": "application/json", ...CORS } });
 
-  const cond = [`class_name = ?`, `tanggal >= ?`];
-  const binds = [asal, startDate];
+  const idList  = [...idsArr, ...legacy].filter(Boolean);
+  const nisList = nisesArr.filter(Boolean);
 
-  if (nisesArr.length) { cond.push(`(student_nis IN (${placeholders(nisesArr.length)}))`); binds.push(...nisesArr); }
-  if (idsArr.length || legacy.length) {
-    const unionIds = [...idsArr, ...legacy];
-    cond.push(`(student_id_text IN (${placeholders(unionIds.length)}))`);
-    binds.push(...unionIds);
-  }
-  const nameLikes = rawKeys.filter((x) => /[A-Za-z\u00C0-\u024F\u1E00-\u1EFF]/.test(x));
-  if (nameLikes.length) {
-    cond.push(`(LOWER(student_name) IN (${placeholders(nameLikes.length)}))`);
-    binds.push(...nameLikes.map((s) => s.toLowerCase()));
-  }
+  if (idList.length === 0 && nisList.length === 0)
+    return new Response(JSON.stringify({ error: "Minimal satu id/nis (ids/nises/santriIds)" }), { status: 400, headers: { "Content-Type": "application/json", ...CORS } });
 
-  const sqlSelect = `
-    SELECT rowid, tanggal, student_nis, student_id_text, student_name,
-           payload_json, total_juz, total_mur
-    FROM attendance
-    WHERE ${cond.join(" AND ")}
-  `;
-  const cand = await (env.ABSENSI_DB || env.DB).prepare(sqlSelect).bind(...binds).all();
-  const rows = Array.isArray(cand.results) ? cand.results : [];
-  if (!rows.length) return json(404, { error: "Tidak ada baris yang cocok" });
-
-  const idMapArr = Array.isArray(idMap) ? idMap : [];
-  const mapByOldId = new Map(idMapArr.map((m) => [String(m.oldId || ""), String(m.newId || "")]));
-
-  await (env.ABSENSI_DB || env.DB).exec("BEGIN");
   try {
-    for (const r of rows) {
-      const oldId = String(r.student_id_text || "");
-      const newId = mapByOldId.get(oldId) || oldId;
-      const nStuKey = buildStudentKey(r.student_nis, newId, r.student_name);
+    const db = env.ABSENSI_DB;
 
-      await (env.ABSENSI_DB || env.DB).prepare(
-        `INSERT INTO attendance
-         (class_name, tanggal, student_key, student_nis, student_id_text, student_name,
-          payload_json, total_juz, total_mur, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, unixepoch(), unixepoch())
-         ON CONFLICT(class_name, tanggal, student_key) DO NOTHING`
-      ).bind(
-        tujuan, r.tanggal, nStuKey,
-        r.student_nis || null, newId || null, r.student_name || null,
-        r.payload_json, r.total_juz ?? 0, r.total_mur ?? 0
-      ).run();
+    // WHERE dinamis
+    const parts = [`tanggal >= ?`];
+    const binds = [startDate];
+
+    if (nisList.length) {
+      parts.push(`student_nis IN (${nisList.map(() => '?').join(',')})`);
+      binds.push(...nisList);
     }
+    if (idList.length) {
+      parts.push(`student_id_text IN (${idList.map(() => '?').join(',')})`);
+      binds.push(...idList);
+    }
+    const whereClause = parts.length ? `AND (${parts.join(' OR ')})` : "";
 
-    const rowids = rows.map((x) => x.rowid);
-    const delSql = `DELETE FROM attendance WHERE rowid IN (${placeholders(rowids.length)})`;
-    await (env.ABSENSI_DB || env.DB).prepare(delSql).bind(...rowids).run();
+    const sql = `
+      UPDATE attendance_snapshots
+         SET class_name = ?
+       WHERE class_name = ?
+         AND tanggal >= ?
+         ${nisList.length || idList.length ? `AND (${[
+           nisList.length ? `student_nis IN (${nisList.map(() => '?').join(',')})` : "",
+           idList.length  ? `student_id_text IN (${idList.map(() => '?').join(',')})` : ""
+         ].filter(Boolean).join(' OR ')})` : ""}
+    `;
 
-    await (env.ABSENSI_DB || env.DB).exec("COMMIT");
-  } catch (e) {
-    await (env.ABSENSI_DB || env.DB).exec("ROLLBACK");
-    return json(500, { error: `Gagal pindah: ${e.message || e}` });
+    const bindOrder = [kelasTujuan, kelasAsal, startDate, ...nisList, ...idList];
+    const stmt = db.prepare(sql).bind(...bindOrder);
+    const info = await stmt.run();
+
+    return new Response(JSON.stringify({
+      success: true,
+      movedSnapshots: info.changes || 0,
+      from: kelasAsal,
+      to: kelasTujuan,
+      scope: `SINCE_${startDate}`,
+      by: {
+        nises: nisList.length,
+        ids: idList.length
+      }
+    }), { status: 200, headers: { "Content-Type": "application/json", ...CORS } });
+
+  } catch (err) {
+    return new Response(JSON.stringify({ error: String(err?.message || err) }), {
+      status: 500, headers: { "Content-Type": "application/json", ...CORS },
+    });
   }
-
-  return json(200, { success: true, movedCandidates: rows.length });
 }
