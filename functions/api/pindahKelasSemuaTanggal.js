@@ -1,60 +1,92 @@
-// Cloudflare Pages Function (ESM)
+// /functions/api/pindahKelasSemuaTanggal.js
 // POST /api/pindahKelasSemuaTanggal
-// body: { kelasAsal, kelasTujuan, ids[], nises[], idMap[] }
-// Env: ABSENSI_DB (D1)
+// body: {
+//   kelasAsal: "kelas_012526",
+//   kelasTujuan: "kelas_99",
+//   ids?: ["102016009", ...],        // optional
+//   nises?: ["102016009", ...],      // optional
+//   idMap?: [{oldId:"x", newId:"y"}] // optional, kalau id berubah
+// }
+// Env: ABSENSI_DB (D1), DEBUG? ("1" untuk detail error)
+
+const CORS = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
+  "Access-Control-Allow-Headers": "Content-Type, Authorization",
+};
+const json = (o, s = 200) =>
+  new Response(JSON.stringify(o), { status: s, headers: { "Content-Type": "application/json", ...CORS } });
+
+export const onRequestOptions = () => new Response(null, { status: 204, headers: CORS });
 
 export const onRequestPost = async ({ request, env }) => {
-  const db = env.ABSENSI_DB;
-  let body; try { body = await request.json(); } catch { return json({error:'Body JSON'},400); }
-  const { kelasAsal, kelasTujuan, ids = [], nises = [], idMap = [] } = body || {};
-  if (!kelasAsal || !kelasTujuan) return json({error:'kelasAsal & kelasTujuan wajib'},400);
+  try {
+    if (!env.ABSENSI_DB) return json({ error: "ABSENSI_DB binding belum diset." }, 500);
+    const db = env.ABSENSI_DB;
 
-  // 1) Ambil semua tanggal yang punya data untuk kelasAsal
-  const { results: dates } = await db.prepare(
-    `SELECT DISTINCT tanggal FROM absensi_rows WHERE kelas=?`
-  ).bind(kelasAsal).all();
+    let body; try { body = await request.json(); } catch { return json({ error: "Body harus JSON." }, 400); }
 
-  // 2) Siapkan pemetaan id lama → id baru (string)
-  const map = new Map();
-  (idMap||[]).forEach(m => { if (m?.oldId && m?.newId) map.set(String(m.oldId), String(m.newId)); });
+    const kelasAsal   = String(body?.kelasAsal || "").trim();
+    const kelasTujuan = String(body?.kelasTujuan || "").trim();
+    let ids           = Array.isArray(body?.ids) ? body.ids : [];
+    let nises         = Array.isArray(body?.nises) ? body.nises : [];
+    const idMapArr    = Array.isArray(body?.idMap) ? body.idMap : [];
 
-  // 3) Build filter santri (by id lama atau NIS)
-  const idSet = new Set(ids.map(String));
-  const nisSet = new Set(nises.map(String));
+    if (!kelasAsal || !kelasTujuan) return json({ error: "kelasAsal dan kelasTujuan wajib." }, 400);
 
-  let totalMoved = 0;
+    ids   = [...new Set(ids.map(x => String(x ?? "").trim()).filter(Boolean))];
+    nises = [...new Set(nises.map(x => String(x ?? "").trim()).filter(Boolean))];
 
-  // 4) Loop tiap tanggal → UPDATE kelas + id (bila berubah)
-  for (const d of (dates||[])) {
-    const tanggal = d.tanggal;
+    // Peta id lama → id baru (kalau tak ada, id tetap)
+    const idMap = new Map();
+    for (const m of idMapArr) {
+      const oldId = m?.oldId != null ? String(m.oldId) : "";
+      const newId = m?.newId != null ? String(m.newId) : "";
+      if (oldId) idMap.set(oldId, newId || oldId);
+    }
 
-    // Ambil baris yang akan dipindah (kelasAsal + match id/nis)
-    const { results: rows } = await db.prepare(
-      `SELECT row_id, id, nis FROM absensi_rows
-       WHERE kelas=? AND tanggal=?`
-    ).bind(kelasAsal, tanggal).all();
+    // Helper IN (?, ?, ?)
+    const makeIn = (arr) => arr.length ? `(${arr.map(() => "?").join(",")})` : "(NULL)";
 
-    const targets = rows.filter(r => idSet.has(String(r.id)) || (r.nis && nisSet.has(String(r.nis))));
-    if (!targets.length) continue;
+    // Ambil baris kandidat di kelasAsal (semua tanggal)
+    const idClause  = ids.length   ? `id IN ${makeIn(ids)}`    : "0";
+    const nisClause = nises.length ? `nis IN ${makeIn(nises)}` : "0";
 
-    // Batch update
-    const tx = await db.batch(
-      targets.map(r => {
-        const newId = map.get(String(r.id)) || String(r.id); // kalau tidak berubah, tetap
-        return db.prepare(
-          `UPDATE absensi_rows SET kelas=?, id=? WHERE row_id=?`
-        ).bind(kelasTujuan, newId, r.row_id);
-      })
-    );
+    const sqlSelect = `
+      SELECT rowid as row_id, id, nis
+      FROM absensi_rows
+      WHERE kelas = ?
+        AND ( ${idClause} OR ${nisClause} )
+    `;
+    const bind = [kelasAsal, ...ids, ...nises];
+    const { results: rows } = await db.prepare(sqlSelect).bind(...bind).all();
 
-    totalMoved += targets.length;
+    if (!rows?.length) return json({ success: true, totalMoved: 0, info: "Tidak ada baris yang cocok." });
+
+    // Update per baris (karena id bisa berubah)
+    const stmts = [];
+    for (const r of rows) {
+      const oldId = String(r.id ?? "");
+      const newId = idMap.get(oldId) || oldId;
+      stmts.push(
+        db.prepare(`UPDATE absensi_rows SET kelas=?, id=? WHERE rowid=?`).bind(kelasTujuan, newId, r.row_id)
+      );
+    }
+    await db.batch(stmts);
+
+    // Invalidasi cache agregat (jika pakai)
+    try {
+      await db.prepare(`DELETE FROM totals_store WHERE kelas IN (?, ?)`).bind(kelasAsal, kelasTujuan).run();
+    } catch (e) {
+      if (env.DEBUG === "1") console.warn("warn: totals_store delete failed:", e?.message);
+    }
+
+    return json({ success: true, totalMoved: rows.length, note: "Semua tanggal dipindah dari kelasAsal ke kelasTujuan." });
+
+  } catch (err) {
+    return json({
+      error: "Internal Error",
+      detail: env?.DEBUG === "1" ? (err?.message || String(err)) : undefined
+    }, 500);
   }
-
-  // 5) Invalidate cache totals (opsional)
-  await db.exec(`DELETE FROM totals_store WHERE kelas IN (?, ?)`, [kelasAsal, kelasTujuan]);
-
-  return json({ success:true, totalMoved });
 };
-
-const json = (o,s=200)=>new Response(JSON.stringify(o),{status:s,headers:{'Content-Type':'application/json','Access-Control-Allow-Origin':'*'}});
-export const onRequestOptions = () => new Response(null,{status:204,headers:{'Access-Control-Allow-Origin':'*','Access-Control-Allow-Methods':'POST, OPTIONS','Access-Control-Allow-Headers':'Content-Type'}});
