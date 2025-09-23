@@ -7697,25 +7697,31 @@ btnHapusTerpilih.addEventListener("click", async () => {
   }
 
   let elStart = document.getElementById('startDateMove');
-  function ensureStartDateInput() {
-    if (!elStart) {
-      const holder = document.createElement('div');
-      holder.style.display = 'inline-flex';
-      holder.style.flexDirection = 'column';
-      holder.style.flex = '0 0 auto';
-      holder.style.margin = '0 12px 0 0';
-      holder.innerHTML = `
-        <label style="margin-bottom:4px;"><b>Mulai dari tanggal (opsional):</b></label>
-        <input type="date" id="startDateMove" style="width:260px;max-width:100%;">
-      `;
-      const row = elDo.parentElement;
-      row.style.gap = '12px';
-      row.style.alignItems = 'flex-end';
-      row.style.flexWrap = 'wrap';
-      row.insertBefore(holder, elDo);
-      elStart = holder.querySelector('#startDateMove');
-    }
+function ensureStartDateInput() {
+  if (!elStart) {
+    const holder = document.createElement('div');
+
+    // blok tanggal yang tidak melebar & punya jarak ke tombol
+    holder.style.display = 'inline-flex';
+    holder.style.flexDirection = 'column'; // label di atas input
+    holder.style.flex = '0 0 auto';        // JANGAN width:100%
+    holder.style.margin = '0 12px 0 0';    // jarak ke tombol
+
+    holder.innerHTML = `
+      <label style="margin-bottom:4px;"><b>Mulai dari tanggal (opsional):</b></label>
+      <input type="date" id="startDateMove" style="width:260px;max-width:100%;">
+    `;
+
+    const row = elDo.parentElement; // div flex yang berisi tombol & status
+    // pastikan properti baris sudah di-set (kalau belum diubah di HTML)
+    row.style.gap = '12px';
+    row.style.alignItems = 'flex-end';
+    row.style.flexWrap = 'wrap';
+
+    row.insertBefore(holder, elDo);
+    elStart = holder.querySelector('#startDateMove');
   }
+}
 
   elBtnOpen.addEventListener('click', openModal);
   elClose.addEventListener('click', () => elModal.style.display = 'none');
@@ -7728,7 +7734,7 @@ btnHapusTerpilih.addEventListener("click", async () => {
 
     const kelasAsal = normKelas(kelasSelect.value);
 
-    // 1) santri asal
+    // 1) load santri
     try {
       const r = await fetch(`/api/ambilSantri?kelas=${encodeURIComponent(kelasAsal)}&t=${Date.now()}`);
       const data = await r.json();
@@ -7747,12 +7753,15 @@ btnHapusTerpilih.addEventListener("click", async () => {
       elSantriSel.innerHTML = '';
     }
 
-    // 2) kelas tujuan
+    // 2) load kelas tujuan
     try {
       const rK = await fetch(`/api/ambilKelas?t=${Date.now()}`);
       const kelasList = await rK.json();
+
+      // [PERUBAHAN] ganti isi wrapper menjadi <select size=8> agar scroll otomatis
       elKelasWrap.innerHTML = '<select id="selectKelasTujuan" size="8" style="width:100%;margin:6px 0;"></select>';
       const selTujuan = document.getElementById('selectKelasTujuan');
+
       const opts = (Array.isArray(kelasList) ? kelasList : [])
         .map(normKelas)
         .filter(k => k !== kelasAsal)
@@ -7777,8 +7786,11 @@ btnHapusTerpilih.addEventListener("click", async () => {
 
   elDo.addEventListener('click', async () => {
     const kelasAsal   = normKelas(kelasSelect.value);
+
+    // [PERUBAHAN] ambil pilihan dari <select id="selectKelasTujuan">
     const selTujuanEl = document.getElementById('selectKelasTujuan');
     const kelasTujuan = normKelas(selTujuanEl?.value || '');
+
     const selected    = Array.from(elSantriSel.selectedOptions);
 
     if (!selected.length) { alert('Pilih minimal satu santri.'); return; }
@@ -7796,7 +7808,7 @@ btnHapusTerpilih.addEventListener("click", async () => {
     elStatus.textContent = startDate ? `Memproses mulai ${startDate}…` : 'Memproses semua tanggal…';
 
     try {
-      // 1) Pindah roster (GitHub)
+      // 1) Pindah ROSTER
       const { res: r1, out: o1 } = await postJSON('/api/pindahRosterKelas', {
         kelasAsal, kelasTujuan, identifiers
       });
@@ -7809,35 +7821,35 @@ btnHapusTerpilih.addEventListener("click", async () => {
       const idMap = Array.isArray(o1.idMap) ? o1.idMap : [];
       const payloadCommon = { kelasAsal, kelasTujuan, ids, nises, idMap };
 
-      // 2) Pindah baris harian (D1)
-      let resp2, out2 = {};
+      // 2) Pindah ABSENSI
+      let r2, o2 = {};
       if (startDate) {
-        resp2 = await fetch('/api/pindahKelasMulaiTanggal', {
+        r2 = await fetch('/api/pindahKelasMulaiTanggal', {
           method: 'POST', headers: {'Content-Type':'application/json'},
           body: JSON.stringify({ ...payloadCommon, startDate })
         });
-        if (resp2.status === 404) {
-          resp2 = await fetch('/api/pindahKelasSemuaTanggal', {
+        if (r2.status === 404) {
+          r2 = await fetch('/api/pindahKelasSemuaTanggal', {
             method: 'POST', headers: {'Content-Type':'application/json'},
             body: JSON.stringify(payloadCommon)
           });
         }
       } else {
-        resp2 = await fetch('/api/pindahKelasSemuaTanggal', {
+        r2 = await fetch('/api/pindahKelasSemuaTanggal', {
           method: 'POST', headers: {'Content-Type':'application/json'},
           body: JSON.stringify(payloadCommon)
         });
       }
-      try { out2 = await resp2.json(); } catch {}
-      if (!resp2.ok || !out2.success) {
+      try { o2 = await r2.json(); } catch {}
+      if (!r2.ok || !o2.success) {
         elStatus.style.color = 'red';
-        elStatus.textContent = (out2.error || `HTTP ${resp2.status}`) + (out2.detail ? `: ${out2.detail}` : '');
+        elStatus.textContent = (o2.error || `HTTP ${r2.status}`) + (o2.detail ? `: ${o2.detail}` : '');
         elDo.disabled = false;
         return;
       }
 
       elStatus.style.color = 'green';
-      elStatus.textContent = `Selesai. Roster & absensi (${out2.totalMoved ?? 'n/a'} entri) dipindahkan${startDate ? ' sejak ' + startDate : ''}.`;
+      elStatus.textContent = `Selesai. Roster & absensi (${o2.totalMoved ?? 'n/a'} entri) dipindahkan${startDate ? ' sejak ' + startDate : ''}.`;
 
       if (window.tanggalFilterAkhir) {
         tanggalFilterAkhir.value = "";
@@ -7861,7 +7873,6 @@ btnHapusTerpilih.addEventListener("click", async () => {
   });
 })();
 </script>
-
   
 
   <script>
