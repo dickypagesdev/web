@@ -6842,18 +6842,23 @@ function fillJuzSelect(id){
                      !murState[idx]?.touched;
 
   // ⇢ Saat pristine: jangan set Page dari Ayat, jangan hitung
-  if (!isPristine){
-    const pages=ayahRangeToPages(sF,aF,sT,aT);
-    if(pages){
-      // Hanya autofill bila user sudah mulai memilih atau ada data lama
-      if (pageFromEl.value==='' && pageToEl.value==='' || hasDataset || juzFromVal || juzToVal){
-        pageFromEl.value=String(pages.pFrom);
-        pageToEl.value  =String(pages.pTo);
-      }
-      $(`#mur${idx}-pagesHint`).textContent=`Halaman: ${pages.pFrom}—${pages.pTo}`;
-    } else {
-      $(`#mur${idx}-pagesHint`).textContent='';
-    }
+  if (pages) {
+  const hasPfPtInDataset = !!(cell?.dataset?.[`pf${idx}`] || cell?.dataset?.[`pt${idx}`]);
+  const inputsEmpty      = (!pageFromEl.value && !pageToEl.value);
+  const userHintedJuz    = (!!juzFromVal || !!juzToVal);
+
+  // Autofill PAGES hanya jika:
+  // - input page masih KOSONG, DAN
+  // - TIDAK ada pf/pt di dataset
+  // (atau kalau user memberi petunjuk JUZ tapi input page masih kosong)
+  if ((inputsEmpty && !hasPfPtInDataset) || (inputsEmpty && userHintedJuz)) {
+    pageFromEl.value = String(pages.pFrom);
+    pageToEl.value   = String(pages.pTo);
+  }
+  $(`#mur${idx}-pagesHint`).textContent = `Halaman: ${pages.pFrom}—${pages.pTo}`;
+} else {
+  $(`#mur${idx}-pagesHint`).textContent = '';
+}
 
     const jF=juzOfAyah(sF,aF), jT=juzOfAyah(sT,aT);
     const total=computeTotalJuz(sF,aF,sT,aT);
@@ -6994,21 +6999,56 @@ function fillJuzSelect(id){
     }
     // Prefill dari dataset cell (sesi 1..3; fallback legacy)
     const cell=row.querySelector('.murajaah-cell');
-    const loadOne=(i)=>{
-      let sF=+(cell?.dataset?.[`sf${i}`] ?? cell?.dataset?.sf ?? 1);
-      let aF=+(cell?.dataset?.[`af${i}`] ?? cell?.dataset?.af ?? 1);
-      let sT=+(cell?.dataset?.[`st${i}`] ?? cell?.dataset?.st ?? sF);
-      let aT=+(cell?.dataset?.[`at${i}`] ?? cell?.dataset?.at ?? aF);
+    const loadOne = (i) => {
+  const get = (k) => (cell?.dataset?.[k] ?? "").trim();
 
-      $(`#mur${i}-surahFrom`).value=String(sF); fillAyahForSurah($(`#mur${i}-ayahFrom`), sF,{preset:aF});
-      $(`#mur${i}-surahTo`).value  =String(sT); fillAyahForSurah($(`#mur${i}-ayahTo`),   sT,{preset:aT});
+  // --- Surah/Ayat (from/to) ---
+  let sF = +((get(`sf${i}`) || get(`sf`)) || 1);
+  let aF = +((get(`af${i}`) || get(`af`)) || 1);
+  let sT = +((get(`st${i}`) || get(`st`)) || sF);
+  let aT = +((get(`at${i}`) || get(`at`)) || aF);
 
-      // score & predikat prefill
-      const sc = cell?.dataset?.[`score${i}`] ? Number(cell.dataset[`score${i}`]) : 0;
-      $(`#mur${i}-score`).value = String(sc||'');
-      setPredikatUI(i);
+  $(`#mur${i}-surahFrom`).value = String(sF);
+  fillAyahForSurah($(`#mur${i}-ayahFrom`), sF, { preset: aF });
 
-      renderSession(i);
+  $(`#mur${i}-surahTo`).value   = String(sT);
+  fillAyahForSurah($(`#mur${i}-ayahTo`),   sT, { preset: aT });
+
+  // --- Page (from/to) — PRE-FILL terlebih dahulu dari dataset ---
+  const pf = get(`pf${i}`), pt = get(`pt${i}`);
+  if (pf !== "" || pt !== "") {
+    // pastikan opsi sudah terisi (fillAllBases dipanggil saat init)
+    $(`#mur${i}-pageFrom`).value = pf || "";
+    $(`#mur${i}-pageTo`).value   = pt || (pf || "");
+  } else {
+    // biarkan kosong; nanti renderSession boleh hitung otomatis dari Surah/Ayat
+    $(`#mur${i}-pageFrom`).value = "";
+    $(`#mur${i}-pageTo`).value   = "";
+  }
+
+  // --- Juz (from/to) — jika ada jejak, set juga ---
+  const jFrom = get(`jfrom${i}`), jTo = get(`jto${i}`);
+  $(`#mur${i}-juzFrom`).value = jFrom || "";
+  $(`#mur${i}-juzTo`).value   = jTo || "";
+
+  // --- Score & predikat ---
+  const sc = get(`score${i}`) ? Number(get(`score${i}`)) : 0;
+  $(`#mur${i}-score`).value = sc ? String(sc) : "";
+  setPredikatUI(i);
+
+  // Inisialisasi state sesi dari dataset (supaya tidak dianggap "pristine")
+  murState[i] = {
+    ...murState[i],
+    sF, aF, sT, aT,
+    pFrom: pf || "", pTo: pt || "",
+    jFrom: jFrom ? +jFrom : null,
+    jTo:   jTo ? +jTo : null,
+    score: sc || 0,
+    touched: !!(pf || pt || jFrom || jTo || sc) // tandai pernah diisi
+  };
+
+  // Terakhir: re-render untuk menghitung total dan sinkron indikator
+  renderSession(i);
 
       // sinkronkan juzFrom/juzTo bila range cocok
       const jF=juzOfAyah(sF,aF), jT=juzOfAyah(sT,aT);
