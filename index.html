@@ -4445,6 +4445,42 @@ function normalizeAbsensiResponse(payload){
   return out;
 }
 
+	 // === [D1-COMPAT] Normalisasi payload /api/getAbsensiRange ke array item snapshot ===
+function normalizeAbsensiResponse(payload){
+  // kandidat array:
+  // - langsung array (era GitHub lama)
+  // - payload.list (D1 baru)
+  // - payload.rows / payload.data (varian lain)
+  let arr = Array.isArray(payload) ? payload
+          : Array.isArray(payload?.list) ? payload.list
+          : Array.isArray(payload?.rows) ? payload.rows
+          : Array.isArray(payload?.data) ? payload.data
+          : [];
+
+  const out = [];
+  for (const row of arr){
+    // sebagian driver menyimpan JSON di kolom "payload_json"/"record_json"/"rec"/"data"
+    const raw = row?.payload_json ?? row?.record_json ?? row?.rec ?? row?.data ?? null;
+
+    if (raw != null){
+      let obj = {};
+      try { obj = (typeof raw === 'string') ? JSON.parse(raw) : raw; } catch(e){ obj = {}; }
+      const tgl = row.tanggal || obj.tanggal || row.date || row.created_at || null;
+      out.push({ ...obj, tanggal: tgl ? String(tgl).slice(0,10) : null });
+    } else {
+      const tgl = row.tanggal || row.date || row.created_at || row?.Tanggal || row?.tgl || null;
+      const flat = { ...row };
+      if (!flat.tanggal && tgl) flat.tanggal = String(tgl).slice(0,10);
+      out.push(flat);
+    }
+  }
+  return out;
+}
+
+// (opsional) export ke global bila dipakai file lain:
+window.normalizeAbsensiResponse = normalizeAbsensiResponse;
+
+
   // ====== Ambil & Agregasi Data (Rekap Kelas) ======
   async function collectRekapData(){
     const kelasEl = (typeof kelasSelect !== 'undefined' && kelasSelect) ? kelasSelect : document.getElementById('kelasSelect');
@@ -4459,8 +4495,8 @@ function normalizeAbsensiResponse(payload){
     const absUrl = `/api/getAbsensiRange?kelas=${encodeURIComponent(kelas)}&start=${encodeURIComponent(startDate)}&end=${encodeURIComponent(endDate)}&t=${Date.now()}`;
 const resAbs = await fetch(absUrl);
 if (!resAbs.ok) throw new Error('Gagal mengambil data absensi.');
-let raw = await resAbs.json().catch(()=>[]);
-let allData = normalizeAbsensiResponse(raw);
+const raw = await resAbs.json().catch(()=>[]);
+const allData = normalizeAbsensiResponse(raw);
 if (!Array.isArray(allData) || allData.length === 0) throw new Error('Tidak ada data pada rentang tanggal tersebut.');
 
     // 2) ROSTER
@@ -4967,8 +5003,8 @@ if (!Array.isArray(allData) || allData.length === 0) throw new Error('Tidak ada 
     const absUrl = `/api/getAbsensiRange?kelas=${encodeURIComponent(kelasKey)}&start=${encodeURIComponent(startDate)}&end=${encodeURIComponent(endDate)}&t=${Date.now()}`;
 const resAbs = await fetch(absUrl);
 if (!resAbs.ok) throw new Error('Gagal mengambil data absensi.');
-let raw = await resAbs.json().catch(()=>[]);
-let allData = normalizeAbsensiResponse(raw);
+const raw = await resAbs.json().catch(()=>[]);
+const allData = normalizeAbsensiResponse(raw);
 if (!Array.isArray(allData) || allData.length === 0) return null;
 
     // 2) ROSTER
