@@ -6944,6 +6944,21 @@ kelasSelect?.addEventListener("change", () => loadSantriData());
     const byData= $('#santri-table')?.dataset?.kelas
                || document.body?.dataset?.kelas
                || '';
+	  // ⬇️ Tambahan penting: baca dari query string + fallback localStorage
+  const qs = new URLSearchParams(location.search);
+  const byQS = qs.get('kelas') || qs.get('class') || qs.get('kls') || '';
+
+  const fromLS = (()=>{ try{ return localStorage.getItem('lastKelas') || '';}catch{ return '';} })();
+
+  const v = [byWin, byId, byName, byData, byQS, fromLS]
+              .map(x => String(x||'').trim())
+              .find(Boolean);
+
+  // simpan supaya konsisten dipakai ulang
+  if (v) { try{ localStorage.setItem('lastKelas', v); }catch{}; return v; }
+
+  const row = $('#santri-table tbody tr');
+  return String(row?.dataset?.kelas || '').trim();
     if (String(byWin).trim())  return String(byWin).trim();
     if (String(byId).trim())   return String(byId).trim();
     if (String(byName).trim()) return String(byName).trim();
