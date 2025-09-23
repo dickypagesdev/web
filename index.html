@@ -7187,6 +7187,7 @@ function fillJuzSelect(id){
       if (tr.querySelector('.total-mur-range')) return;
       const td = document.createElement('td');
       td.className = 'total-mur-range';
+      // placeholder awal; akan ditimpa oleh hitung()
       td.innerHTML = `0.00&nbsp;juz <span class="mur-range-badge" style="color:#999; font-size:12px">total 0%</span> <small class="mur-range-count" style="color:#6b7280">(0)</small>`;
       const murCell = tr.querySelector('.murajaah-cell');
       if (murCell && murCell.nextSibling) tr.insertBefore(td, murCell.nextSibling);
@@ -7212,7 +7213,7 @@ function fillJuzSelect(id){
       const r = await fetch('/api/getAutoUpdateAllJuzMur?t='+Date.now());
       if (r.ok){
         const arr = await r.json();
-        const it  = (arr||[]).find(x=>x.kelas===kelas);
+        const it  = (arr||[]).find(x=>String(x.kelas||"")===String(kelas));
         if (it && (it.fromDate || it.toDate)) return { fromDate: it.fromDate||"", toDate: it.toDate||"" };
       }
     }catch(_){}
@@ -7233,7 +7234,7 @@ function fillJuzSelect(id){
     const dari = $('#murRangeDari'); const sampai = $('#murRangeSampai');
     if (dari){ dari.max = todayStr; if (!dari.value || dari.value > todayStr) dari.value = todayStr; }
     if (sampai){ sampai.removeAttribute('max'); if (!sampai.value) sampai.value = todayStr; }
-    $('#murRangeStatus').textContent = '';
+    $('#murRangeStatus') && ($('#murRangeStatus').textContent = '');
     el.style.display = 'flex';
   }
 
@@ -7249,7 +7250,7 @@ function fillJuzSelect(id){
     if (!dari){ alert("Mohon pilih tanggal Dari."); return; }
     if (!sampai){ alert("Mohon pilih tanggal Sampai."); return; }
 
-    $('#murRangeStatus').textContent = "⏳ Menghitung…";
+    $('#murRangeStatus') && ($('#murRangeStatus').textContent = "⏳ Menghitung…");
 
     try{
       const res = await fetch(`/api/getAbsensiRange?kelas=${encodeURIComponent(kelas)}&start=${encodeURIComponent(dari)}&end=${encodeURIComponent(sampai)}&t=${Date.now()}`);
@@ -7320,6 +7321,7 @@ function fillJuzSelect(id){
           <span class="mur-range-badge" style="color:#6b7280; font-size:12px">total ${pSum}%</span>
           <small class="mur-range-count" style="color:#6b7280">(${rec?.cAll||0})</small>`;
 
+        // simpan jejak di dataset agar tidak "mentul"
         cell.dataset.murRangeTotal = totalNum.toFixed(2);
         cell.dataset.murRangePsum  = String(pSum);
         const pAvg = Math.floor((p1+p2+p3)/3);
@@ -7330,10 +7332,10 @@ function fillJuzSelect(id){
       await saveRangeServer(kelas, dari, sampai, totalKeys);
       saveRangeLocal(kelas, dari, sampai);
 
-      $('#murRangeStatus').textContent = "✅ Disimpan. Rentang ini akan otomatis terpakai saat refresh.";
+      $('#murRangeStatus') && ($('#murRangeStatus').textContent = "✅ Disimpan. Rentang ini akan otomatis terpakai saat refresh.");
     }catch(err){
       console.error(err);
-      $('#murRangeStatus').textContent = "❌ " + (err?.message || err);
+      $('#murRangeStatus') && ($('#murRangeStatus').textContent = "❌ " + (err?.message || err));
       alert("❌ Terjadi kesalahan: " + (err?.message || err));
     }
   }
@@ -7341,39 +7343,137 @@ function fillJuzSelect(id){
   window.bukaOverlayTotalMurRange = bukaOverlayTotalMurRange;
   $('#btnHitungTotalMur')?.addEventListener('click', hitungTotalMurRangeFromTable);
 
+  // ===== SCHEDULER & OBSERVER TABEL (fix “muncul lalu mentul 0.00”) =====
   let autoRanForKelas = "";
-  async function autoApplyMurRangeIfAvailable(){
-    const kelas = kelasNow(); const table = getSantriTable();
-    if (!kelas || !table) { setTimeout(autoApplyMurRangeIfAvailable, 120); return; }
-    if (autoRanForKelas === kelas) return;
-    const rows = table.tBodies?.[0]?.rows || [];
-    if (!rows.length){ setTimeout(autoApplyMurRangeIfAvailable, 120); return; }
+  let autoApplyLock = false;
+  let recalcTimer = null;
+  let runningCalc = false;
+  let tbodyObserver = null;
 
-    const { fromDate, toDate } = await getRangeForKelas(kelas);
-    if (fromDate && toDate){
-      if ($('#murRangeDari'))   $('#murRangeDari').value   = fromDate;
-      if ($('#murRangeSampai')) $('#murRangeSampai').value = toDate;
-      await hitungTotalMurRangeFromTable();
-      autoRanForKelas = kelas;
-    }
+  function debounce(fn, ms){
+    return function(...args){
+      clearTimeout(recalcTimer);
+      recalcTimer = setTimeout(()=>fn.apply(this,args), ms);
+    };
   }
+
+  async function scheduleRecalcMurRange(){
+    // only if range tersedia
+    const kelas = kelasNow();
+    if (!kelas) return;
+    const dari = $('#murRangeDari')?.value;
+    const sampai = $('#murRangeSampai')?.value;
+    if (!dari || !sampai) return;
+
+    if (runningCalc) return;
+    runningCalc = true;
+    try { await hitungTotalMurRangeFromTable(); }
+    finally { runningCalc = false; }
+  }
+  const scheduleRecalcMurRangeDebounced = debounce(scheduleRecalcMurRange, 100);
+
+  function watchTableBody(){
+    const table = getSantriTable();
+    const tbody = table?.tBodies?.[0];
+    if (!tbody) return;
+    if (tbodyObserver) { try{tbodyObserver.disconnect();}catch{} }
+    tbodyObserver = new MutationObserver((mut)=>{
+      // kalau baris berubah (render ulang), hitung lagi pakai rentang yang sudah diset
+      if (mut.some(m=>m.type==='childList')) {
+        scheduleRecalcMurRangeDebounced();
+      }
+    });
+    tbodyObserver.observe(tbody, { childList:true, subtree:false });
+  }
+
+  function waitForRows(timeoutMs=7000){
+    return new Promise(resolve=>{
+      const table = getSantriTable();
+      const tbody = table?.tBodies?.[0];
+      if (!tbody){ return resolve(false); }
+      if (tbody.rows.length){ return resolve(true); }
+      const obs = new MutationObserver(()=>{
+        if (tbody.rows.length){
+          obs.disconnect(); resolve(true);
+        }
+      });
+      obs.observe(tbody, {childList:true, subtree:false});
+      setTimeout(()=>{ try{obs.disconnect();}catch{} resolve(tbody.rows.length>0); }, timeoutMs);
+    });
+  }
+
+  async function autoApplyMurRangeIfAvailable(){
+    if (autoApplyLock) return;
+    autoApplyLock = true;
+    try{
+      const kelas = kelasNow();
+      const table = getSantriTable();
+      if (!kelas || !table){ setTimeout(()=>{ autoApplyLock=false; autoApplyMurRangeIfAvailable(); }, 150); return; }
+      if (autoRanForKelas === kelas){ autoApplyLock=false; return; }
+
+      ensureMurRangeColumn();
+
+      const ok = await waitForRows(7000);
+      if (!ok){ autoApplyLock=false; return; }
+
+      // mulai mengawasi tbody; jika render ulang -> recalc
+      watchTableBody();
+
+      const { fromDate, toDate } = await getRangeForKelas(kelas);
+      if (fromDate && toDate){
+        if ($('#murRangeDari'))   $('#murRangeDari').value   = fromDate;
+        if ($('#murRangeSampai')) $('#murRangeSampai').value = toDate;
+
+        requestAnimationFrame(()=> setTimeout(async ()=>{
+          try{
+            await hitungTotalMurRangeFromTable();
+            autoRanForKelas = kelas;
+          } finally {
+            autoApplyLock = false;
+          }
+        }, 0));
+        return;
+      }
+    } catch(e){
+      console.warn('autoApplyMurRangeIfAvailable:', e);
+    }
+    autoApplyLock = false;
+  }
+
   function afterTableRenderedMurRange(){
     ensureMurRangeColumn();
     autoApplyMurRangeIfAvailable();
   }
+
+  // Hook ke loadSantriData
   const _origLoad = window.loadSantriData;
   window.loadSantriData = async function(...args){
-    if (typeof _origLoad === 'function') await _origLoad.apply(this, args);
+    const kelasBefore = kelasNow();
+    await (_origLoad?.apply ? _origLoad.apply(this, args) : Promise.resolve());
     setTimeout(afterTableRenderedMurRange, 30);
+    const kelasAfter = kelasNow();
+    if (kelasBefore !== kelasAfter){ autoRanForKelas = ""; }
   };
+
+  // Reset guard saat user mengganti kelas secara manual
+  ['#kelasSelect','#kelas','select[name="kelas"]','.kelas','.kelasSelect','.kelas-select'].forEach(sel=>{
+    const el = document.querySelector(sel);
+    if (el) el.addEventListener('change', ()=>{
+      autoRanForKelas = "";
+      setTimeout(()=>{ autoApplyMurRangeIfAvailable(); }, 200);
+    });
+  });
+
   if (document.readyState === 'loading'){
     document.addEventListener('DOMContentLoaded', afterTableRenderedMurRange);
   } else {
     afterTableRenderedMurRange();
   }
+
+  // Ekspos fungsi hitung (dipakai tombol)
+  window.hitungTotalMurRangeFromTable = hitungTotalMurRangeFromTable;
 })();
 </script>
-
 
 
 <script>
