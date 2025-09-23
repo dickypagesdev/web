@@ -1,98 +1,32 @@
-// /functions/api/getData.js
-// GET /api/getData?kelas=kelas_1&tanggal=2025-09-11
-// ENV: GITHUB_TOKEN (contents:read)
+// functions/api/getMarkData.js — D1
+const json=(o,s=200)=>new Response(JSON.stringify(o),{status:s,headers:{
+  "Content-Type":"application/json","Access-Control-Allow-Origin":"*",
+  "Access-Control-Allow-Methods":"GET, OPTIONS","Access-Control-Allow-Headers":"Content-Type, Authorization",
+}});
+export const onRequestOptions=()=>json({},204);
 
-const CORS = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "GET, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type, Authorization",
-};
+export async function onRequestGet({ request, env }){
+  if (!env.DB) return json({ error:"D1 DB missing" },500);
+  const sp=new URL(request.url).searchParams;
+  const id=(sp.get("id")||"").trim();
+  const tanggal=(sp.get("tanggal")||"").trim();
+  const kelas=(sp.get("kelas")||"").trim();
+  if (!id||!tanggal||!kelas) return json({ error:"'id','tanggal','kelas' wajib" },400);
 
-const OWNER_REPO = "dickypagesdev/server";
-const BRANCH = "main";
+  const row=env.DB.prepare(`
+    SELECT payload_json FROM attendance_snapshots
+    WHERE class_name=? AND tanggal=? AND (json_extract(payload_json,'$.nis')=? OR json_extract(payload_json,'$.id')=?)
+    LIMIT 1
+  `).bind(kelas, tanggal, id, id).first();
 
-// Headers GitHub API
-const ghHeaders = (token) => ({
-  Authorization: `Bearer ${token}`,
-  Accept: "application/vnd.github.v3+json",
-  "User-Agent": "cf-pages-functions",
-});
+  if (!row) return json({ error:"Santri tidak ditemukan." },404);
 
-// base64 → UTF-8 aman
-const dec = new TextDecoder();
-const b64decode = (b64 = "") => {
-  const bin = atob(b64);
-  const bytes = new Uint8Array(bin.length);
-  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-  return dec.decode(bytes);
-};
-
-export async function onRequest({ request, env }) {
-  // CORS preflight
-  if (request.method === "OPTIONS")
-    return new Response(null, { status: 204, headers: CORS });
-
-  if (request.method !== "GET")
-    return new Response("Method Not Allowed", { status: 405, headers: CORS });
-
-  if (!env.GITHUB_TOKEN) {
-    return new Response(JSON.stringify({ error: "GITHUB_TOKEN belum diset di environment." }), {
-      status: 500, headers: { "Content-Type": "application/json", ...CORS },
-    });
-  }
-
-  const url = new URL(request.url);
-  const tanggal = url.searchParams.get("tanggal");
-  const kelas   = url.searchParams.get("kelas");
-
-  if (!tanggal || !kelas) {
-    return new Response(JSON.stringify({ error: "Parameter 'tanggal' dan 'kelas' wajib ada." }), {
-      status: 400, headers: { "Content-Type": "application/json", ...CORS },
-    });
-  }
-
-  const fileName = `${kelas}_${tanggal}.json`;
-  const apiUrl =
-    `https://api.github.com/repos/${OWNER_REPO}/contents/absensi/` +
-    `${encodeURIComponent(fileName)}?ref=${encodeURIComponent(BRANCH)}`;
-
-  try {
-    const res = await fetch(apiUrl, { headers: ghHeaders(env.GITHUB_TOKEN) });
-
-    if (res.status === 404) {
-      // file belum ada → kembalikan []
-      return new Response("[]", {
-        status: 200, headers: { "Content-Type": "application/json", ...CORS },
-      });
-    }
-
-    if (!res.ok) {
-      const t = await res.text().catch(() => "");
-      return new Response(
-        JSON.stringify({
-          error: `Gagal ambil file absensi (${res.status})`,
-          detail: t.slice(0, 300),
-        }),
-        { status: res.status, headers: { "Content-Type": "application/json", ...CORS } }
-      );
-    }
-
-    const json = await res.json(); // { content: "base64", ... }
-    let data = [];
-    try {
-      const content = b64decode(json.content || "");
-      data = JSON.parse(content || "[]");
-    } catch {
-      data = [];
-    }
-
-    return new Response(JSON.stringify(data), {
-      status: 200, headers: { "Content-Type": "application/json", ...CORS },
-    });
-
-  } catch (err) {
-    return new Response(JSON.stringify({ error: String(err?.message || err) }), {
-      status: 500, headers: { "Content-Type": "application/json", ...CORS },
-    });
-  }
+  let data={}; try{ data=JSON.parse(row.payload_json);}catch{}
+  return json({ nama: data.nama, marks: data.marks || {} }, 200);
+}
+export async function onRequest(ctx){
+  const m=ctx.request.method.toUpperCase();
+  if (m==="OPTIONS") return onRequestOptions();
+  if (m!=="GET") return json({ message:"Method Not Allowed" },405);
+  return onRequestGet(ctx);
 }
