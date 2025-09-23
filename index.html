@@ -3837,11 +3837,9 @@ row.querySelector(".total-halaman").textContent = result.total.toFixed(2);
     tanggalInput.addEventListener("change", loadSantriData);
 
 
-// ===== Save Data (meniru B57.html, tanpa hapus fungsi lain) =====
 async function simpanDataMutabaah(saveBtn){
   const rows  = document.querySelectorAll('#santri-table tbody tr');
 
-  // --- Resolve kelas & tanggal global (fleksibel) ---
   function resolveKelas(){
     const byWin=(window.kelasSelect?.value)||'';
     const byId =document.querySelector('#kelasSelect')?.value || document.querySelector('#kelas')?.value || '';
@@ -3868,7 +3866,6 @@ async function simpanDataMutabaah(saveBtn){
   const tanggalUtama = resolveTanggalGlobal();
   if (!kelas){ alert('Kelas belum terdeteksi.'); return; }
 
-  // helpers kecil
   const parseNum=(v)=>{ if(typeof v==='number')return Number.isFinite(v)?v:0; const s=String(v??'').replace(/[^0-9.,-]/g,'').replace(',', '.'); const n=parseFloat(s); return Number.isFinite(n)?n:0; };
   function getNamaFromCell(cell){ if(!cell)return ""; const first=cell.childNodes&&cell.childNodes[0]; const txt=(first&&first.textContent)?first.textContent:cell.textContent; return String(txt).trim(); }
   function getRowId(row){ const raw=row.children[0]?.textContent?.trim()||""; const asNum=parseInt(raw,10); return Number.isNaN(asNum)?raw:asNum; }
@@ -3881,16 +3878,13 @@ async function simpanDataMutabaah(saveBtn){
     const rest=parts.filter((_,i)=>i!==numIdx).map(p=>p.replace(/[^\p{L}\p{N}\-]/gu,'')).filter(Boolean);
     const gIdx=rest.findIndex(p=>/^[A-E]$/i.test(p));
     const huruf=gIdx!==-1?rest[gIdx].toUpperCase():null;
-    const teks =rest.filter((_,i)=>i!==gIdx && rest[i]!=='-'); 
+    const teks =rest.filter((_,i)=>i!==gIdx && rest[i]!=='-');
     return { nilai, predikatText:(teks.length?teks.join(' '):null), predikatHuruf:huruf };
   }
 
-  // === ABSENSI FLEX — persis pola B57 ===
   function buildAbsensi6(items, target){
     const t = Math.max(1, Math.min(6, Number(target)||1));
-    const chosen = (items||[])
-      .filter(it=>it.checked)
-      .map(it=>String(it.key).toLowerCase().replace(/\d+$/,''));
+    const chosen = (items||[]).filter(it=>it.checked).map(it=>String(it.key).toLowerCase().replace(/\d+$/,''));
     const out=[]; for(let i=0;i<t;i++) out.push(chosen[i]||"");
     return out;
   }
@@ -3905,7 +3899,10 @@ async function simpanDataMutabaah(saveBtn){
     for (const st of stOrder){
       for(let i=1;i<=perStatus;i++){
         const key=`${st}${i}`;
-        if (checkedSet.has(key) && seq<=t){ result.push(`${title(st)}${i}`); seq++; }
+        if (checkedSet.has(key) && seq<=t){
+          result.push(`${title(st)}${i}`);
+          seq++;
+        }
       }
     }
     return result;
@@ -3951,7 +3948,8 @@ async function simpanDataMutabaah(saveBtn){
     for (const [tanggal, rowsTanggal] of groupByTanggal.entries()){
       let dataLama=[];
       try{
-        const resLama=await fetch(`/api/getAbsensi?kelas=${encodeURIComponent(kelas)}&tanggal=${encodeURIComponent(tanggal)}`);
+        const url = `/api/getAbsensi?kelas=${encodeURIComponent(kelas)}&tanggal=${encodeURIComponent(tanggal)}`;
+        const resLama=await fetch(url);
         if(resLama.ok) dataLama=await resLama.json();
       }catch(e){ console.warn('Tidak bisa ambil data lama', e); }
 
@@ -3982,7 +3980,6 @@ async function simpanDataMutabaah(saveBtn){
         const totalHalaman = row.querySelector(".total-halaman")?.textContent ?? existing?.totalHalaman ?? "";
         const juzTerbaca   = row.querySelector(".juz-terbaca")?.textContent ?? existing?.juzTerbaca ?? "";
 
-        // Nilai umum (tetap ada)
         const nilaiCell = row.querySelector(".lihat-quran-btn")?.parentElement;
         const nilaiStr  = nilaiCell?.querySelector("div:nth-child(1)")?.innerText?.trim()||"";
         const parsed    = parseNilaiStr(nilaiStr);
@@ -3993,7 +3990,6 @@ async function simpanDataMutabaah(saveBtn){
           buttonCell = { nilai: parsed.nilai, predikatText, predikatHuruf };
         } else if (existing?.buttonCell) { buttonCell=existing.buttonCell; }
 
-        // -------- Murajaah (3 sesi + nilai/predikat per sesi) --------
         const murCell=row.querySelector('.murajaah-cell');
 
         function collectSess(i){
@@ -4018,7 +4014,6 @@ async function simpanDataMutabaah(saveBtn){
         let s3 = collectSess(3);
 
         if (!murCell){
-          // fallback bila tidak ada modal dataset
           s1 = {
             from: existing?.murFrom || "",
             to:   existing?.murTo   || "",
@@ -4091,25 +4086,18 @@ async function simpanDataMutabaah(saveBtn){
         const base = {
           ...existing,
           id, nis, nama, jenjang, semester,
-
           absensi: absensiExpandedStr,
-          absensiItems, absensiTarget, absensiChecked, absensiPercent, absensi6,
-          absensiExpanded, absensiExpandedStr,
-
-          dari:`${surahDari}:${ayatDari}`,
-          sampai:`${surahSampai}:${ayatSampai}`,
+          absensiItems, absensiTarget, absensiChecked, absensiPercent, absensi6, absensiExpanded, absensiExpandedStr,
+          dari: `${surahDari}:${ayatDari}`,
+          sampai: `${surahSampai}:${ayatSampai}`,
           totalJuz, halaman, totalHalaman, juzTerbaca, keterangan,
-
-          // Murajaah 3 sesi + skor/predikat
           juzmur1: Number(parseNum(s1.juz).toFixed(2)),
           juzmur2: Number(parseNum(s2.juz).toFixed(2)),
           juzmur3: Number(parseNum(s3.juz).toFixed(2)),
           juzmurajaah: juzMurAll,
-
           murFrom1: s1.from,  murTo1: s1.to,  murPages1: s1.pages, jFrom1: s1.jFrom, jTo1: s1.jTo,
           murFrom2: s2.from,  murTo2: s2.to,  murPages2: s2.pages, jFrom2: s2.jFrom, jTo2: s2.jTo,
           murFrom3: s3.from,  murTo3: s3.to,  murPages3: s3.pages, jFrom3: s3.jFrom, jTo3: s3.jTo,
-
           murScore1: (s1.score!=null ? Number(s1.score) : null),
           murScore2: (s2.score!=null ? Number(s2.score) : null),
           murScore3: (s3.score!=null ? Number(s3.score) : null),
@@ -4119,14 +4107,10 @@ async function simpanDataMutabaah(saveBtn){
           murPredHuruf1: s1.pHuruf || null,
           murPredHuruf2: s2.pHuruf || null,
           murPredHuruf3: s3.pHuruf || null,
-
           murSessions,
-
-          // Legacy
           murFrom:  murFromLegacy,
           murTo:    murToLegacy,
           murPages: murPagesLegacy,
-
           marks
         };
         const newData = buttonCell ? { ...base, buttonCell } : base;
@@ -4171,10 +4155,11 @@ async function simpanDataMutabaah(saveBtn){
   }
 }
 
-// Listener tombol (biarkan seperti semula)
+// listeners
 document.getElementById('save-btn')?.addEventListener('click', function(){ simpanDataMutabaah(this); });
 document.getElementById('save-btn-modal')?.addEventListener('click', function(){ simpanDataMutabaah(this); });
 document.getElementById('mur-save')?.addEventListener('click', function(){ simpanDataMutabaah(this); });
+
 
 
 
