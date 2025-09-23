@@ -1,37 +1,34 @@
-// functions/api/getMarksAudio.js (D1)
-// GET /api/getMarksAudio?kelas=K&tanggal=YYYY-MM-DD&id=123
-const CORS = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "GET, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type, Authorization",
-};
-export async function onRequest({ request, env }) {
-  if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: CORS });
-  if (request.method !== "GET") return new Response("Method Not Allowed", { status: 405, headers: CORS });
+// functions/api/getMarksAudio.js — D1
+const json=(o,s=200)=>new Response(JSON.stringify(o),{status:s,headers:{
+  "Content-Type":"application/json","Access-Control-Allow-Origin":"*",
+  "Access-Control-Allow-Methods":"GET, OPTIONS","Access-Control-Allow-Headers":"Content-Type, Authorization",
+}});
+export const onRequestOptions = () => json({},204);
 
-  const url = new URL(request.url);
-  const id = (url.searchParams.get("id") || "").trim();
-  const tanggal = (url.searchParams.get("tanggal") || "").trim();
-  const kelas = (url.searchParams.get("kelas") || "").trim();
-  if (!id || !tanggal || !kelas) {
-    return new Response(JSON.stringify({ error: "Parameter 'id', 'tanggal', dan 'kelas' wajib ada." }), { status: 400, headers: { "Content-Type":"application/json", ...CORS } });
-  }
+export async function onRequestGet({ request, env }){
+  if (!env.DB) return json({ error:"D1 DB missing" },500);
+  const sp=new URL(request.url).searchParams;
+  const id=(sp.get("id")||"").trim();
+  const tanggal=(sp.get("tanggal")||"").trim();
+  const kelas=(sp.get("kelas")||"").trim();
+  if (!id||!tanggal||!kelas) return json({ error:"'id','tanggal','kelas' wajib" },400);
 
-  // Cari berdasarkan id_text atau nis yang sama dengan id
-  const r = await env.DB.prepare(`
-    SELECT nama, marks_json AS marks
-    FROM harian
-    WHERE kelas=? AND tanggal=? AND (id_text=? OR nis=?)
+  // id/nis → student_key cocok dgn saveData (nis || id)
+  const row=env.DB.prepare(`
+    SELECT payload_json FROM attendance_snapshots
+    WHERE class_name=? AND tanggal=? AND (json_extract(payload_json,'$.nis')=? OR json_extract(payload_json,'$.id')=?)
     LIMIT 1
-  `).bind(kelas, tanggal, id, id).all();
+  `).bind(kelas, tanggal, id, id).first();
 
-  if (!r.results || !r.results.length) {
-    return new Response(JSON.stringify({ error: "Santri tidak ditemukan." }), { status: 404, headers: { "Content-Type":"application/json", ...CORS } });
-  }
+  if (!row) return json({ error:"Santri tidak ditemukan." },404);
 
-  const row = r.results[0];
-  let marks = {};
-  try { marks = row.marks ? JSON.parse(row.marks) : {}; } catch { marks = {}; }
-
-  return new Response(JSON.stringify({ nama: row.nama, marks }), { status: 200, headers: { "Content-Type":"application/json", ...CORS } });
+  let data={}; try{ data=JSON.parse(row.payload_json);}catch{}
+  const marks = data.marks || {};
+  return json({ nama: data.nama, marks }, 200);
+}
+export async function onRequest(ctx){
+  const m=ctx.request.method.toUpperCase();
+  if (m==="OPTIONS") return onRequestOptions();
+  if (m!=="GET") return json({ message:"Method Not Allowed" },405);
+  return onRequestGet(ctx);
 }
