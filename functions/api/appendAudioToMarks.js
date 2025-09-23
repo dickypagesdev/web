@@ -1,31 +1,40 @@
-// functions/api/appendAudioToMarks.js (D1)
-// POST { id, kelas, tanggal, filename }
-const CORS = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type, Authorization",
-};
-export async function onRequest({ request, env }) {
-  if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: CORS });
-  if (request.method !== "POST") return new Response("Method Not Allowed", { status: 405, headers: CORS });
+// functions/api/appendAudioToMarks.js — D1
+const json=(o,s=200)=>new Response(JSON.stringify(o),{status:s,headers:{
+  "Content-Type":"application/json","Access-Control-Allow-Origin":"*",
+  "Access-Control-Allow-Methods":"POST, OPTIONS","Access-Control-Allow-Headers":"Content-Type, Authorization",
+}});
+export const onRequestOptions=()=>json({},204);
 
-  let body={}; try{ body=await request.json(); }catch{ return new Response(JSON.stringify({ success:false, error:"Body bukan JSON valid."}),{status:400,headers:{ "Content-Type":"application/json", ...CORS }})}
-  const { id, kelas, tanggal, filename } = body || {};
-  if (!id || !kelas || !tanggal || !filename) {
-    return new Response(JSON.stringify({ success:false, error:"Param id, kelas, tanggal, filename wajib ada" }), { status:400, headers:{ "Content-Type":"application/json", ...CORS }});
-  }
+export async function onRequestPost({ request, env }){
+  if (!env.DB) return json({ success:false, error:"D1 DB missing" },500);
+  let body; try{ body=await request.json(); }catch{ return json({ success:false, error:"Body bukan JSON"},400); }
+  const { id, kelas, tanggal, filename } = body||{};
+  if (!id||!kelas||!tanggal||!filename) return json({ success:false, error:"Param id, kelas, tanggal, filename wajib ada"},400);
 
-  const r = await env.DB.prepare(`SELECT marks_json AS marks FROM harian WHERE kelas=? AND tanggal=? AND (id_text=? OR nis=?) LIMIT 1`)
-    .bind(kelas, tanggal, id, id).all();
-  if (!r.results || !r.results.length) {
-    return new Response(JSON.stringify({ success:false, error:"Santri tidak ditemukan pada tanggal tsb" }), { status:404, headers:{ "Content-Type":"application/json", ...CORS }});
-  }
-  let marks = {}; try{ marks = r.results[0].marks ? JSON.parse(r.results[0].marks) : {}; }catch{ marks = {}; }
-  if (!Array.isArray(marks.audio)) marks.audio = [];
-  if (!marks.audio.includes(filename)) marks.audio.push(filename);
+  const row = env.DB.prepare(`
+    SELECT rowid, payload_json FROM attendance_snapshots
+    WHERE class_name=? AND tanggal=? AND (json_extract(payload_json,'$.nis')=? OR json_extract(payload_json,'$.id')=?)
+    LIMIT 1
+  `).bind(kelas, tanggal, String(id), String(id)).first();
 
-  await env.DB.prepare(`UPDATE harian SET marks_json=?, updated_at=datetime('now') WHERE kelas=? AND tanggal=? AND (id_text=? OR nis=?)`)
-    .bind(JSON.stringify(marks), kelas, tanggal, id, id).run();
+  if (!row) return json({ success:false, error:"Santri tidak ditemukan" },404);
 
-  return new Response(JSON.stringify({ success:true, id, kelas, tanggal, filename, audioCount: marks.audio.length }), { status:200, headers:{ "Content-Type":"application/json", ...CORS }});
+  let obj={}; try{ obj=JSON.parse(row.payload_json);}catch{}
+  if (typeof obj.marks!=="object"||!obj.marks) obj.marks={};
+  if (!Array.isArray(obj.marks.audio)) obj.marks.audio=[];
+  if (!obj.marks.audio.includes(filename)) obj.marks.audio.push(filename);
+
+  const upd = env.DB.prepare(`
+    UPDATE attendance_snapshots
+    SET payload_json=?, updated_at=?
+    WHERE rowid=?
+  `).bind(JSON.stringify(obj), new Date().toISOString(), row.rowid).run();
+
+  return json({ success:true, id, kelas, tanggal, filename, audioCount: obj.marks.audio.length }, 200);
+}
+export async function onRequest(ctx){
+  const m=ctx.request.method.toUpperCase();
+  if (m==="OPTIONS") return onRequestOptions();
+  if (m!=="POST") return json({ success:false, error:"Method Not Allowed" },405);
+  return onRequestPost(ctx);
 }
