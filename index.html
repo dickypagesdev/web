@@ -4342,7 +4342,15 @@ function buildKelasKelompokLine(kelas, kelasEl) {
   }
   pdfBtn?.classList.add('rekap-btn');
   pdfBtn?.addEventListener('click', pdfRekapDownload);
-  xlsBtn?.addEventListener('click', xlsAllKelasDownload);
+  if (xlsBtn) {
+  const fresh = xlsBtn.cloneNode(true); // reset semua listener lama
+  xlsBtn.parentNode.replaceChild(fresh, xlsBtn);
+  xlsBtn = fresh;
+  xlsBtn.id = 'download-xls-rekap';
+  xlsBtn.classList.add('rekap-btn');
+  xlsBtn.textContent = 'Download Excel All Kelas';
+  xlsBtn.addEventListener('click', xlsAllKelasDownload);
+}
 
 // -- Guard: pastikan drawTableHeader tersedia secara global --
 if (typeof window.drawTableHeader !== 'function') {
@@ -4405,14 +4413,18 @@ if (typeof window.drawTableHeader !== 'function') {
 
   // ====== Loader XLSX ======
   async function ensureXLSX(){
-    if (window.XLSX) return;
-    await new Promise((resolve, reject) => {
-      const sc = document.createElement('script');
-      sc.src = 'https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js';
-      sc.onload = resolve; sc.onerror = () => reject(new Error('Gagal memuat XLSX'));
-      document.head.appendChild(sc);
-    });
+  if (window.XLSX) return;
+  await new Promise((resolve, reject) => {
+    const sc = document.createElement('script');
+    sc.src = 'https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js';
+    sc.onload = resolve;
+    sc.onerror = () => reject(new Error('Gagal memuat library XLSX dari CDN.'));
+    document.head.appendChild(sc);
+  });
+  if (!window.XLSX) {
+    throw new Error('Library XLSX gagal dimuat (XLSX undefined). Cek koneksi/CSP/CDN.');
   }
+}
 
 // --- D1 helpers (sesuai getAbsensiRange.js yang kamu kirim) ---
 async function d1FetchAbsensi({ kelas, start, end, aggregate=false }) {
@@ -4468,9 +4480,18 @@ async function d1FetchAbsensiAggMap({ kelas, start, end }) {
   }
 
   // 2) ROSTER
+  } else {
   const resSantri = await fetch(`/api/getSantri?kelas=${encodeURIComponent(kelas)}&t=${Date.now()}`);
-  let santriData = await resSantri.json().catch(()=>[]);
+  let santriData = await resSantri.json().catch(() => []);
   if (!Array.isArray(santriData)) santriData = [];
+  const arr = (santriData||[])
+    .map(s => ({ key: (s.nis||s.id||'').toString(), nama: s.nama||'-', nis: s.nis||'', id: s.id||'' }))
+    .filter(x => x.key)
+    .sort((a,b)=>a.nama.localeCompare(b.nama,'id'));
+  sel.innerHTML = `<option value="">— Pilih santri —</option>` +
+    arr.map(x => `<option value="${x.key}" data-nama="${(x.nama||'').replace(/"/g,'&quot;')}">${x.nis ? x.nis : x.id} — ${x.nama}</option>`).join('');
+}
+
 
   // index helper
   const keyId   = v => (v === 0 || v) ? String(v).trim() : "";
@@ -5376,6 +5397,9 @@ async function xlsAllKelasDownload() {
   setBtnLoading(xlsBtn, true, 'Membuat Excel…');
   try {
     await ensureXLSX();
+
+	  await ensureXLSX();
+if (!window.XLSX?.utils?.book_new) throw new Error('XLSX utils tidak tersedia.');
 
     const startDate = document.querySelector('#pdf-start-date')?.value;
     const endDate   = document.querySelector('#pdf-end-date')?.value;
