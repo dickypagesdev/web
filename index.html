@@ -7115,39 +7115,27 @@ function fillJuzSelect(id){
 		  const valEl=cell.querySelector('.mur-val'); valEl && (valEl.textContent=`${total.toFixed(2)} juz`);
           cell.dataset.murtotal=String(total.toFixed(2));
 
-		  const setSA = (src, dsS, dsA) => {
-  			if (!src) return; // jangan kosongkan dataset lokal
-  			const [s, a] = String(src).split(':');
-  			if (s) cell.dataset[dsS] = s;
-  			if (a) cell.dataset[dsA] = a;
-			};
-			const setPages = (src, pfKey='pf', ptKey='pt') => {
-  			if (!src) return; // jangan kosongkan dataset lokal
-  			const [pf, pt] = String(src).split('-');
-  			if (pf) cell.dataset[pfKey] = pf;
-  			if (pt) cell.dataset[ptKey] = pt;
-			};
+          const setSA=(src,dsS,dsA)=>{ if(!src){cell.dataset[dsS]='';cell.dataset[dsA]='';return;} const [s,a]=String(src).split(':'); cell.dataset[dsS]=s||''; cell.dataset[dsA]=a||''; };
+          const setPages=(src, pfKey='pf', ptKey='pt')=>{ if(!src){cell.dataset[pfKey]='';cell.dataset[ptKey]='';return;} const [pf,pt]=String(src).split('-'); cell.dataset[pfKey]=pf||''; cell.dataset[ptKey]=pt||''; };
 
           // legacy (sesi 1)
           setSA(rec?.murFrom,'sf','af'); setSA(rec?.murTo,'st','at'); setPages(rec?.murPages);
 
           // per sesi (jika ada di server)
-          for (let i = 1; i <= 3; i++) {
-  			setSA(rec?.[`murFrom${i}`], `sf${i}`, `af${i}`);
-  			setSA(rec?.[`murTo${i}`],   `st${i}`, `at${i}`);
-  			if (rec?.[`murPages${i}`]) setPages(rec[`murPages${i}`], `pf${i}`, `pt${i}`);
+          for(let i=1;i<=3;i++){
+            setSA(rec?.[`murFrom${i}`],`sf${i}`,`af${i}`);
+            setSA(rec?.[`murTo${i}`],  `st${i}`,`at${i}`);
+            if(rec?.[`murPages${i}`]) setPages(rec[`murPages${i}`], `pf${i}`, `pt${i}`);
+            if (rec?.[`jFrom${i}`]!=null) cell.dataset[`jfrom${i}`]=String(rec[`jFrom${i}`]);
+            if (rec?.[`jTo${i}`]!=null)   cell.dataset[`jto${i}`]=String(rec[`jTo${i}`]);
+            const jv = parseNum(rec?.[`juzmur${i}`] ?? rec?.[`juzSesi${i}`] ?? 0);
+            if(jv) cell.dataset[`juz${i}`]=jv.toFixed(2);
 
-  			if (rec?.[`jFrom${i}`] != null) cell.dataset[`jfrom${i}`] = String(rec[`jFrom${i}`]);
-  			if (rec?.[`jTo${i}`]   != null) cell.dataset[`jto${i}`]   = String(rec[`jTo${i}`]);
-
-  			const jv = parseNum(rec?.[`juzmur${i}`] ?? rec?.[`juzSesi${i}`] ?? 0);
-  			if (jv) cell.dataset[`juz${i}`] = jv.toFixed(2);
-
-  			if (rec?.[`murScore${i}`] != null) cell.dataset[`score${i}`] = String(rec[`murScore${i}`]);
-  			if (rec?.[`murPredText${i}`])     cell.dataset[`ptext${i}`]  = String(rec[`murPredText${i}`]);
-  			if (rec?.[`murPredHuruf${i}`])    cell.dataset[`phuruf${i}`] = String(rec[`murPredHuruf${i}`]);
-			}
-
+            // skor & predikat (opsional)
+            if (rec?.[`murScore${i}`]!=null) cell.dataset[`score${i}`]=String(rec[`murScore${i}`]);
+            if (rec?.[`murPredText${i}`]) cell.dataset[`ptext${i}`]=String(rec[`murPredText${i}`]);
+            if (rec?.[`murPredHuruf${i}`]) cell.dataset[`phuruf${i}`]=String(rec[`murPredHuruf${i}`]);
+          }
         });
       }catch(e){ console.warn('murajaah refresh fail', e); }
     }
@@ -7330,11 +7318,10 @@ function fillJuzSelect(id){
     $('#murRangeStatus') && ($('#murRangeStatus').textContent = "⏳ Menghitung…");
 
     try{
-      const res = await fetch(`/api/getAbsensi?kelas=${encodeURIComponent(k)}&tanggal=${encodeURIComponent(tgl)}`);
-		if (!res.ok) continue;
-		const payload = await res.json().catch(() => ({ list: [] }));
-		const arr = Array.isArray(payload) ? payload : (payload.list || []);
-
+      const res = await fetch(`/api/getAbsensiRange?kelas=${encodeURIComponent(kelas)}&start=${encodeURIComponent(dari)}&end=${encodeURIComponent(sampai)}&t=${Date.now()}`);
+      if (!res.ok) throw new Error("Gagal ambil data absensi.");
+      const payload = await res.json();
+      const allData = Array.isArray(payload) ? payload : (payload?.list || []);
 
       const rows = [...(table.tBodies?.[0]?.rows || [])];
 
