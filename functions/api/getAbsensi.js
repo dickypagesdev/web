@@ -1,4 +1,4 @@
-// functions/api/getAbsensi.js — D1
+// functions/api/getAbsensi.js — D1 (fix: inject tanggal)
 const json = (obj, status=200)=>new Response(JSON.stringify(obj),{
   status, headers:{
     "Content-Type":"application/json",
@@ -12,12 +12,12 @@ export const onRequestOptions = () => json({},204);
 export async function onRequestGet({ request, env }){
   if (!env.DB) return json({ error:"D1 DB missing" },500);
   const { searchParams } = new URL(request.url);
-  const kelas = (searchParams.get("kelas")||"").trim();
+  const kelas   = (searchParams.get("kelas")||"").trim();
   const tanggal = (searchParams.get("tanggal")||"").trim();
   if (!kelas || !tanggal) return json({ error:"Parameter 'kelas' dan 'tanggal' wajib diisi" },400);
 
   const stmt = env.DB.prepare(`
-    SELECT payload_json
+    SELECT tanggal, payload_json
     FROM attendance_snapshots
     WHERE class_name=? AND tanggal=?
     ORDER BY student_key
@@ -26,7 +26,12 @@ export async function onRequestGet({ request, env }){
   const rows = stmt.all().results || [];
   const out = [];
   for (const r of rows){
-    try { out.push(JSON.parse(r.payload_json)); } catch { /* skip */ }
+    try {
+      const obj = JSON.parse(r.payload_json);
+      // penting untuk render single/range yang seragam:
+      if (!obj.tanggal) obj.tanggal = r.tanggal;
+      out.push(obj);
+    } catch {}
   }
   return json(out, 200);
 }
