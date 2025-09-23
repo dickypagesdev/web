@@ -6989,66 +6989,24 @@ function fillJuzSelect(id){
 }
   function bindSession(idx){ fillAllBases(idx); }
 
-  function ensureMurColumn() {
-  const table = $('#santri-table');
-  if (!table) return;
-
-  // Header "Murajaah"
-  const theadRow = table.tHead?.rows?.[0];
-  if (theadRow && !theadRow.querySelector('th.mur-header')) {
-    const th = document.createElement('th');
-    th.className = 'mur-header';
-    th.textContent = 'Murajaah';
-    theadRow.appendChild(th);
-  }
-
-  const tbody = table.tBodies?.[0];
-  const rows  = tbody?.rows || [];
-
-  [...rows].forEach((tr) => {
-    // kalau cell sudah ada, jangan duplikasi
-    let td = tr.querySelector('td.murajaah-cell');
-    if (!td) {
-      td = document.createElement('td');
-      td.className = 'murajaah-cell';
-
-      // simpan nilai murajaah di dataset pada TD (bukan di inner text)
-      td.dataset.murtotal = "";  // kosong = belum ada input
-      td.dataset.murlabel = "";
-
-      td.innerHTML = `
-        <div class="mur-val" style="font-weight:600;min-height:1em">—</div>
+  function ensureMurColumn(){
+    const table=$('#santri-table'); if(!table) return;
+    const theadRow=table.tHead?.rows?.[0];
+    if(theadRow && !theadRow.querySelector('th.mur-header')){
+      const th=document.createElement('th'); th.className='mur-header'; th.textContent='Murajaah'; theadRow.appendChild(th);
+    }
+    const rows=table.tBodies?.[0]?.rows||[];
+    [...rows].forEach(tr=>{
+      if(tr.querySelector('.murajaah-cell')) return;
+      const td=document.createElement('td'); td.className='murajaah-cell';
+      td.innerHTML=`
+        <div class="mur-val" style="font-weight:600">0.00 juz</div>
         <div class="mur-label" style="font-size:11px; color:#6b7280;"></div>
-        <button type="button" class="btn-mur" style="margin-top:6px; padding:4px 8px;">Input</button>
-      `;
+        <button type="button" class="btn-mur" style="margin-top:6px; padding:4px 8px;">Input</button>`;
       tr.appendChild(td);
-
-      td.querySelector('.btn-mur').addEventListener('click', () => openModalForRow(tr));
-    }
-
-    // render awal dari dataset (tidak pernah ambil dari .mur-val lama)
-    renderMurajaahCell(td);
-  });
-
-  // Helper: render tampilan berdasarkan dataset
-  function renderMurajaahCell(cell) {
-    const raw = (cell.dataset.murtotal ?? "").trim();         // string angka juz, mis. "0.87"
-    const lbl = (cell.dataset.murlabel ?? "").trim();
-
-    const valDiv   = cell.querySelector('.mur-val');
-    const labelDiv = cell.querySelector('.mur-label');
-
-    if (raw !== "" && !isNaN(parseFloat(raw))) {
-      const n = parseFloat(raw);
-      valDiv.textContent = `${n.toFixed(2)} juz`;
-      labelDiv.textContent = lbl;
-    } else {
-      // belum ada input murajaah
-      valDiv.textContent = '—';
-      labelDiv.textContent = '';
-    }
+      td.querySelector('.btn-mur').addEventListener('click',()=>openModalForRow(tr));
+    });
   }
-}
 
   // ---------- Refresh dari server (muat juga skor/predikat jika ada) ----------
   async function refreshMurFromServer(){
