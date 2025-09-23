@@ -1,170 +1,243 @@
-// /functions/api/pindahRosterKelas.js
-// POST body: { kelasAsal, kelasTujuan, identifiers: [nis|id|namaLowercase, ...] }
-// Env: GITHUB_TOKEN (contents:write)
+// functions/api/pindahRosterKelas.js
+// Cloudflare Pages Functions (ESM)
 
-const CORS = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type, Authorization",
-};
-const json = (o, s=200) => new Response(JSON.stringify(o), { status:s, headers:{"Content-Type":"application/json", ...CORS} });
-export const onRequestOptions = () => new Response(null, { status:204, headers: CORS });
-
-const OWNER_REPO = "dickypagesdev/server";
-const BRANCH = "main";
-// Jika roster kamu di folder lain, ubah di sini:
-const ROSTER_DIR = ""; // contoh "roster"; kalau root: "".
-
-const ghHeaders = (token) => ({
-  Authorization: `Bearer ${token}`,
-  Accept: "application/vnd.github.v3+json",
-  "User-Agent": "cf-pages-functions",
-});
+const DEFAULT_REPO   = "dickypagesdev/server";
+const DEFAULT_BRANCH = "main";
 
 const enc = new TextEncoder();
 const dec = new TextDecoder();
-const b64 = (s) => btoa(String.fromCharCode(...enc.encode(s)));
-const b64dec = (b64s) => {
-  const bin = atob(b64s || "");
+const b64encode = (str) => {
+  const bytes = enc.encode(str);
+  let bin = "";
+  for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+  return btoa(bin);
+};
+const b64decode = (b64 = "") => {
+  const bin = atob(b64);
   const bytes = new Uint8Array(bin.length);
-  for (let i=0;i<bin.length;i++) bytes[i] = bin.charCodeAt(i);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
   return dec.decode(bytes);
 };
 
-// --- helper nama kelas & path aman ---
+const json = (obj, status = 200) =>
+  new Response(JSON.stringify(obj), {
+    status,
+    headers: {
+      "Content-Type": "application/json",
+      "Access-Control-Allow-Origin": "*",
+      "Access-Control-Allow-Methods": "POST, OPTIONS",
+      "Access-Control-Allow-Headers": "Content-Type, Authorization",
+    },
+  });
+
 const normKelas = (k) => {
-  const v = String(k || "").trim();
-  if (!v) return "";
-  return v.startsWith("kelas_") ? v : `kelas_${v}`;
+  let v = String(k || "").trim().replace(/-/g, "_");
+  if (!/^kelas_/.test(v)) v = `kelas_${v}`;
+  return v;
 };
-const kelasFile = (k) => `${normKelas(k)}.json`;
-const withDir = (file) => (ROSTER_DIR ? `${ROSTER_DIR}/${file}` : file);
 
-// --- GitHub helpers ---
-async function readJsonFile(token, file) {
-  const url = `https://api.github.com/repos/${OWNER_REPO}/contents/${encodeURIComponent(withDir(file))}?ref=${encodeURIComponent(BRANCH)}`;
-  const r = await fetch(url, { headers: ghHeaders(token) });
-  if (r.status === 404) return { data: [], sha: null, ok: true, status: 404 };
-  if (!r.ok) throw new Error(`GET ${file} -> ${r.status}`);
-  const j = await r.json();
-  let data = [];
-  try { data = JSON.parse(b64dec(j.content) || "[]"); } catch {}
-  return { data: Array.isArray(data) ? data : [], sha: j.sha || null, ok: true, status: 200 };
+const ghHeaders = (token) => ({
+  Authorization: `Bearer ${token}`,
+  Accept: "application/vnd.github+json",
+  "Content-Type": "application/json",
+  "User-Agent": "cf-pages-pindahRosterKelas/1.1",
+});
+
+const withRef = (url, branch) => `${url}?ref=${encodeURIComponent(branch)}`;
+
+async function readJsonFile(repo, path, token, branch) {
+  const url = `https://api.github.com/repos/${repo}/contents/${encodeURIComponent(path)}`;
+  const res = await fetch(withRef(url, branch), { headers: ghHeaders(token) });
+  if (res.status === 404) return { ok: true, exists: false, sha: null, data: [] };
+  if (!res.ok) return { ok: false, status: res.status, error: await res.text().catch(() => "") };
+  const meta = await res.json();
+  let arr = [];
+  try { arr = JSON.parse(b64decode(meta.content || "")); } catch { arr = []; }
+  if (!Array.isArray(arr)) arr = [];
+  return { ok: true, exists: true, sha: meta.sha, data: arr };
 }
 
-async function writeJsonFile(token, file, data, sha, msg) {
-  const url = `https://api.github.com/repos/${OWNER_REPO}/contents/${encodeURIComponent(withDir(file))}`;
+async function writeJsonFile(repo, path, token, branch, arrayData, sha, message) {
+  const url = `https://api.github.com/repos/${repo}/contents/${encodeURIComponent(path)}`;
   const body = {
-    message: msg,
-    content: b64(JSON.stringify(data, null, 2)),
-    branch: BRANCH,
-    sha: sha || undefined,
+    message,
+    content: b64encode(JSON.stringify(arrayData, null, 2)),
+    branch,
   };
-  const r = await fetch(url, { method:"PUT", headers: ghHeaders(token), body: JSON.stringify(body) });
-  if (!r.ok) {
-    const t = await r.text().catch(()=> "");
-    throw new Error(`PUT ${file} -> ${r.status}: ${t.slice(0,200)}`);
+  if (sha) body.sha = sha;
+
+  // try-put + one-shot refresh-then-put if conflict
+  let res = await fetch(url, { method: "PUT", headers: ghHeaders(token), body: JSON.stringify(body) });
+  if (res.status === 409 || res.status === 422) {
+    const ref = await fetch(withRef(url, branch), { headers: ghHeaders(token) });
+    if (ref.status === 200) {
+      const meta = await ref.json();
+      res = await fetch(url, {
+        method: "PUT",
+        headers: ghHeaders(token),
+        body: JSON.stringify({ ...body, sha: meta.sha }),
+      });
+    }
   }
+  if (!res.ok) return { ok: false, status: res.status, error: await res.text().catch(() => "") };
+  return { ok: true };
 }
 
-// --- main ---
-export const onRequestPost = async ({ request, env }) => {
-  try {
-    if (!env.GITHUB_TOKEN) return json({ error: "GITHUB_TOKEN belum diset." }, 500);
-    const token = env.GITHUB_TOKEN;
-
-    const body = await request.json().catch(()=> ({}));
-    let { kelasAsal, kelasTujuan, identifiers } = body || {};
-    kelasAsal   = normKelas(kelasAsal);
-    kelasTujuan = normKelas(kelasTujuan);
-    identifiers = Array.isArray(identifiers) ? identifiers : [];
-
-    if (!kelasAsal || !kelasTujuan || !identifiers.length) {
-      return json({ error:"kelasAsal, kelasTujuan, identifiers[] wajib." }, 400);
-    }
-    if (kelasAsal === kelasTujuan) {
-      return json({ error:"kelasAsal tidak boleh sama dengan kelasTujuan." }, 400);
-    }
-
-    const srcFile = kelasFile(kelasAsal);
-    const dstFile = kelasFile(kelasTujuan);
-
-    // 1) Baca roster asal & tujuan
-    const src = await readJsonFile(token, srcFile);
-    const dst = await readJsonFile(token, dstFile); // jika 404, kita akan create baru
-
-    // safety: kalau roster asal kosong/404 -> hentikan
-    if (!src.data.length) {
-      return json({ error:"Roster asal kosong atau tidak ditemukan.", file: srcFile }, 404);
-    }
-
-    // 2) Seleksi entri yang dipindah
-    const idSet = new Set(
-      identifiers.map(x => String(x).trim()).filter(Boolean)
-    );
-    const moved = [];
-    const keep  = [];
-    for (const s of src.data) {
-      const id  = String(s?.id ?? "").trim();
-      const nis = String(s?.nis ?? "").trim();
-      const nameKey = String(s?.nama ?? "").trim().toLowerCase();
-      if (idSet.has(id) || idSet.has(nis) || idSet.has(nameKey)) moved.push(s);
-      else keep.push(s);
-    }
-    if (!moved.length) {
-      return json({ success:true, moved:0, idMap:[], note:"Tidak ada entri yang cocok." });
-    }
-
-    // 3) Merge ke tujuan (hindari duplikat id/nis)
-    const destData = Array.isArray(dst.data) ? [...dst.data] : [];
-    const seenId   = new Set(destData.map(x => String(x?.id ?? "")).filter(Boolean));
-    const seenNis  = new Set(destData.map(x => String(x?.nis ?? "")).filter(Boolean));
-
-    let appended = 0;
-    for (const s of moved) {
-      const id  = String(s?.id ?? "").trim();
-      const nis = String(s?.nis ?? "").trim();
-      const dup = (id && seenId.has(id)) || (nis && seenNis.has(nis));
-      if (dup) continue;
-      destData.push(s);
-      if (id)  seenId.add(id);
-      if (nis) seenNis.add(nis);
-      appended++;
-    }
-
-    // 4) TULIS TUJUAN DULU (agar kalau gagal, sumber belum kosong)
-    await writeJsonFile(
-      token,
-      dstFile,
-      destData,
-      dst.sha, // boleh null untuk create
-      `Move roster -> append ${appended} from ${srcFile} to ${dstFile}`
-    );
-
-    // 5) Baru TULIS SUMBER (jadi sisa = keep)
-    await writeJsonFile(
-      token,
-      srcFile,
-      keep,
-      src.sha,
-      `Move roster -> remove ${moved.length} from ${srcFile} (moved to ${dstFile})`
-    );
-
-    // 6) idMap (di sini id tidak berubah, tapi disiapkan bila nanti ingin transform id)
-    const idMap = moved
-      .map(s => ({ oldId: String(s?.id ?? "").trim(), newId: String(s?.id ?? "").trim() }))
-      .filter(m => m.oldId);
-
-    return json({
-      success:true,
-      moved: moved.length,
-      appendedToDest: appended,
-      idMap,
-      srcFile,
-      dstFile
-    });
-
-  } catch (err) {
-    return json({ error: "Internal Error", detail: String(err?.message || err) }, 500);
+function collectUsedIdsNumeric(arr) {
+  const set = new Set();
+  for (const r of arr) {
+    const n = parseInt(String(r?.id ?? ""), 10);
+    if (Number.isInteger(n) && n > 0) set.add(String(n));
   }
-};
+  return set;
+}
+function allocNextIdGapFirst(used) {
+  let i = 1;
+  while (used.has(String(i))) i++;
+  return String(i);
+}
+function sortByIdNumeric(arr) {
+  return [...arr].sort((a, b) => (parseInt(a?.id || 0, 10) || 0) - (parseInt(b?.id || 0, 10) || 0));
+}
+
+export const onRequestOptions = () => json({}, 204);
+
+export async function onRequestPost({ request, env }) {
+  const TOKEN  = env.GITHUB_TOKEN;
+  const REPO   = env.GITHUB_REPO   || DEFAULT_REPO;
+  const BRANCH = env.GITHUB_BRANCH || DEFAULT_BRANCH;
+  if (!TOKEN) return json({ error: "GITHUB_TOKEN tidak tersedia" }, 500);
+
+  let body;
+  try { body = await request.json(); } catch { return json({ error: "Body bukan JSON valid" }, 400); }
+
+  let { kelasAsal, kelasTujuan, identifiers } = body || {};
+  if (!kelasAsal || !kelasTujuan || !Array.isArray(identifiers) || identifiers.length === 0) {
+    return json({ error: "Wajib: kelasAsal, kelasTujuan, identifiers[]" }, 400);
+  }
+
+  const asal   = normKelas(kelasAsal);
+  const tujuan = normKelas(kelasTujuan);
+  const asalPath = `${asal}.json`;
+  const tujuanPath = `${tujuan}.json`;
+
+  // --- load roster
+  const src = await readJsonFile(REPO, asalPath, TOKEN, BRANCH);
+  if (!src.ok || !src.exists) return json({ error: "File kelas asal tidak ditemukan" }, 404);
+  const dst = await readJsonFile(REPO, tujuanPath, TOKEN, BRANCH);
+  if (!dst.ok) return json({ error: "Gagal baca kelas tujuan", detail: dst.error, status: dst.status }, 502);
+
+  // --- tentukan santri yang dipindah
+  const cleanIds = identifiers.map(v => String(v ?? "").trim()).filter(Boolean);
+  const pickNis  = new Set(cleanIds.filter(v => /^\d{3,}$/.test(v))); // tebakan nis = deretan digit
+  const pickName = new Set(cleanIds.map(v => v.toLowerCase()));
+  const pickId   = new Set(cleanIds); // tetap boleh pilih via id
+
+  const match = (r) => {
+    const id  = String(r?.id ?? "");
+    const nis = String(r?.nis ?? "");
+    const nmL = String(r?.nama ?? "").toLowerCase();
+    return pickId.has(id) || (nis && pickNis.has(nis)) || (nmL && pickName.has(nmL));
+  };
+
+  const toMove = src.data.filter(match);
+  if (!toMove.length) return json({ error: "Santri tidak ditemukan di kelas asal" }, 404);
+
+  // --- siapkan index tujuan untuk MERGE berdasar NIS/NAMA (bukan ID!)
+  const dstArr   = Array.isArray(dst.data) ? [...dst.data] : [];
+  const usedIds  = collectUsedIdsNumeric(dstArr);
+  const byNisDst = new Map();   // nis -> index
+  const byNameDst= new Map();   // lower(nama) -> index
+  dstArr.forEach((r, i) => {
+    const nis = String(r?.nis ?? "").trim();
+    const nmL = String(r?.nama ?? "").trim().toLowerCase();
+    if (nis) byNisDst.set(nis, i);
+    if (nmL) byNameDst.set(nmL, i);
+  });
+
+  const idMap = [];     // catatan perubahan id {oldId, newId, nis, nama}
+  const mergedOrAdded = [];
+
+  for (const orig of toMove) {
+    const srcNis = String(orig?.nis ?? "").trim();
+    const srcNmL = String(orig?.nama ?? "").trim().toLowerCase();
+
+    // 1) Jika ada di tujuan (match NIS dulu, lalu nama), lakukan UPDATE/MERGE
+    let idx = -1;
+    if (srcNis && byNisDst.has(srcNis)) idx = byNisDst.get(srcNis);
+    else if (srcNmL && byNameDst.has(srcNmL)) idx = byNameDst.get(srcNmL);
+
+    if (idx >= 0) {
+      // merge ke baris tujuan tanpa mengubah id tujuan
+      const keep = dstArr[idx];
+      const merged = {
+        ...keep,
+        // field identitas dari sumber boleh override (kecuali id)
+        nis: srcNis || keep.nis,
+        nama: orig?.nama ?? keep.nama,
+        jenjang: orig?.jenjang ?? keep.jenjang,
+        semester: orig?.semester ?? keep.semester,
+        keterangan: orig?.keterangan ?? keep.keterangan,
+      };
+      dstArr[idx] = merged;
+      mergedOrAdded.push({ type: "merged", nis: merged.nis, id: keep.id });
+      continue;
+    }
+
+    // 2) Tidak ada di tujuan → tambahkan sebagai baris baru, buat ID baru (gap-first)
+    const newId = allocNextIdGapFirst(usedIds);
+    usedIds.add(newId);
+
+    const row = {
+      id: newId,
+      nis: srcNis,
+      nama: orig?.nama ?? "",
+      jenjang: orig?.jenjang ?? "",
+      semester: orig?.semester ?? "",
+      keterangan: orig?.keterangan ?? "",
+    };
+    dstArr.push(row);
+    mergedOrAdded.push({ type: "added", nis: row.nis, id: row.id });
+
+    const oldIdStr = String(orig?.id ?? "");
+    if (oldIdStr && oldIdStr !== newId) {
+      idMap.push({ oldId: oldIdStr, newId, nis: row.nis || "", nama: row.nama || "" });
+    }
+  }
+
+  // --- Tulis tujuan (tanpa menghapus siapa pun)
+  const sortedDst = sortByIdNumeric(dstArr);
+  const wDst = await writeJsonFile(
+    REPO,
+    tujuanPath,
+    TOKEN,
+    BRANCH,
+    sortedDst,
+    dst.exists ? dst.sha : null,
+    dst.exists ? `Pindah roster → merge/add ${mergedOrAdded.length} santri ke ${tujuan}` :
+                 `Buat ${tujuan} + seed ${mergedOrAdded.length} santri`
+  );
+  if (!wDst.ok) return json({ error: "Gagal menulis kelas tujuan", detail: wDst.error, status: wDst.status }, 502);
+
+  // --- Hapus dari asal: hanya baris yang *dipindah* (match()), sisanya dibiarkan
+  const remaining = src.data.filter(r => !match(r));
+  const sortedRemaining = sortByIdNumeric(remaining);
+  const wSrc = await writeJsonFile(
+    REPO,
+    asalPath,
+    TOKEN,
+    BRANCH,
+    sortedRemaining,
+    src.sha,
+    `Remove ${toMove.length} santri pindah dari ${asal}`
+  );
+  if (!wSrc.ok) return json({ error: "Gagal menulis kelas asal", detail: wSrc.error, status: wSrc.status }, 502);
+
+  return json({ success: true, moved: toMove.length, idMap, detail: mergedOrAdded }, 200);
+}
+
+export async function onRequest(ctx) {
+  if (!["POST", "OPTIONS"].includes(ctx.request.method.toUpperCase())) {
+    return json({ error: "Method Not Allowed" }, 405);
+  }
+}
