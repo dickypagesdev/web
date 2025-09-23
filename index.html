@@ -4048,10 +4048,11 @@ async function simpanDataMutabaah(saveBtn){
 
         let juzMurAll = 0;
         if (murCell){
-          const valTxt = murCell.dataset.murtotal || murCell.querySelector('.mur-val')?.textContent || "";
-          const parsedTotal = parseNum(valTxt);
-          const sumSess = parseNum(s1.juz)+parseNum(s2.juz)+parseNum(s3.juz);
-          juzMurAll = parsedTotal ? parsedTotal : sumSess;
+          const valTxt = (murCell.dataset.murtotal ?? "").trim();
+			const parsedTotal = parseNum(valTxt);
+			const sumSess = parseNum(s1.juz) + parseNum(s2.juz) + parseNum(s3.juz);
+			// pakai parsedTotal meskipun 0 (bukan truthy check)
+			juzMurAll = Number.isFinite(parsedTotal) ? parsedTotal : sumSess;
         } else {
           const sumSess = parseNum(s1.juz)+parseNum(s2.juz)+parseNum(s3.juz);
           juzMurAll = sumSess || parseNum(existing?.juzmurajaah || 0);
@@ -6999,10 +7000,12 @@ function fillJuzSelect(id){
     [...rows].forEach(tr=>{
       if(tr.querySelector('.murajaah-cell')) return;
       const td=document.createElement('td'); td.className='murajaah-cell';
-      td.innerHTML=`
-        <div class="mur-val" style="font-weight:600">0.00 juz</div>
-        <div class="mur-label" style="font-size:11px; color:#6b7280;"></div>
-        <button type="button" class="btn-mur" style="margin-top:6px; padding:4px 8px;">Input</button>`;
+      td.dataset.murtotal = "";          // sumber kebenaran awal: kosong
+		td.dataset.murlabel = "";
+		td.innerHTML = `
+  		<div class="mur-val" style="font-weight:600;min-height:1em">—</div>
+  		<div class="mur-label" style="font-size:11px; color:#6b7280;"></div>
+  		<button type="button" class="btn-mur" style="margin-top:6px; padding:4px 8px;">Input</button>`;
       tr.appendChild(td);
       td.querySelector('.btn-mur').addEventListener('click',()=>openModalForRow(tr));
     });
@@ -7043,8 +7046,8 @@ function fillJuzSelect(id){
           const id  = String(tr.children?.[0]?.textContent||'').trim();
           const rec = (nis && byNis.get(nis)) || (id && byId.get(id)) || null;
 
-          const total=parseNum(rec?.juzmurajaah||rec?.totalJuz||0);
-          const valEl=cell.querySelector('.mur-val'); valEl && (valEl.textContent=`${total.toFixed(2)} juz`);
+		  const total = parseNum(rec?.juzmurajaah ?? 0);   // hanya pakai data murajaah
+		  const valEl=cell.querySelector('.mur-val'); valEl && (valEl.textContent=`${total.toFixed(2)} juz`);
           cell.dataset.murtotal=String(total.toFixed(2));
 
           const setSA=(src,dsS,dsA)=>{ if(!src){cell.dataset[dsS]='';cell.dataset[dsA]='';return;} const [s,a]=String(src).split(':'); cell.dataset[dsS]=s||''; cell.dataset[dsA]=a||''; };
