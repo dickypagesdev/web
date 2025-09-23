@@ -797,36 +797,28 @@ function toggleLihatPassword() {
    =========================== */
 async function ambilDaftarKelas() {
   const container = document.getElementById("kelasCheckboxContainer");
-  // render SELECT scrollable
   container.innerHTML = '<select id="kelasSelect" multiple size="10" style="width:100%;margin:6px 0;"></select>';
   const sel = document.getElementById("kelasSelect");
 
   try {
-    // 1) Endpoint internal (utama)
+    // Ambil daftar kelas dari API D1
     let list = [];
-    try {
-      const r = await fetch("/api/ambil-kelas");
-      list = await r.json();
-    } catch (_) {}
+    const r = await fetch("/api/ambil-kelas");
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    list = await r.json();
 
-    // 2) Fallback GitHub jika kosong
+    // Validasi isi
     if (!Array.isArray(list) || list.length === 0) {
-      const gh = await fetch("https://api.github.com/repos/dickypagesdev/server/contents");
-      const data = await gh.json();
-      list = (Array.isArray(data) ? data : [])
-        .filter(file => /^kelas_\d+\.json$/i.test(file.name))
-        .map(file => file.name.replace(/\.json$/,''));
-    }
-
-    if (!Array.isArray(list) || list.length === 0) {
-      sel.outerHTML = "❌ Tidak ada kelas ditemukan.";
+      sel.outerHTML = "❌ Tidak ada kelas di database. Tambahkan dulu lewat menu Tambah Kelas.";
       return;
     }
 
+    // Render opsi sekali saja
     sel.innerHTML = list.map(kelas => `<option value="${kelas}">${kelas}</option>`).join('');
   } catch (err) {
     console.error("Gagal memuat kelas:", err);
-    sel.outerHTML = "❌ Gagal memuat kelas.";
+    // Ganti select dengan pesan error jika gagal
+    if (sel) sel.replaceWith(document.createTextNode("❌ Gagal memuat kelas."));
   }
 }
 
@@ -3237,7 +3229,8 @@ async function loadSantriData() {
   try {
     // Roster santri (MASTER)
     const resSantri = await fetch(`/api/getSantri?kelas=${encodeURIComponent(kelas)}&t=${Date.now()}`);
-    let santriData = await resSantri.json();
+let santriData = await resSantri.json().catch(() => []);
+if (!Array.isArray(santriData)) santriData = [];   // <<< penting: kalau API balik {error:...}
 
     window.semesterMap   = {};
     window.jenjangMap    = {};
@@ -3261,10 +3254,9 @@ async function loadSantriData() {
     const endFilter = tanggalFilterAkhir ? tanggalFilterAkhir.value : "";
 
     if (endFilter && endFilter !== tanggal) {
-      const resAbsensiRange = await fetch(
-        `/api/getAbsensiRange?kelas=${encodeURIComponent(kelas)}&start=${encodeURIComponent(tanggal)}&end=${encodeURIComponent(endFilter)}&t=${Date.now()}`
-      );
-      absensiRaw = await resAbsensiRange.json();
+      const resAbsensiRange = await fetch(`/api/getAbsensiRange?kelas=${encodeURIComponent(kelas)}&start=${encodeURIComponent(tanggal)}&end=${encodeURIComponent(endFilter)}&t=${Date.now()}`);
+		let d = await resAbsensiRange.json();
+		absensiRaw = Array.isArray(d) ? d : (d?.list || []);
       if (!Array.isArray(absensiRaw)) absensiRaw = [];
     } else {
       const resAbsensi = await fetch(
@@ -3837,9 +3829,11 @@ row.querySelector(".total-halaman").textContent = result.total.toFixed(2);
     tanggalInput.addEventListener("change", loadSantriData);
 
 
+// ===== Save Data (meniru B57.html, tanpa hapus fungsi lain) =====
 async function simpanDataMutabaah(saveBtn){
   const rows  = document.querySelectorAll('#santri-table tbody tr');
 
+  // --- Resolve kelas & tanggal global (fleksibel) ---
   function resolveKelas(){
     const byWin=(window.kelasSelect?.value)||'';
     const byId =document.querySelector('#kelasSelect')?.value || document.querySelector('#kelas')?.value || '';
@@ -3866,6 +3860,7 @@ async function simpanDataMutabaah(saveBtn){
   const tanggalUtama = resolveTanggalGlobal();
   if (!kelas){ alert('Kelas belum terdeteksi.'); return; }
 
+  // helpers kecil
   const parseNum=(v)=>{ if(typeof v==='number')return Number.isFinite(v)?v:0; const s=String(v??'').replace(/[^0-9.,-]/g,'').replace(',', '.'); const n=parseFloat(s); return Number.isFinite(n)?n:0; };
   function getNamaFromCell(cell){ if(!cell)return ""; const first=cell.childNodes&&cell.childNodes[0]; const txt=(first&&first.textContent)?first.textContent:cell.textContent; return String(txt).trim(); }
   function getRowId(row){ const raw=row.children[0]?.textContent?.trim()||""; const asNum=parseInt(raw,10); return Number.isNaN(asNum)?raw:asNum; }
@@ -3878,13 +3873,16 @@ async function simpanDataMutabaah(saveBtn){
     const rest=parts.filter((_,i)=>i!==numIdx).map(p=>p.replace(/[^\p{L}\p{N}\-]/gu,'')).filter(Boolean);
     const gIdx=rest.findIndex(p=>/^[A-E]$/i.test(p));
     const huruf=gIdx!==-1?rest[gIdx].toUpperCase():null;
-    const teks =rest.filter((_,i)=>i!==gIdx && rest[i]!=='-');
+    const teks =rest.filter((_,i)=>i!==gIdx && rest[i]!=='-'); 
     return { nilai, predikatText:(teks.length?teks.join(' '):null), predikatHuruf:huruf };
   }
 
+  // === ABSENSI FLEX — persis pola B57 ===
   function buildAbsensi6(items, target){
     const t = Math.max(1, Math.min(6, Number(target)||1));
-    const chosen = (items||[]).filter(it=>it.checked).map(it=>String(it.key).toLowerCase().replace(/\d+$/,''));
+    const chosen = (items||[])
+      .filter(it=>it.checked)
+      .map(it=>String(it.key).toLowerCase().replace(/\d+$/,''));
     const out=[]; for(let i=0;i<t;i++) out.push(chosen[i]||"");
     return out;
   }
@@ -3899,10 +3897,7 @@ async function simpanDataMutabaah(saveBtn){
     for (const st of stOrder){
       for(let i=1;i<=perStatus;i++){
         const key=`${st}${i}`;
-        if (checkedSet.has(key) && seq<=t){
-          result.push(`${title(st)}${i}`);
-          seq++;
-        }
+        if (checkedSet.has(key) && seq<=t){ result.push(`${title(st)}${i}`); seq++; }
       }
     }
     return result;
@@ -3948,8 +3943,7 @@ async function simpanDataMutabaah(saveBtn){
     for (const [tanggal, rowsTanggal] of groupByTanggal.entries()){
       let dataLama=[];
       try{
-        const url = `/api/getAbsensi?kelas=${encodeURIComponent(kelas)}&tanggal=${encodeURIComponent(tanggal)}`;
-        const resLama=await fetch(url);
+        const resLama=await fetch(`/api/getAbsensi?kelas=${encodeURIComponent(kelas)}&tanggal=${encodeURIComponent(tanggal)}`);
         if(resLama.ok) dataLama=await resLama.json();
       }catch(e){ console.warn('Tidak bisa ambil data lama', e); }
 
@@ -3980,6 +3974,7 @@ async function simpanDataMutabaah(saveBtn){
         const totalHalaman = row.querySelector(".total-halaman")?.textContent ?? existing?.totalHalaman ?? "";
         const juzTerbaca   = row.querySelector(".juz-terbaca")?.textContent ?? existing?.juzTerbaca ?? "";
 
+        // Nilai umum (tetap ada)
         const nilaiCell = row.querySelector(".lihat-quran-btn")?.parentElement;
         const nilaiStr  = nilaiCell?.querySelector("div:nth-child(1)")?.innerText?.trim()||"";
         const parsed    = parseNilaiStr(nilaiStr);
@@ -3990,6 +3985,7 @@ async function simpanDataMutabaah(saveBtn){
           buttonCell = { nilai: parsed.nilai, predikatText, predikatHuruf };
         } else if (existing?.buttonCell) { buttonCell=existing.buttonCell; }
 
+        // -------- Murajaah (3 sesi + nilai/predikat per sesi) --------
         const murCell=row.querySelector('.murajaah-cell');
 
         function collectSess(i){
@@ -4014,6 +4010,7 @@ async function simpanDataMutabaah(saveBtn){
         let s3 = collectSess(3);
 
         if (!murCell){
+          // fallback bila tidak ada modal dataset
           s1 = {
             from: existing?.murFrom || "",
             to:   existing?.murTo   || "",
@@ -4051,10 +4048,11 @@ async function simpanDataMutabaah(saveBtn){
 
         let juzMurAll = 0;
         if (murCell){
-          const valTxt = murCell.dataset.murtotal || murCell.querySelector('.mur-val')?.textContent || "";
-          const parsedTotal = parseNum(valTxt);
-          const sumSess = parseNum(s1.juz)+parseNum(s2.juz)+parseNum(s3.juz);
-          juzMurAll = parsedTotal ? parsedTotal : sumSess;
+          const valTxt = (murCell.dataset.murtotal ?? "").trim();
+			const parsedTotal = parseNum(valTxt);
+			const sumSess = parseNum(s1.juz) + parseNum(s2.juz) + parseNum(s3.juz);
+			// pakai parsedTotal meskipun 0 (bukan truthy check)
+			juzMurAll = Number.isFinite(parsedTotal) ? parsedTotal : sumSess;
         } else {
           const sumSess = parseNum(s1.juz)+parseNum(s2.juz)+parseNum(s3.juz);
           juzMurAll = sumSess || parseNum(existing?.juzmurajaah || 0);
@@ -4086,18 +4084,25 @@ async function simpanDataMutabaah(saveBtn){
         const base = {
           ...existing,
           id, nis, nama, jenjang, semester,
+
           absensi: absensiExpandedStr,
-          absensiItems, absensiTarget, absensiChecked, absensiPercent, absensi6, absensiExpanded, absensiExpandedStr,
-          dari: `${surahDari}:${ayatDari}`,
-          sampai: `${surahSampai}:${ayatSampai}`,
+          absensiItems, absensiTarget, absensiChecked, absensiPercent, absensi6,
+          absensiExpanded, absensiExpandedStr,
+
+          dari:`${surahDari}:${ayatDari}`,
+          sampai:`${surahSampai}:${ayatSampai}`,
           totalJuz, halaman, totalHalaman, juzTerbaca, keterangan,
+
+          // Murajaah 3 sesi + skor/predikat
           juzmur1: Number(parseNum(s1.juz).toFixed(2)),
           juzmur2: Number(parseNum(s2.juz).toFixed(2)),
           juzmur3: Number(parseNum(s3.juz).toFixed(2)),
           juzmurajaah: juzMurAll,
+
           murFrom1: s1.from,  murTo1: s1.to,  murPages1: s1.pages, jFrom1: s1.jFrom, jTo1: s1.jTo,
           murFrom2: s2.from,  murTo2: s2.to,  murPages2: s2.pages, jFrom2: s2.jFrom, jTo2: s2.jTo,
           murFrom3: s3.from,  murTo3: s3.to,  murPages3: s3.pages, jFrom3: s3.jFrom, jTo3: s3.jTo,
+
           murScore1: (s1.score!=null ? Number(s1.score) : null),
           murScore2: (s2.score!=null ? Number(s2.score) : null),
           murScore3: (s3.score!=null ? Number(s3.score) : null),
@@ -4107,10 +4112,14 @@ async function simpanDataMutabaah(saveBtn){
           murPredHuruf1: s1.pHuruf || null,
           murPredHuruf2: s2.pHuruf || null,
           murPredHuruf3: s3.pHuruf || null,
+
           murSessions,
+
+          // Legacy
           murFrom:  murFromLegacy,
           murTo:    murToLegacy,
           murPages: murPagesLegacy,
+
           marks
         };
         const newData = buttonCell ? { ...base, buttonCell } : base;
@@ -4155,11 +4164,10 @@ async function simpanDataMutabaah(saveBtn){
   }
 }
 
-// listeners
+// Listener tombol (biarkan seperti semula)
 document.getElementById('save-btn')?.addEventListener('click', function(){ simpanDataMutabaah(this); });
 document.getElementById('save-btn-modal')?.addEventListener('click', function(){ simpanDataMutabaah(this); });
 document.getElementById('mur-save')?.addEventListener('click', function(){ simpanDataMutabaah(this); });
-
 
 
 
@@ -4406,107 +4414,158 @@ if (typeof window.drawTableHeader !== 'function') {
     });
   }
 
+// --- D1 helpers (sesuai getAbsensiRange.js yang kamu kirim) ---
+async function d1FetchAbsensi({ kelas, start, end, aggregate=false }) {
+  const url = `/api/getAbsensiRange?kelas=${encodeURIComponent(kelas)}&start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}${aggregate ? '&aggregate=1' : ''}&t=${Date.now()}`;
+  const res = await fetch(url);
+  if (!res.ok) throw new Error('getAbsensiRange gagal');
+  const json = await res.json();
+  // Wajib { aggregate:boolean, list:[] }
+  if (!json || typeof json !== 'object' || !('aggregate' in json) || !Array.isArray(json.list)) {
+    throw new Error('Format getAbsensiRange tidak valid');
+  }
+  return json;
+}
+
+async function d1FetchAbsensiRawList({ kelas, start, end }) {
+  const j = await d1FetchAbsensi({ kelas, start, end, aggregate: false });
+  if (j.aggregate) return [];
+  return j.list || []; // daftar objek payload harian (sudah ada field "tanggal")
+}
+
+async function d1FetchAbsensiAggMap({ kelas, start, end }) {
+  const j = await d1FetchAbsensi({ kelas, start, end, aggregate: true });
+  if (!j.aggregate) return new Map();
+  const m = new Map();
+  for (const r of j.list || []) {
+    const key = String(r.key || '').trim();
+    if (!key) continue;
+    m.set(key, {
+      totalJuz: Number(r.totalJuz || 0), // dari D1 SUM(total_juz_num)
+      totalMur: Number(r.totalMur || 0), // dari D1 SUM(total_mur_num)
+    });
+  }
+  return m;
+}
+
   // ====== Ambil & Agregasi Data (Rekap Kelas) ======
   async function collectRekapData(){
-    const kelasEl = (typeof kelasSelect !== 'undefined' && kelasSelect) ? kelasSelect : document.getElementById('kelasSelect');
-    const kelas = kelasEl?.value || '';
-    const startDate = document.querySelector('#pdf-start-date')?.value;
-    const endDate   = document.querySelector('#pdf-end-date')?.value;
-    if (!startDate || !endDate) throw new Error('Mohon pilih tanggal mulai dan tanggal akhir.');
+  const kelasEl = (typeof kelasSelect !== 'undefined' && kelasSelect) ? kelasSelect : document.getElementById('kelasSelect');
+  const kelas = kelasEl?.value || '';
+  const startDate = document.querySelector('#pdf-start-date')?.value;
+  const endDate   = document.querySelector('#pdf-end-date')?.value;
+  if (!startDate || !endDate) throw new Error('Mohon pilih tanggal mulai dan tanggal akhir.');
 
-    const { line: kelasLine } = buildKelasKelompokLine(kelas, kelasEl);
+  const { line: kelasLine } = buildKelasKelompokLine(kelas, kelasEl);
 
-    // 1) ABSENSI
-    const absUrl = `/api/getAbsensiRange?kelas=${encodeURIComponent(kelas)}&start=${encodeURIComponent(startDate)}&end=${encodeURIComponent(endDate)}&t=${Date.now()}`;
-    const resAbs = await fetch(absUrl);
-    if (!resAbs.ok) throw new Error('Gagal mengambil data absensi.');
-    let allData = await resAbs.json();
-    if (!Array.isArray(allData) || allData.length === 0) throw new Error('Tidak ada data pada rentang tanggal tersebut.');
+  // 1) ABSENSI: raw (detail harian) + aggregate (ringkas per santri)
+  const [rawList, aggMapD1] = await Promise.all([
+    d1FetchAbsensiRawList({ kelas, start:startDate, end:endDate }),
+    d1FetchAbsensiAggMap({ kelas, start:startDate, end:endDate }).catch(()=>new Map())
+  ]);
+  if (!Array.isArray(rawList) || rawList.length === 0) {
+    throw new Error('Tidak ada data pada rentang tanggal tersebut.');
+  }
 
-    // 2) ROSTER
-    const resSantri = await fetch(`/api/getSantri?kelas=${encodeURIComponent(kelas)}&t=${Date.now()}`);
-    const santriData = await resSantri.json().catch(()=>[]) || [];
+  // 2) ROSTER
+  const resSantri = await fetch(`/api/getSantri?kelas=${encodeURIComponent(kelas)}&t=${Date.now()}`);
+  let santriData = await resSantri.json().catch(()=>[]);
+  if (!Array.isArray(santriData)) santriData = [];
 
-    // helper index
-    const keyId   = v => (v === 0 || v) ? String(v).trim() : "";
-    const keyNis  = v => (v === 0 || v) ? String(v).trim() : "";
-    const keyName = v => String(v || "").trim().toLowerCase();
-    const byIdMap = (arr, pick = x => x) => { const m = new Map(); for (const a of arr||[]) { const id = keyId(a?.id); if (id) m.set(id, pick(a)); } return m; };
-    const byNisMap = (arr, pick = x => x) => { const m = new Map(); for (const a of arr||[]) { const nis = keyNis(a?.nis); if (nis) m.set(nis, pick(a)); } return m; };
-    const byNameMap = (arr, pick = x => x) => { const m = new Map(); for (const a of arr||[]) { const nm = keyName(a?.nama); if (nm && !m.has(nm)) m.set(nm, pick(a)); } return m; };
-    const rosterById   = byIdMap(santriData, s => s);
-    const rosterByNis  = byNisMap(santriData, s => s);
-    const rosterByName = byNameMap(santriData, s => s);
+  // index helper
+  const keyId   = v => (v === 0 || v) ? String(v).trim() : "";
+  const keyNis  = v => (v === 0 || v) ? String(v).trim() : "";
+  const keyName = v => String(v || "").trim().toLowerCase();
+  const byIdMap = (arr, pick = x => x) => { const m = new Map(); for (const a of arr||[]) { const id = keyId(a?.id); if (id) m.set(id, pick(a)); } return m; };
+  const byNisMap = (arr, pick = x => x) => { const m = new Map(); for (const a of arr||[]) { const nis = keyNis(a?.nis); if (nis) m.set(nis, pick(a)); } return m; };
+  const byNameMap = (arr, pick = x => x) => { const m = new Map(); for (const a of arr||[]) { const nm = keyName(a?.nama); if (nm && !m.has(nm)) m.set(nm, pick(a)); } return m; };
+  const rosterById   = byIdMap(santriData, s => s);
+  const rosterByNis  = byNisMap(santriData, s => s);
+  const rosterByName = byNameMap(santriData, s => s);
 
-    // 3) Normalisasi (+ inject slot metrics)
-    const allDataNorm = allData.map(r => {
-      let id   = keyId(r?.id ?? "");
-      let nis  = keyNis(r?.nis ?? "");
-      const nmK = keyName(r?.nama);
-      if (!nis && id && rosterById.get(id)?.nis) nis = keyNis(rosterById.get(id).nis);
-      if (!nis && nmK && rosterByName.get(nmK)?.nis) nis = keyNis(rosterByName.get(nmK).nis);
+  // 3) Normalisasi raw + injeksi slot
+  const allDataNorm = rawList.map(r => {
+    let id   = keyId(r?.id ?? "");
+    let nis  = keyNis(r?.nis ?? "");
+    const nmK = keyName(r?.nama);
+    if (!nis && id && rosterById.get(id)?.nis) nis = keyNis(rosterById.get(id).nis);
+    if (!nis && nmK && rosterByName.get(nmK)?.nis) nis = keyNis(rosterByName.get(nmK).nis);
 
-      let nama = r?.nama;
-      if (!nama && nis && rosterByNis.get(nis)?.nama) nama = rosterByNis.get(nis).nama;
-      if (!nama && id  && rosterById.get(id)?.nama)  nama = rosterById.get(id).nama;
-      if (!id && nis && rosterByNis.get(nis)?.id) id = keyId(rosterByNis.get(nis).id);
+    let nama = r?.nama;
+    if (!nama && nis && rosterByNis.get(nis)?.nama) nama = rosterByNis.get(nis).nama;
+    if (!nama && id  && rosterById.get(id)?.nama)  nama = rosterById.get(id).nama;
+    if (!id && nis && rosterByNis.get(nis)?.id) id = keyId(rosterByNis.get(nis).id);
 
-      let semester = (r?.semester != null) ? Number(r.semester) : null;
-      if (semester == null) {
-        if (nis && rosterByNis.get(nis)?.semester != null) semester = Number(rosterByNis.get(nis).semester);
-        else if (id && rosterById.get(id)?.semester != null) semester = Number(rosterById.get(id).semester);
-      }
-
-      let jenjang = r?.jenjang ?? null;
-      if (!jenjang && nis && rosterByNis.get(nis)?.jenjang) jenjang = rosterByNis.get(nis).jenjang;
-      if (!jenjang && id  && rosterById.get(id)?.jenjang)  jenjang = rosterById.get(id).jenjang;
-
-      let keterangan = r?.keterangan ?? null;
-      if (!keterangan && nis && rosterByNis.get(nis)?.keterangan) keterangan = rosterByNis.get(nis).keterangan;
-      if (!keterangan && id  && rosterById.get(id)?.keterangan)  keterangan = rosterById.get(id).keterangan;
-
-      const slot = _slotMetricsFromRecord(r);
-
-      return { ...r, ...slot, id, nis, nama, semester, jenjang, keterangan, tanggal: r?.tanggal ? String(r.tanggal).slice(0,10) : null };
-    });
-
-    // KBM hari unik (kelas)
-    const kbmDaySet = new Set();
-    (allDataNorm||[]).forEach(it => { if (it?.tanggal) kbmDaySet.add(String(it.tanggal)); });
-    const kbmDays = kbmDaySet.size;
-
-    // Agregasi (base) + MERGE slot
-    const aggMap = PDF_buildRekapPerKey(allDataNorm);
-    const slotAgg = _aggregateSlotsPerKey(allDataNorm);
-    for (const [k, a] of slotAgg.entries()) {
-      if (!aggMap[k]) continue;
-      aggMap[k].hadirSlots  = a.hadir;
-      aggMap[k].izinSlots   = a.izin;
-      aggMap[k].sakitSlots  = a.sakit;
-      aggMap[k].alphaSlots  = a.alpha;
-      aggMap[k].targetSlots = a.target;
+    let semester = (r?.semester != null) ? Number(r.semester) : null;
+    if (semester == null) {
+      if (nis && rosterByNis.get(nis)?.semester != null) semester = Number(rosterByNis.get(nis).semester);
+      else if (id && rosterById.get(id)?.semester != null) semester = Number(rosterById.get(id).semester);
     }
 
-    const allRows = Object.values(aggMap).sort((a,b)=> (a.nama||a.nis||a.id).localeCompare(b.nama||b.nis||b.id,'id'));
-    const rows = allRows.filter(r => (typeof r.nis === 'string' ? r.nis.trim() !== '' : !!r.nis));
-    if (rows.length === 0) throw new Error('Tidak ada data ber-NIS pada rentang tanggal tersebut.');
+    let jenjang = r?.jenjang ?? null;
+    if (!jenjang && nis && rosterByNis.get(nis)?.jenjang) jenjang = rosterByNis.get(nis).jenjang;
+    if (!jenjang && id  && rosterById.get(id)?.jenjang)  jenjang = rosterById.get(id).jenjang;
 
-    // Ringkasan total (pakai slot)
-    let totJuz=0, totH=0, totA=0, totS=0, totI=0, totPages=0;
-    rows.forEach(r=>{
-      totJuz += r.totalJuz;
-      totH   += (Number(r.hadirSlots ?? r.hadir) || 0);
-      totA   += (Number(r.alphaSlots ?? r.alpha) || 0);
-      totS   += (Number(r.sakitSlots ?? r.sakit) || 0);
-      totI   += (Number(r.izinSlots  ?? r.izin)  || 0);
-      totPages += r.totalPageSum;
-    });
+    let keterangan = r?.keterangan ?? null;
+    if (!keterangan && nis && rosterByNis.get(nis)?.keterangan) keterangan = rosterByNis.get(nis).keterangan;
+    if (!keterangan && id  && rosterById.get(id)?.keterangan)  keterangan = rosterById.get(id).keterangan;
 
+    const slot = _slotMetricsFromRecord(r);
     return {
-      kelas, startDate, endDate, kelasLine, kbmDays, rows, allDataNorm,
-      totals: { totJuz, totH, totA, totS, totI, totPages }
+      ...r, ...slot, id, nis, nama, semester, jenjang, keterangan,
+      tanggal: r?.tanggal ? String(r.tanggal).slice(0,10) : null
     };
+  });
+
+  // 4) KBM hari unik
+  const kbmDaySet = new Set();
+  (allDataNorm||[]).forEach(it => { if (it?.tanggal) kbmDaySet.add(String(it.tanggal)); });
+  const kbmDays = kbmDaySet.size;
+
+  // 5) Agregasi base + merge angka aggregate D1
+  const aggMap = PDF_buildRekapPerKey(allDataNorm);
+
+  // totalJuz / totalMur dari server (cepat & konsisten)
+  Object.values(aggMap).forEach(r => {
+    const k = (r.nis && String(r.nis).trim()) || (r.id && String(r.id).trim());
+    if (!k) return;
+    const a = aggMapD1.get(k);
+    if (a) {
+      r.totalJuz    = Number(a.totalJuz || r.totalJuz || 0);
+      r.murTotalJuz = Number(a.totalMur || r.murTotalJuz || 0);
+      // r.murCount tetap dihitung dari harian (berapa hari ada mur>0)
+    }
+  });
+
+  // 6) Merge slot (hadir/izin/sakit/alpha + target)
+  const slotAgg = _aggregateSlotsPerKey(allDataNorm);
+  for (const [k, a] of slotAgg.entries()) {
+    if (!aggMap[k]) continue;
+    aggMap[k].hadirSlots  = a.hadir;
+    aggMap[k].izinSlots   = a.izin;
+    aggMap[k].sakitSlots  = a.sakit;
+    aggMap[k].alphaSlots  = a.alpha;
+    aggMap[k].targetSlots = a.target;
   }
+
+  const allRows = Object.values(aggMap).sort((a,b)=> (a.nama||a.nis||a.id).localeCompare(b.nama||b.nis||b.id,'id'));
+  const rows = allRows.filter(r => (typeof r.nis === 'string' ? r.nis.trim() !== '' : !!r.nis));
+  if (rows.length === 0) throw new Error('Tidak ada data ber-NIS pada rentang tanggal tersebut.');
+
+  // 7) Ringkasan total (pakai slot)
+  let totJuz=0, totH=0, totA=0, totS=0, totI=0, totPages=0;
+  rows.forEach(r=>{
+    totJuz += r.totalJuz;
+    totH   += (Number(r.hadirSlots ?? r.hadir) || 0);
+    totA   += (Number(r.alphaSlots ?? r.alpha) || 0);
+    totS   += (Number(r.sakitSlots ?? r.sakit) || 0);
+    totI   += (Number(r.izinSlots  ?? r.izin)  || 0);
+    totPages += r.totalPageSum;
+  });
+
+  return { kelas, startDate, endDate, kelasLine, kbmDays, rows, allDataNorm,
+           totals: { totJuz, totH, totA, totS, totI, totPages } };
+}
 
   // === Isi dropdown santri (modal) ===
   async function populateSantriSelect(){
@@ -4539,7 +4598,8 @@ if (typeof window.drawTableHeader !== 'function') {
           arr.map(x => `<option value="${x.key}" data-nama="${(x.nama||'').replace(/"/g,'&quot;')}">${x.nis ? x.nis : x.id} — ${x.nama}</option>`).join('');
       } else {
         const resSantri = await fetch(`/api/getSantri?kelas=${encodeURIComponent(kelas)}&t=${Date.now()}`);
-        const data = await resSantri.json().catch(()=>[]) || [];
+let santriData = await resSantri.json().catch(() => []);
+if (!Array.isArray(santriData)) santriData = [];   // <<< penting: kalau API balik {error:...}
         const arr = (data||[]).map(s => ({ key: (s.nis||s.id||'').toString(), nama: s.nama||'-', nis: s.nis||'', id: s.id||'' }))
                               .filter(x => x.key).sort((a,b)=>a.nama.localeCompare(b.nama,'id'));
         sel.innerHTML = `<option value="">— Pilih santri —</option>` +
@@ -4921,98 +4981,111 @@ if (typeof window.drawTableHeader !== 'function') {
 
   // ====== Ambil & Agregasi Data utk 1 kelas spesifik ======
   async function collectRekapDataForClass(kelasKey, startDate, endDate){
-    const { line: kelasLine } = _kelasKelompokLineFor(kelasKey);
+  const { line: kelasLine } = _kelasKelompokLineFor(kelasKey);
 
-    // 1) ABSENSI
-    const absUrl = `/api/getAbsensiRange?kelas=${encodeURIComponent(kelasKey)}&start=${encodeURIComponent(startDate)}&end=${encodeURIComponent(endDate)}&t=${Date.now()}`;
-    const resAbs = await fetch(absUrl);
-    if (!resAbs.ok) throw new Error('Gagal mengambil data absensi.');
-    let allData = await resAbs.json();
-    if (!Array.isArray(allData) || allData.length === 0) return null;
+  // 1) ABSENSI: raw + aggregate
+  const [rawList, aggMapD1] = await Promise.all([
+    d1FetchAbsensiRawList({ kelas: kelasKey, start: startDate, end: endDate }),
+    d1FetchAbsensiAggMap({ kelas: kelasKey, start: startDate, end: endDate }).catch(()=>new Map())
+  ]);
+  if (!Array.isArray(rawList) || rawList.length === 0) return null;
 
-    // 2) ROSTER
-    const resSantri = await fetch(`/api/getSantri?kelas=${encodeURIComponent(kelasKey)}&t=${Date.now()}`);
-    const santriData = await resSantri.json().catch(()=>[]) || [];
+  // 2) ROSTER
+  const resSantri = await fetch(`/api/getSantri?kelas=${encodeURIComponent(kelasKey)}&t=${Date.now()}`);
+  let santriData = await resSantri.json().catch(()=>[]);
+  if (!Array.isArray(santriData)) santriData = [];
 
-    // helper index
-    const keyId   = v => (v === 0 || v) ? String(v).trim() : "";
-    const keyNis  = v => (v === 0 || v) ? String(v).trim() : "";
-    const keyName = v => String(v || "").trim().toLowerCase();
-    const byIdMap = (arr, pick = x => x) => { const m = new Map(); for (const a of arr||[]) { const id = keyId(a?.id); if (id) m.set(id, pick(a)); } return m; };
-    const byNisMap = (arr, pick = x => x) => { const m = new Map(); for (const a of arr||[]) { const nis = keyNis(a?.nis); if (nis) m.set(nis, pick(a)); } return m; };
-    const byNameMap = (arr, pick = x => x) => { const m = new Map(); for (const a of arr||[]) { const nm = keyName(a?.nama); if (nm && !m.has(nm)) m.set(nm, pick(a)); } return m; };
-    const rosterById   = byIdMap(santriData, s => s);
-    const rosterByNis  = byNisMap(santriData, s => s);
-    const rosterByName = byNameMap(santriData, s => s);
+  const keyId   = v => (v === 0 || v) ? String(v).trim() : "";
+  const keyNis  = v => (v === 0 || v) ? String(v).trim() : "";
+  const keyName = v => String(v || "").trim().toLowerCase();
+  const byIdMap = (arr, pick = x => x) => { const m = new Map(); for (const a of arr||[]) { const id = keyId(a?.id); if (id) m.set(id, pick(a)); } return m; };
+  const byNisMap = (arr, pick = x => x) => { const m = new Map(); for (const a of arr||[]) { const nis = keyNis(a?.nis); if (nis) m.set(nis, pick(a)); } return m; };
+  const byNameMap = (arr, pick = x => x) => { const m = new Map(); for (const a of arr||[]) { const nm = keyName(a?.nama); if (nm && !m.has(nm)) m.set(nm, pick(a)); } return m; };
+  const rosterById   = byIdMap(santriData, s => s);
+  const rosterByNis  = byNisMap(santriData, s => s);
+  const rosterByName = byNameMap(santriData, s => s);
 
-    // 3) Normalisasi (+ inject slot metrics)
-    const allDataNorm = allData.map(r => {
-      let id   = keyId(r?.id ?? "");
-      let nis  = keyNis(r?.nis ?? "");
-      const nmK = keyName(r?.nama);
-      if (!nis && id && rosterById.get(id)?.nis) nis = keyNis(rosterById.get(id).nis);
-      if (!nis && nmK && rosterByName.get(nmK)?.nis) nis = keyNis(rosterByName.get(nmK).nis);
+  // 3) Normalisasi raw + injeksi slot
+  const allDataNorm = rawList.map(r => {
+    let id   = keyId(r?.id ?? "");
+    let nis  = keyNis(r?.nis ?? "");
+    const nmK = keyName(r?.nama);
+    if (!nis && id && rosterById.get(id)?.nis) nis = keyNis(rosterById.get(id).nis);
+    if (!nis && nmK && rosterByName.get(nmK)?.nis) nis = keyNis(rosterByName.get(nmK).nis);
 
-      let nama = r?.nama;
-      if (!nama && nis && rosterByNis.get(nis)?.nama) nama = rosterByNis.get(nis).nama;
-      if (!nama && id  && rosterById.get(id)?.nama)  nama = rosterById.get(id).nama;
-      if (!id && nis && rosterByNis.get(nis)?.id) id = keyId(rosterByNis.get(nis).id);
+    let nama = r?.nama;
+    if (!nama && nis && rosterByNis.get(nis)?.nama) nama = rosterByNis.get(nis).nama;
+    if (!nama && id  && rosterById.get(id)?.nama)  nama = rosterById.get(id).nama;
+    if (!id && nis && rosterByNis.get(nis)?.id) id = keyId(rosterByNis.get(nis).id);
 
-      let semester = (r?.semester != null) ? Number(r.semester) : null;
-      if (semester == null) {
-        if (nis && rosterByNis.get(nis)?.semester != null) semester = Number(rosterByNis.get(nis).semester);
-        else if (id && rosterById.get(id)?.semester != null) semester = Number(rosterById.get(id).semester);
-      }
-
-      let jenjang = r?.jenjang ?? null;
-      if (!jenjang && nis && rosterByNis.get(nis)?.jenjang) jenjang = rosterByNis.get(nis).jenjang;
-      if (!jenjang && id  && rosterById.get(id)?.jenjang)  jenjang = rosterById.get(id).jenjang;
-
-      let keterangan = r?.keterangan ?? null;
-      if (!keterangan && nis && rosterByNis.get(nis)?.keterangan) keterangan = rosterByNis.get(nis).keterangan;
-      if (!keterangan && id  && rosterById.get(id)?.keterangan)  keterangan = rosterById.get(id).keterangan;
-
-      const slot = _slotMetricsFromRecord(r);
-
-      return { ...r, ...slot, id, nis, nama, semester, jenjang, keterangan, tanggal: r?.tanggal ? String(r.tanggal).slice(0,10) : null };
-    });
-
-    // KBM hari unik
-    const kbmDaySet = new Set();
-    (allDataNorm||[]).forEach(it => { if (it?.tanggal) kbmDaySet.add(String(it.tanggal)); });
-    const kbmDays = kbmDaySet.size;
-
-    // Agregasi (base) + MERGE slot
-    const aggMap = PDF_buildRekapPerKey(allDataNorm);
-    const slotAgg = _aggregateSlotsPerKey(allDataNorm);
-    for (const [k, a] of slotAgg.entries()) {
-      if (!aggMap[k]) continue;
-      aggMap[k].hadirSlots  = a.hadir;
-      aggMap[k].izinSlots   = a.izin;
-      aggMap[k].sakitSlots  = a.sakit;
-      aggMap[k].alphaSlots  = a.alpha;
-      aggMap[k].targetSlots = a.target;
+    let semester = (r?.semester != null) ? Number(r.semester) : null;
+    if (semester == null) {
+      if (nis && rosterByNis.get(nis)?.semester != null) semester = Number(rosterByNis.get(nis).semester);
+      else if (id && rosterById.get(id)?.semester != null) semester = Number(rosterById.get(id).semester);
     }
 
-    const allRows = Object.values(aggMap).sort((a,b)=> (a.nama||a.nis||a.id).localeCompare(b.nama||b.nis||b.id,'id'));
-    const rows = allRows.filter(r => (typeof r.nis === 'string' ? r.nis.trim() !== '' : !!r.nis));
-    if (!rows.length) return null;
+    let jenjang = r?.jenjang ?? null;
+    if (!jenjang && nis && rosterByNis.get(nis)?.jenjang) jenjang = rosterByNis.get(nis).jenjang;
+    if (!jenjang && id  && rosterById.get(id)?.jenjang)  jenjang = rosterById.get(id).jenjang;
 
-    // Ringkasan total pakai slot
-    let totJuz=0, totH=0, totA=0, totS=0, totI=0, totPages=0;
-    rows.forEach(r=>{
-      totJuz += r.totalJuz;
-      totH   += (Number(r.hadirSlots ?? r.hadir) || 0);
-      totA   += (Number(r.alphaSlots ?? r.alpha) || 0);
-      totS   += (Number(r.sakitSlots ?? r.sakit) || 0);
-      totI   += (Number(r.izinSlots  ?? r.izin)  || 0);
-      totPages += r.totalPageSum;
-    });
+    let keterangan = r?.keterangan ?? null;
+    if (!keterangan && nis && rosterByNis.get(nis)?.keterangan) keterangan = rosterByNis.get(nis).keterangan;
+    if (!keterangan && id  && rosterById.get(id)?.keterangan)  keterangan = rosterById.get(id).keterangan;
 
-    return { kelas: kelasKey, startDate, endDate, kelasLine, kbmDays, rows,
-      totals: { totJuz, totH, totA, totS, totI, totPages }
+    const slot = _slotMetricsFromRecord(r);
+    return {
+      ...r, ...slot, id, nis, nama, semester, jenjang, keterangan,
+      tanggal: r?.tanggal ? String(r.tanggal).slice(0,10) : null
     };
+  });
+
+  // 4) KBM unik
+  const kbmDaySet = new Set();
+  (allDataNorm||[]).forEach(it => { if (it?.tanggal) kbmDaySet.add(String(it.tanggal)); });
+  const kbmDays = kbmDaySet.size;
+
+  // 5) Agregasi base + merge angka aggregate D1
+  const aggMap = PDF_buildRekapPerKey(allDataNorm);
+
+  Object.values(aggMap).forEach(r => {
+    const k = (r.nis && String(r.nis).trim()) || (r.id && String(r.id).trim());
+    if (!k) return;
+    const a = aggMapD1.get(k);
+    if (a) {
+      r.totalJuz    = Number(a.totalJuz || r.totalJuz || 0);
+      r.murTotalJuz = Number(a.totalMur || r.murTotalJuz || 0);
+    }
+  });
+
+  // 6) Merge slot
+  const slotAgg = _aggregateSlotsPerKey(allDataNorm);
+  for (const [k, a] of slotAgg.entries()) {
+    if (!aggMap[k]) continue;
+    aggMap[k].hadirSlots  = a.hadir;
+    aggMap[k].izinSlots   = a.izin;
+    aggMap[k].sakitSlots  = a.sakit;
+    aggMap[k].alphaSlots  = a.alpha;
+    aggMap[k].targetSlots = a.target;
   }
+
+  const allRows = Object.values(aggMap).sort((a,b)=> (a.nama||a.nis||a.id).localeCompare(b.nama||b.nis||b.id,'id'));
+  const rows = allRows.filter(r => (typeof r.nis === 'string' ? r.nis.trim() !== '' : !!r.nis));
+  if (!rows.length) return null;
+
+  // 7) Ringkasan kelas
+  let totJuz=0, totH=0, totA=0, totS=0, totI=0, totPages=0;
+  rows.forEach(r=>{
+    totJuz += r.totalJuz;
+    totH   += (Number(r.hadirSlots ?? r.hadir) || 0);
+    totA   += (Number(r.alphaSlots ?? r.alpha) || 0);
+    totS   += (Number(r.sakitSlots ?? r.sakit) || 0);
+    totI   += (Number(r.izinSlots  ?? r.izin)  || 0);
+    totPages += r.totalPageSum;
+  });
+
+  return { kelas: kelasKey, startDate, endDate, kelasLine, kbmDays, rows,
+           totals: { totJuz, totH, totA, totS, totI, totPages } };
+}
 
   // ===== PDF ALL KELAS =====
   async function pdfAllKelasDownload(){
@@ -6992,10 +7065,12 @@ function fillJuzSelect(id){
     [...rows].forEach(tr=>{
       if(tr.querySelector('.murajaah-cell')) return;
       const td=document.createElement('td'); td.className='murajaah-cell';
-      td.innerHTML=`
-        <div class="mur-val" style="font-weight:600">0.00 juz</div>
-        <div class="mur-label" style="font-size:11px; color:#6b7280;"></div>
-        <button type="button" class="btn-mur" style="margin-top:6px; padding:4px 8px;">Input</button>`;
+      td.dataset.murtotal = "";          // sumber kebenaran awal: kosong
+		td.dataset.murlabel = "";
+		td.innerHTML = `
+  		<div class="mur-val" style="font-weight:600;min-height:1em">—</div>
+  		<div class="mur-label" style="font-size:11px; color:#6b7280;"></div>
+  		<button type="button" class="btn-mur" style="margin-top:6px; padding:4px 8px;">Input</button>`;
       tr.appendChild(td);
       td.querySelector('.btn-mur').addEventListener('click',()=>openModalForRow(tr));
     });
@@ -7036,8 +7111,8 @@ function fillJuzSelect(id){
           const id  = String(tr.children?.[0]?.textContent||'').trim();
           const rec = (nis && byNis.get(nis)) || (id && byId.get(id)) || null;
 
-          const total=parseNum(rec?.juzmurajaah||rec?.totalJuz||0);
-          const valEl=cell.querySelector('.mur-val'); valEl && (valEl.textContent=`${total.toFixed(2)} juz`);
+		  const total = parseNum(rec?.juzmurajaah ?? 0);   // hanya pakai data murajaah
+		  const valEl=cell.querySelector('.mur-val'); valEl && (valEl.textContent=`${total.toFixed(2)} juz`);
           cell.dataset.murtotal=String(total.toFixed(2));
 
           const setSA=(src,dsS,dsA)=>{ if(!src){cell.dataset[dsS]='';cell.dataset[dsA]='';return;} const [s,a]=String(src).split(':'); cell.dataset[dsS]=s||''; cell.dataset[dsA]=a||''; };
@@ -7177,6 +7252,7 @@ function fillJuzSelect(id){
       if (tr.querySelector('.total-mur-range')) return;
       const td = document.createElement('td');
       td.className = 'total-mur-range';
+      // placeholder awal; akan ditimpa oleh hitung()
       td.innerHTML = `0.00&nbsp;juz <span class="mur-range-badge" style="color:#999; font-size:12px">total 0%</span> <small class="mur-range-count" style="color:#6b7280">(0)</small>`;
       const murCell = tr.querySelector('.murajaah-cell');
       if (murCell && murCell.nextSibling) tr.insertBefore(td, murCell.nextSibling);
@@ -7202,7 +7278,7 @@ function fillJuzSelect(id){
       const r = await fetch('/api/getAutoUpdateAllJuzMur?t='+Date.now());
       if (r.ok){
         const arr = await r.json();
-        const it  = (arr||[]).find(x=>x.kelas===kelas);
+        const it  = (arr||[]).find(x=>String(x.kelas||"")===String(kelas));
         if (it && (it.fromDate || it.toDate)) return { fromDate: it.fromDate||"", toDate: it.toDate||"" };
       }
     }catch(_){}
@@ -7223,7 +7299,7 @@ function fillJuzSelect(id){
     const dari = $('#murRangeDari'); const sampai = $('#murRangeSampai');
     if (dari){ dari.max = todayStr; if (!dari.value || dari.value > todayStr) dari.value = todayStr; }
     if (sampai){ sampai.removeAttribute('max'); if (!sampai.value) sampai.value = todayStr; }
-    $('#murRangeStatus').textContent = '';
+    $('#murRangeStatus') && ($('#murRangeStatus').textContent = '');
     el.style.display = 'flex';
   }
 
@@ -7239,7 +7315,7 @@ function fillJuzSelect(id){
     if (!dari){ alert("Mohon pilih tanggal Dari."); return; }
     if (!sampai){ alert("Mohon pilih tanggal Sampai."); return; }
 
-    $('#murRangeStatus').textContent = "⏳ Menghitung…";
+    $('#murRangeStatus') && ($('#murRangeStatus').textContent = "⏳ Menghitung…");
 
     try{
       const res = await fetch(`/api/getAbsensiRange?kelas=${encodeURIComponent(kelas)}&start=${encodeURIComponent(dari)}&end=${encodeURIComponent(sampai)}&t=${Date.now()}`);
@@ -7310,6 +7386,7 @@ function fillJuzSelect(id){
           <span class="mur-range-badge" style="color:#6b7280; font-size:12px">total ${pSum}%</span>
           <small class="mur-range-count" style="color:#6b7280">(${rec?.cAll||0})</small>`;
 
+        // simpan jejak di dataset agar tidak "mentul"
         cell.dataset.murRangeTotal = totalNum.toFixed(2);
         cell.dataset.murRangePsum  = String(pSum);
         const pAvg = Math.floor((p1+p2+p3)/3);
@@ -7320,10 +7397,10 @@ function fillJuzSelect(id){
       await saveRangeServer(kelas, dari, sampai, totalKeys);
       saveRangeLocal(kelas, dari, sampai);
 
-      $('#murRangeStatus').textContent = "✅ Disimpan. Rentang ini akan otomatis terpakai saat refresh.";
+      $('#murRangeStatus') && ($('#murRangeStatus').textContent = "✅ Disimpan. Rentang ini akan otomatis terpakai saat refresh.");
     }catch(err){
       console.error(err);
-      $('#murRangeStatus').textContent = "❌ " + (err?.message || err);
+      $('#murRangeStatus') && ($('#murRangeStatus').textContent = "❌ " + (err?.message || err));
       alert("❌ Terjadi kesalahan: " + (err?.message || err));
     }
   }
@@ -7331,40 +7408,137 @@ function fillJuzSelect(id){
   window.bukaOverlayTotalMurRange = bukaOverlayTotalMurRange;
   $('#btnHitungTotalMur')?.addEventListener('click', hitungTotalMurRangeFromTable);
 
+  // ===== SCHEDULER & OBSERVER TABEL (fix “muncul lalu mentul 0.00”) =====
   let autoRanForKelas = "";
-  async function autoApplyMurRangeIfAvailable(){
-    const kelas = kelasNow(); const table = getSantriTable();
-    if (!kelas || !table) { setTimeout(autoApplyMurRangeIfAvailable, 120); return; }
-    if (autoRanForKelas === kelas) return;
-    const rows = table.tBodies?.[0]?.rows || [];
-    if (!rows.length){ setTimeout(autoApplyMurRangeIfAvailable, 120); return; }
+  let autoApplyLock = false;
+  let recalcTimer = null;
+  let runningCalc = false;
+  let tbodyObserver = null;
 
-    const { fromDate, toDate } = await getRangeForKelas(kelas);
-    if (fromDate && toDate){
-      if ($('#murRangeDari'))   $('#murRangeDari').value   = fromDate;
-      if ($('#murRangeSampai')) $('#murRangeSampai').value = toDate;
-      await hitungTotalMurRangeFromTable();
-      autoRanForKelas = kelas;
-    }
+  function debounce(fn, ms){
+    return function(...args){
+      clearTimeout(recalcTimer);
+      recalcTimer = setTimeout(()=>fn.apply(this,args), ms);
+    };
   }
+
+  async function scheduleRecalcMurRange(){
+    // only if range tersedia
+    const kelas = kelasNow();
+    if (!kelas) return;
+    const dari = $('#murRangeDari')?.value;
+    const sampai = $('#murRangeSampai')?.value;
+    if (!dari || !sampai) return;
+
+    if (runningCalc) return;
+    runningCalc = true;
+    try { await hitungTotalMurRangeFromTable(); }
+    finally { runningCalc = false; }
+  }
+  const scheduleRecalcMurRangeDebounced = debounce(scheduleRecalcMurRange, 100);
+
+  function watchTableBody(){
+    const table = getSantriTable();
+    const tbody = table?.tBodies?.[0];
+    if (!tbody) return;
+    if (tbodyObserver) { try{tbodyObserver.disconnect();}catch{} }
+    tbodyObserver = new MutationObserver((mut)=>{
+      // kalau baris berubah (render ulang), hitung lagi pakai rentang yang sudah diset
+      if (mut.some(m=>m.type==='childList')) {
+        scheduleRecalcMurRangeDebounced();
+      }
+    });
+    tbodyObserver.observe(tbody, { childList:true, subtree:false });
+  }
+
+  function waitForRows(timeoutMs=7000){
+    return new Promise(resolve=>{
+      const table = getSantriTable();
+      const tbody = table?.tBodies?.[0];
+      if (!tbody){ return resolve(false); }
+      if (tbody.rows.length){ return resolve(true); }
+      const obs = new MutationObserver(()=>{
+        if (tbody.rows.length){
+          obs.disconnect(); resolve(true);
+        }
+      });
+      obs.observe(tbody, {childList:true, subtree:false});
+      setTimeout(()=>{ try{obs.disconnect();}catch{} resolve(tbody.rows.length>0); }, timeoutMs);
+    });
+  }
+
+  async function autoApplyMurRangeIfAvailable(){
+    if (autoApplyLock) return;
+    autoApplyLock = true;
+    try{
+      const kelas = kelasNow();
+      const table = getSantriTable();
+      if (!kelas || !table){ setTimeout(()=>{ autoApplyLock=false; autoApplyMurRangeIfAvailable(); }, 150); return; }
+      if (autoRanForKelas === kelas){ autoApplyLock=false; return; }
+
+      ensureMurRangeColumn();
+
+      const ok = await waitForRows(7000);
+      if (!ok){ autoApplyLock=false; return; }
+
+      // mulai mengawasi tbody; jika render ulang -> recalc
+      watchTableBody();
+
+      const { fromDate, toDate } = await getRangeForKelas(kelas);
+      if (fromDate && toDate){
+        if ($('#murRangeDari'))   $('#murRangeDari').value   = fromDate;
+        if ($('#murRangeSampai')) $('#murRangeSampai').value = toDate;
+
+        requestAnimationFrame(()=> setTimeout(async ()=>{
+          try{
+            await hitungTotalMurRangeFromTable();
+            autoRanForKelas = kelas;
+          } finally {
+            autoApplyLock = false;
+          }
+        }, 0));
+        return;
+      }
+    } catch(e){
+      console.warn('autoApplyMurRangeIfAvailable:', e);
+    }
+    autoApplyLock = false;
+  }
+
   function afterTableRenderedMurRange(){
     ensureMurRangeColumn();
     autoApplyMurRangeIfAvailable();
   }
+
+  // Hook ke loadSantriData
   const _origLoad = window.loadSantriData;
   window.loadSantriData = async function(...args){
-    if (typeof _origLoad === 'function') await _origLoad.apply(this, args);
+    const kelasBefore = kelasNow();
+    await (_origLoad?.apply ? _origLoad.apply(this, args) : Promise.resolve());
     setTimeout(afterTableRenderedMurRange, 30);
+    const kelasAfter = kelasNow();
+    if (kelasBefore !== kelasAfter){ autoRanForKelas = ""; }
   };
+
+  // Reset guard saat user mengganti kelas secara manual
+  ['#kelasSelect','#kelas','select[name="kelas"]','.kelas','.kelasSelect','.kelas-select'].forEach(sel=>{
+    const el = document.querySelector(sel);
+    if (el) el.addEventListener('change', ()=>{
+      autoRanForKelas = "";
+      setTimeout(()=>{ autoApplyMurRangeIfAvailable(); }, 200);
+    });
+  });
+
   if (document.readyState === 'loading'){
     document.addEventListener('DOMContentLoaded', afterTableRenderedMurRange);
   } else {
     afterTableRenderedMurRange();
   }
+
+  // Ekspos fungsi hitung (dipakai tombol)
+  window.hitungTotalMurRangeFromTable = hitungTotalMurRangeFromTable;
 })();
 </script>
-
-
 
 
 <script>
