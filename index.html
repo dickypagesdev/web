@@ -4413,6 +4413,38 @@ if (typeof window.drawTableHeader !== 'function') {
     });
   }
 
+	// === [D1-COMPAT] Normalisasi payload /api/getAbsensiRange ke "flat array of objects" ===
+function normalizeAbsensiResponse(payload){
+  // Ambil array utama dari berbagai bentuk
+  let arr = Array.isArray(payload) ? payload
+          : Array.isArray(payload?.rows) ? payload.rows
+          : Array.isArray(payload?.data) ? payload.data
+          : [];
+
+  // Flatten baris yang masih membungkus JSON di string/kolom lain
+  const out = [];
+  for (const row of arr){
+    // Kandidat kolom yang biasa berisi snapshot JSON
+    const raw = row?.rec ?? row?.record_json ?? row?.data ?? null;
+
+    if (raw != null){
+      let obj = {};
+      try { obj = (typeof raw === 'string') ? JSON.parse(raw) : raw; } catch(e){ obj = {}; }
+
+      // tanggal: prioritaskan kolom SQL bila ada, fallback ke dalam JSON, terakhir null
+      const tanggal = (row.tanggal || obj.tanggal || row.date || null);
+      out.push({ ...obj, tanggal: tanggal ? String(tanggal).slice(0,10) : null });
+    } else {
+      // Sudah flat? tetap pastikan "tanggal" rapih
+      const tanggal = (row.tanggal || row.date || row?.Tanggal || row?.tgl || row?.created_at || null);
+      const flat = { ...row };
+      if (!flat.tanggal && tanggal) flat.tanggal = String(tanggal).slice(0,10);
+      out.push(flat);
+    }
+  }
+  return out;
+}
+
   // ====== Ambil & Agregasi Data (Rekap Kelas) ======
   async function collectRekapData(){
     const kelasEl = (typeof kelasSelect !== 'undefined' && kelasSelect) ? kelasSelect : document.getElementById('kelasSelect');
@@ -4425,10 +4457,11 @@ if (typeof window.drawTableHeader !== 'function') {
 
     // 1) ABSENSI
     const absUrl = `/api/getAbsensiRange?kelas=${encodeURIComponent(kelas)}&start=${encodeURIComponent(startDate)}&end=${encodeURIComponent(endDate)}&t=${Date.now()}`;
-    const resAbs = await fetch(absUrl);
-    if (!resAbs.ok) throw new Error('Gagal mengambil data absensi.');
-    let allData = await resAbs.json();
-    if (!Array.isArray(allData) || allData.length === 0) throw new Error('Tidak ada data pada rentang tanggal tersebut.');
+const resAbs = await fetch(absUrl);
+if (!resAbs.ok) throw new Error('Gagal mengambil data absensi.');
+let raw = await resAbs.json().catch(()=>[]);
+let allData = normalizeAbsensiResponse(raw);
+if (!Array.isArray(allData) || allData.length === 0) throw new Error('Tidak ada data pada rentang tanggal tersebut.');
 
     // 2) ROSTER
     const resSantri = await fetch(`/api/getSantri?kelas=${encodeURIComponent(kelas)}&t=${Date.now()}`);
@@ -4932,10 +4965,11 @@ if (typeof window.drawTableHeader !== 'function') {
 
     // 1) ABSENSI
     const absUrl = `/api/getAbsensiRange?kelas=${encodeURIComponent(kelasKey)}&start=${encodeURIComponent(startDate)}&end=${encodeURIComponent(endDate)}&t=${Date.now()}`;
-    const resAbs = await fetch(absUrl);
-    if (!resAbs.ok) throw new Error('Gagal mengambil data absensi.');
-    let allData = await resAbs.json();
-    if (!Array.isArray(allData) || allData.length === 0) return null;
+const resAbs = await fetch(absUrl);
+if (!resAbs.ok) throw new Error('Gagal mengambil data absensi.');
+let raw = await resAbs.json().catch(()=>[]);
+let allData = normalizeAbsensiResponse(raw);
+if (!Array.isArray(allData) || allData.length === 0) return null;
 
     // 2) ROSTER
     const resSantri = await fetch(`/api/getSantri?kelas=${encodeURIComponent(kelasKey)}&t=${Date.now()}`);
@@ -5846,8 +5880,7 @@ async function pdfSantriDownload(){
     const selectedNama = sel.options[sel.selectedIndex]?.dataset?.nama || '';
 
     const { startDate, endDate, kelasLine, rows: aggRows, allDataNorm } = await collectRekapData();
-
-    const mine = allDataNorm.filter(it => (String(it.nis||it.id||'') === key));
+	const mine = allDataNorm.filter(it => (String(it.nis||it.id||'') === key));
     if (!mine.length) throw new Error('Tidak ada data untuk santri terpilih pada rentang tanggal.');
 
     const namaSantri = selectedNama || (mine.find(it => it.nama)?.nama) || '-';
