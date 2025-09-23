@@ -1,4 +1,4 @@
 [[d1_databases]]
 binding = "DB"
 database_name = "absensi_db"
-database_id = "<ID D1>"
+database_id = "<YOUR_D1_ID>"
