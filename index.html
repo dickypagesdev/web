@@ -7122,20 +7122,28 @@ function fillJuzSelect(id){
           setSA(rec?.murFrom,'sf','af'); setSA(rec?.murTo,'st','at'); setPages(rec?.murPages);
 
           // per sesi (jika ada di server)
-          for(let i=1;i<=3;i++){
-            setSA(rec?.[`murFrom${i}`],`sf${i}`,`af${i}`);
-            setSA(rec?.[`murTo${i}`],  `st${i}`,`at${i}`);
-            if(rec?.[`murPages${i}`]) setPages(rec[`murPages${i}`], `pf${i}`, `pt${i}`);
-            if (rec?.[`jFrom${i}`]!=null) cell.dataset[`jfrom${i}`]=String(rec[`jFrom${i}`]);
-            if (rec?.[`jTo${i}`]!=null)   cell.dataset[`jto${i}`]=String(rec[`jTo${i}`]);
-            const jv = parseNum(rec?.[`juzmur${i}`] ?? rec?.[`juzSesi${i}`] ?? 0);
-            if(jv) cell.dataset[`juz${i}`]=jv.toFixed(2);
+          for (let i = 1; i <= 3; i++) {
+  // Surah/Ayah From & To (selalu set)
+  setSA(rec?.[`murFrom${i}`] || '', `sf${i}`, `af${i}`);
+  setSA(rec?.[`murTo${i}`]   || '', `st${i}`, `at${i}`);
 
-            // skor & predikat (opsional)
-            if (rec?.[`murScore${i}`]!=null) cell.dataset[`score${i}`]=String(rec[`murScore${i}`]);
-            if (rec?.[`murPredText${i}`]) cell.dataset[`ptext${i}`]=String(rec[`murPredText${i}`]);
-            if (rec?.[`murPredHuruf${i}`]) cell.dataset[`phuruf${i}`]=String(rec[`murPredHuruf${i}`]);
-          }
+  // Pages (selalu set; kalau kosong akan jadi '')
+  setPages(rec?.[`murPages${i}`] || '', `pf${i}`, `pt${i}`);
+
+  // Juz from/to (selalu set; fallback '')
+  cell.dataset[`jfrom${i}`] = (rec?.[`jFrom${i}`] ?? '') + '';
+  cell.dataset[`jto${i}`]   = (rec?.[`jTo${i}`]   ?? '') + '';
+
+  // Juz sesi (jangan pakai if(jv); tulis 0.00 bila 0)
+  const jv = parseNum(rec?.[`juzmur${i}`] ?? rec?.[`juzSesi${i}`] ?? 0);
+  cell.dataset[`juz${i}`] = (Number.isFinite(jv) ? jv : 0).toFixed(2);
+
+  // Skor & predikat (tulis juga default agar konsisten)
+  const sc = rec?.[`murScore${i}`];
+  cell.dataset[`score${i}`] = (sc ?? '') + '';
+  cell.dataset[`ptext${i}`] = rec?.[`murPredText${i}`]  ? String(rec[`murPredText${i}`])  : '';
+  cell.dataset[`phuruf${i}`]= rec?.[`murPredHuruf${i}`] ? String(rec[`murPredHuruf${i}`]) : '';
+}
         });
       }catch(e){ console.warn('murajaah refresh fail', e); }
     }
