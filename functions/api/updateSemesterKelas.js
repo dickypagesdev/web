@@ -1,59 +1,180 @@
 // /functions/api/updateSemesterKelas.js
-// POST { kelas, key, semester }
-// ENV: GITHUB_TOKEN, MAX_SEMESTER (default 6)
+// POST /api/updateSemesterKelas?kelas=kelas_01
+// Body JSON: { "key": "<nis | id | nama>", "semester": 7 }
+// ENV wajib: GITHUB_TOKEN (atau fallback MTQ_TOKEN)
+// ENV opsional: MAX_SEMESTER (default 888; set 12 jika mau ketat)
 
-const CORS={"Access-Control-Allow-Origin":"*","Access-Control-Allow-Methods":"POST, OPTIONS","Access-Control-Allow-Headers":"Content-Type, Authorization"};
-const OWNER_REPO="dickypagesdev/server"; const BRANCH="main";
-const UA={"User-Agent":"cf-pages-functions"};
-const enc=new TextEncoder(), dec=new TextDecoder();
-const b64enc=(s)=>{const by=enc.encode(s);let bin="";for(let i=0;i<by.length;i++)bin+=String.fromCharCode(by[i]);return btoa(bin);};
-const b64dec=(b="")=>{const bin=atob(b);const by=new Uint8Array(bin.length);for(let i=0;i<bin.length;i++)by[i]=bin.charCodeAt(i);return dec.decode(by);};
-const ghHeaders=(t)=>({Authorization:`Bearer ${t}`,Accept:"application/vnd.github.v3+json","Content-Type":"application/json",...UA});
-const json=(o,s=200)=>new Response(JSON.stringify(o),{status:s,headers:{"Content-Type":"application/json",...CORS}});
-const normKelas=k=>(String(k||"").startsWith("kelas_")?String(k):`kelas_${k}`);
-const clean=(v)=>String(v??"").trim();
+const CORS = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
+  "Access-Control-Allow-Headers": "Content-Type, Authorization",
+};
 
-export async function onRequest({request,env}){
-  if(request.method==="OPTIONS")return new Response(null,{status:204,headers:CORS});
-  if(request.method!=="POST")return new Response("Method Not Allowed",{status:405,headers:CORS});
-  if(!env.GITHUB_TOKEN)return json({success:false,error:"GITHUB_TOKEN belum diset."},500);
+const API_BASE = "https://api.github.com/repos/dickypagesdev/server/contents";
+const BRANCH   = "main";
 
-  let body={}; try{ body=await request.json() }catch{ return json({success:false,error:"Body JSON tidak valid."},400); }
-  let { kelas, key, semester } = body||{};
-  kelas=normKelas(kelas); key=clean(key);
-  if(!kelas||!key) return json({success:false,error:"kelas & key wajib."},400);
+const ghHeaders = (token) => ({
+  Authorization: `Bearer ${token}`,
+  Accept: "application/vnd.github+json",
+  "Content-Type": "application/json",
+  "User-Agent": "cf-pages-update-semester",
+});
 
-  const MAX_SEM = Math.max(1, parseInt(env.MAX_SEMESTER||"6",10)||6);
-  const sem=parseInt(semester,10);
-  if(!Number.isInteger(sem) || sem<1 || sem>MAX_SEM) {
-    return json({success:false,error:`semester harus 1..${MAX_SEM}.`},400);
+// Base64 helpers (tanpa Buffer)
+const dec = new TextDecoder();
+const enc = new TextEncoder();
+const b64enc = (str = "") => {
+  const bytes = enc.encode(str);
+  let bin = "";
+  for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+  return btoa(bin);
+};
+const b64dec = (b64 = "") => {
+  const bin = atob(b64);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return dec.decode(bytes);
+};
+
+// Cari index santri: nis → id(string) → id(number)
+function matchIndex(list, key) {
+  if (!Array.isArray(list)) return -1;
+  const keyStr = String(key ?? "").trim();
+  if (!keyStr) return -1;
+
+  let idx = list.findIndex((x) => String(x?.nis ?? "").trim() === keyStr);
+  if (idx !== -1) return idx;
+
+  idx = list.findIndex((x) => String(x?.id ?? "").trim() === keyStr);
+  if (idx !== -1) return idx;
+
+  if (!Number.isNaN(Number(keyStr))) {
+    const keyNum = Number(keyStr);
+    idx = list.findIndex((x) => Number(x?.id) === keyNum);
+    if (idx !== -1) return idx;
+  }
+  return -1;
+}
+
+export async function onRequest({ request, env }) {
+  // CORS preflight
+  if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: CORS });
+  if (request.method !== "POST")   return new Response("Method Not Allowed", { status: 405, headers: CORS });
+
+  const token = env.GITHUB_TOKEN || env.MTQ_TOKEN;
+  if (!token) {
+    return new Response(JSON.stringify({ error: "GITHUB_TOKEN belum diset." }), {
+      status: 500, headers: { "Content-Type": "application/json", ...CORS }
+    });
   }
 
-  // GET roster
-  const url=`https://api.github.com/repos/${OWNER_REPO}/contents/${encodeURIComponent(kelas)}.json?ref=${encodeURIComponent(BRANCH)}`;
-  const r=await fetch(url,{headers:ghHeaders(env.GITHUB_TOKEN)});
-  if(r.status===404) return json({success:false,error:"Roster tidak ditemukan."},404);
-  if(!r.ok){const t=await r.text().catch(()=> "");return json({success:false,error:`Gagal ambil roster (${r.status})`,detail:t.slice(0,300)},r.status);}
-  const meta=await r.json(); const sha=meta.sha;
-  let arr=[]; try{arr=JSON.parse(b64dec(meta.content||""))||[]}catch{arr=[];}
-  if(!Array.isArray(arr)) arr=[];
+  const MAX_SEMESTER = Number(env.MAX_SEMESTER ?? 888);
 
-  const idx=arr.findIndex(s=>{
-    if(!s) return false;
-    const sid=String(s.id??"");
-    const sn=clean(s.nama); const snis=clean(s.nis);
-    return key===sid || key===snis || key===sn;
-  });
-  if(idx<0) return json({success:false,error:"Santri tidak ditemukan."},404);
+  const url = new URL(request.url);
+  const kelas = (url.searchParams.get("kelas") || "").trim(); // ex: kelas_01
+  if (!kelas) {
+    return new Response(JSON.stringify({ error: "Parameter 'kelas' wajib." }), {
+      status: 400, headers: { "Content-Type": "application/json", ...CORS }
+    });
+  }
 
-  arr[idx].semester = String(sem);
+  // Parse body JSON
+  let body;
+  try { body = await request.json(); }
+  catch {
+    return new Response(JSON.stringify({ error: "Body harus JSON." }), {
+      status: 400, headers: { "Content-Type": "application/json", ...CORS }
+    });
+  }
 
-  // PUT
-  const putUrl=`https://api.github.com/repos/${OWNER_REPO}/contents/${encodeURIComponent(kelas)}.json`;
-  const bodyPut={message:`updateSemester: ${kelas} key=${key} → ${sem}`,content:b64enc(JSON.stringify(arr,null,2)),branch:BRANCH,sha};
-  const pr=await fetch(putUrl,{method:"PUT",headers:ghHeaders(env.GITHUB_TOKEN),body:JSON.stringify(bodyPut)});
-  const txt=await pr.text(); let js={}; try{js=JSON.parse(txt)}catch{}
-  if(!pr.ok) return json({success:false,error:js?.message||`Gagal simpan (${pr.status})`,detail:txt.slice(0,300)},pr.status);
+  const key    = String(body?.key ?? "").trim();            // NIS / ID / Nama
+  const semRaw = String(body?.semester ?? "").trim();       // "7" / 7
+  if (!key) {
+    return new Response(JSON.stringify({ error: "Field 'key' wajib." }), {
+      status: 400, headers: { "Content-Type": "application/json", ...CORS }
+    });
+  }
 
-  return json({success:true, kelas, key, semester:sem, commit:js?.commit?.sha||null});
+  // Validasi semester: bilangan bulat 1..MAX_SEMESTER
+  const semNum = Number(semRaw);
+  if (!Number.isInteger(semNum) || semNum < 1 || semNum > MAX_SEMESTER) {
+    return new Response(JSON.stringify({ error: `Semester harus 1-${MAX_SEMESTER}.` }), {
+      status: 400, headers: { "Content-Type": "application/json", ...CORS }
+    });
+  }
+  const sem = String(semNum); // normalisasi ke string
+
+  // --- GET file kelas_X.json (dengan ref=branch)
+  const filePath = `${encodeURIComponent(`${kelas}.json`)}`;
+  const getUrl   = `${API_BASE}/${filePath}?ref=${encodeURIComponent(BRANCH)}`;
+
+  try {
+    const getRes = await fetch(getUrl, { headers: ghHeaders(token) });
+
+    if (getRes.status === 404) {
+      return new Response(JSON.stringify({ error: `File ${kelas}.json tidak ditemukan.` }), {
+        status: 404, headers: { "Content-Type": "application/json", ...CORS }
+      });
+    }
+    if (!getRes.ok) {
+      const t = await getRes.text().catch(() => "");
+      return new Response(t || "Failed fetching file", {
+        status: getRes.status, headers: { "Content-Type": "application/json", ...CORS }
+      });
+    }
+
+    const file = await getRes.json();
+    const sha  = file?.sha || null;
+
+    let data = [];
+    try { data = JSON.parse(b64dec(file?.content || "")); }
+    catch {
+      return new Response(JSON.stringify({ error: "Gagal parse JSON kelas_{}.json." }), {
+        status: 500, headers: { "Content-Type": "application/json", ...CORS }
+      });
+    }
+    if (!Array.isArray(data)) {
+      return new Response(JSON.stringify({ error: "Struktur kelas_{}.json tidak valid (bukan array)." }), {
+        status: 500, headers: { "Content-Type": "application/json", ...CORS }
+      });
+    }
+
+    // --- Update semester untuk santri yang cocok
+    const idx = matchIndex(data, key);
+    if (idx === -1) {
+      return new Response(JSON.stringify({ error: `Santri dengan key '${key}' tidak ditemukan.` }), {
+        status: 404, headers: { "Content-Type": "application/json", ...CORS }
+      });
+    }
+    data[idx].semester = sem;
+
+    // --- PUT commit ke GitHub
+    const putUrl = `${API_BASE}/${filePath}`;
+    const putRes = await fetch(putUrl, {
+      method: "PUT",
+      headers: ghHeaders(token),
+      body: JSON.stringify({
+        message: `chore: update semester (${kelas}) key=${key} -> ${sem}`,
+        content: b64enc(JSON.stringify(data, null, 2)),
+        sha,
+        branch: BRANCH,
+      }),
+    });
+
+    if (!putRes.ok) {
+      const t = await putRes.text().catch(() => "");
+      return new Response(t || "Failed updating file", {
+        status: putRes.status, headers: { "Content-Type": "application/json", ...CORS }
+      });
+    }
+
+    return new Response(JSON.stringify({ success: true }), {
+      status: 200, headers: { "Content-Type": "application/json", ...CORS }
+    });
+
+  } catch (e) {
+    return new Response(JSON.stringify({ error: e?.message || "Internal error" }), {
+      status: 500, headers: { "Content-Type": "application/json", ...CORS }
+    });
+  }
 }
