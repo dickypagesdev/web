@@ -6778,9 +6778,14 @@ function fillJuzSelect(id){
     !!(cell?.dataset?.[`pf${idx}`] || cell?.dataset?.[`pt${idx}`] ||
        cell?.dataset?.[`sf${idx}`] || cell?.dataset?.[`st${idx}`]);
 
+  // >>> Tambahan 1 baris (perbaikan utama)
+  const surahAyatFilled = (sF && aF) || (sT && aT);
+
   const isPristine = !hasDataset &&
                      !juzFromVal && !juzToVal &&
                      !pageFromEl.value && !pageToEl.value &&
+                     // >>> Disisipkan variabel baru di sini
+                     !surahAyatFilled &&
                      !murState[idx]?.touched;
 
   // ⇢ Saat pristine: jangan set Page dari Ayat, jangan hitung
@@ -6845,6 +6850,7 @@ function fillJuzSelect(id){
     }
   }
 }
+
 
   function applyJuzRange(idx){
     const jf = +($(`#mur${idx}-juzFrom`).value)||0;
