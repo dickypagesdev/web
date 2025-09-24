@@ -3845,20 +3845,23 @@ function buildMurPayloadFromRow(row){
     const aF = ds[`af${i}`] ? Number(ds[`af${i}`]) : 0;
     const sT = ds[`st${i}`] ? Number(ds[`st${i}`]) : 0;
     const aT = ds[`at${i}`] ? Number(ds[`at${i}`]) : 0;
-    const pF = ds[`pf${i}`] ? Number(ds[`pf${i}`]) : "";
-    const pT = ds[`pt${i}`] ? Number(ds[`pt${i}`]) : "";
+
+    // page harus string supaya tidak jadi NaN
+    const pF = ds[`pf${i}`] ? String(ds[`pf${i}`]) : "";
+    const pT = ds[`pt${i}`] ? String(ds[`pt${i}`]) : "";
+
     const jF = ds[`jfrom${i}`] ? Number(ds[`jfrom${i}`]) : "";
     const jT = ds[`jto${i}`]   ? Number(ds[`jto${i}`])   : "";
     const jZ = ds[`juz${i}`]   ? Number(ds[`juz${i}`])   : 0;
 
     if (jZ) totalMurSum += jZ;
 
-    out[`murFrom${i}`]  = _packAyah({ s: sF, a: aF });   // "surah:ayat"
+    out[`murFrom${i}`]  = _packAyah({ s: sF, a: aF });     // "surah:ayat"
     out[`murTo${i}`]    = _packAyah({ s: sT, a: aT });
-    out[`murPages${i}`] = _packPages(pF, pT);            // "pageFrom-pageTo"
-    out[`jFrom${i}`]    = jF;                            // juz from (opsional)
-    out[`jTo${i}`]      = jT;                            // juz to (opsional)
-    out[`juzmur${i}`]   = Number(jZ.toFixed(2));         // total juz sesi ke-i
+    out[`murPages${i}`] = _packPages(pF, pT);              // "pageFrom-pageTo"
+    out[`jFrom${i}`]    = jF;                              // juz from (opsional)
+    out[`jTo${i}`]      = jT;                              // juz to (opsional)
+    out[`juzmur${i}`]   = Number(jZ.toFixed(2));           // total juz sesi ke-i
 
     // nilai & predikat per sesi (opsional)
     if (ds[`score${i}`] != null) out[`murScore${i}`]     = Number(ds[`score${i}`]);
@@ -4042,6 +4045,7 @@ async function simpanDataMutabaah(saveBtn){
         if (murCell){
           const parsedTotal = parseNum(murCell.dataset.murtotal ?? "");
           const sumSess = parseNum(murPack.juzmur1) + parseNum(murPack.juzmur2) + parseNum(murPack.juzmur3);
+          // gunakan parsedTotal kalau ada, jika 0 ambil sumSess
           juzMurAll = Number.isFinite(parsedTotal) && parsedTotal!==0 ? parsedTotal : sumSess;
         } else {
           const sumSess = parseNum(murPack.juzmur1) + parseNum(murPack.juzmur2) + parseNum(murPack.juzmur3);
