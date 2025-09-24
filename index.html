@@ -6967,42 +6967,43 @@ function fillJuzSelect(id){
     }
     // Prefill dari dataset cell (sesi 1..3; fallback legacy)
     const cell=row.querySelector('.murajaah-cell');
-    const loadOne = (i) => {
-  // Ambil dataset per sesi; legacy (sf/af/st/at) hanya dipakai untuk sesi 1
-  function pickDs(dsKey, legacyKey, i) {
-    if (cell?.dataset?.[dsKey] !== undefined) return cell.dataset[dsKey];      // bisa '' (biar aman)
-    if (i === 1 && cell?.dataset?.[legacyKey] !== undefined) return cell.dataset[legacyKey]; // legacy khusus sesi 1
-    return ''; // untuk sesi 2/3 jika belum ada data → kosongkan, nanti dirender aman
-  }
+    // GANTI SELURUH DEFINISI loadOne(i) DENGAN INI
+const loadOne = (i) => {
+  const cell = row.querySelector('.murajaah-cell');
 
-  const sFraw = pickDs(`sf${i}`, 'sf', i);
-  const aFraw = pickDs(`af${i}`, 'af', i);
-  const sTraw = pickDs(`st${i}`, 'st', i);
-  const aTraw = pickDs(`at${i}`, 'at', i);
+  // Ambil per-sesi; legacy (sf/af/st/at) hanya dipakai untuk Sesi 1
+  const pick = (dsKey, legacyKey) => {
+    if (cell?.dataset?.[dsKey] !== undefined) return cell.dataset[dsKey];
+    if (i===1 && cell?.dataset?.[legacyKey] !== undefined) return cell.dataset[legacyKey];
+    return '';
+  };
 
-  // Normalisasi: kalau kosong → default aman (1), bukan 0
+  const sFraw = pick(`sf${i}`, 'sf');
+  const aFraw = pick(`af${i}`, 'af');
+  const sTraw = pick(`st${i}`, 'st');
+  const aTraw = pick(`at${i}`, 'at');
+
   const sF = sFraw ? +sFraw : 1;
   const aF = aFraw ? +aFraw : 1;
   const sT = sTraw ? +sTraw : sF;
   const aT = aTraw ? +aTraw : aF;
 
-  // Set kontrol UI
   $(`#mur${i}-surahFrom`).value = String(sF);
   fillAyahForSurah($(`#mur${i}-ayahFrom`), sF, { preset: aF });
 
-  $(`#mur${i}-surahTo`).value   = String(sT);
-  fillAyahForSurah($(`#mur${i}-ayahTo`),   sT, { preset: aT });
+  $(`#mur${i}-surahTo`).value = String(sT);
+  fillAyahForSurah($(`#mur${i}-ayahTo`), sT, { preset: aT });
 
   // score & predikat prefill
   const sc = (cell?.dataset?.[`score${i}`] !== undefined) ? Number(cell.dataset[`score${i}`]) : 0;
-  $(`#mur${i}-score`).value = (Number.isFinite(sc) && sc > 0) ? String(sc) : '';
+  $(`#mur${i}-score`).value = (Number.isFinite(sc) && sc>0) ? String(sc) : '';
   setPredikatUI(i);
 
-  // Hitung dan sinkron (akan menulis dataset sesi i)
+  // hitung + tulis dataset sesi i
   renderSession(i);
 
-  // Sinkronkan juzFrom/juzTo bila range cocok full-juz
-  const jF = juzOfAyah(sF, aF), jT = juzOfAyah(sT, aT);
+  // sinkronkan juzFrom/juzTo bila range penuh
+  const jF = juzOfAyah(sF,aF), jT = juzOfAyah(sT,aT);
   const jrF = getJuzRange(jF),  jrT = getJuzRange(jT);
   if (jrF && jrT && jrF.sFrom===sF && jrF.aFrom===aF && jrT.sTo===sT && jrT.aTo===aT) {
     $(`#mur${i}-juzFrom`).value = String(jF);
@@ -7012,6 +7013,7 @@ function fillJuzSelect(id){
     $(`#mur${i}-juzTo`).value   = '';
   }
 };
+
 
     [1,2,3].forEach(loadOne);
   }
@@ -7121,8 +7123,33 @@ function fillJuzSelect(id){
             if (rec?.[`jFrom${i}`]!=null) cell.dataset[`jfrom${i}`]=String(rec[`jFrom${i}`]);
             if (rec?.[`jTo${i}`]!=null)   cell.dataset[`jto${i}`]=String(rec[`jTo${i}`]);
             const jv = parseNum(rec?.[`juzmur${i}`] ?? rec?.[`juzSesi${i}`] ?? 0);
-			cell.dataset[`juz${i}`] = Number(jv || 0).toFixed(2); // tulis SELALU, termasuk 0.00
+			cell.dataset[`juz${i}`] = Number(jv || 0).toFixed(2); // tulis selalu, termasuk 0.00
 
+			// fallback jika server kirim array murSessions
+if (Array.isArray(rec?.murSessions)) {
+  const s = rec.murSessions[i-1];
+  if (s) {
+    if (s.from) {
+      const [sf,af] = String(s.from).split(':');
+      cell.dataset[`sf${i}`] = sf || '';
+      cell.dataset[`af${i}`] = af || '';
+    }
+    if (s.to) {
+      const [st,at] = String(s.to).split(':');
+      cell.dataset[`st${i}`] = st || '';
+      cell.dataset[`at${i}`] = at || '';
+    }
+    if (s.pages) {
+      const [pf,pt] = String(s.pages).split('-');
+      cell.dataset[`pf${i}`] = pf || '';
+      cell.dataset[`pt${i}`] = pt || '';
+    }
+    if (s.juz != null) cell.dataset[`juz${i}`] = Number(parseNum(s.juz)||0).toFixed(2);
+    if (s.score != null) cell.dataset[`score${i}`] = String(s.score);
+    if (s.predikatText)  cell.dataset[`ptext${i}`]  = String(s.predikatText);
+    if (s.predikatHuruf) cell.dataset[`phuruf${i}`] = String(s.predikatHuruf);
+  }
+}
 
             // skor & predikat (opsional)
             if (rec?.[`murScore${i}`]!=null) cell.dataset[`score${i}`]=String(rec[`murScore${i}`]);
