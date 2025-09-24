@@ -1,15 +1,14 @@
 // /functions/api/pindahKelasSemuaTanggal.js
-// POST /api/pindahKelasSemuaTanggal
-// Body JSON:
+// Body:
 // {
 //   "kelasAsal": "kelas_01" | "01",
 //   "kelasTujuan": "kelas_02" | "02",
 //   "ids": ["12","34"],          // optional
 //   "nises": ["A123","B456"],    // optional
-//   "santriIds": ["legacy..."],  // optional (alias lama)
-//   "idMap": [{ oldId:"12", newId:"112" }] // optional, remap id saat dipindah
+//   "santriIds": ["legacy..."],  // optional (alias lama; juga boleh berisi nama)
+//   "idMap": [{ oldId:"12", newId:"112" }] // optional
 // }
-// ENV: GITHUB_TOKEN (contents:read/write) – fallback ke MTQ_TOKEN kalau ada
+// ENV: GITHUB_TOKEN (fallback: MTQ_TOKEN)
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -20,6 +19,7 @@ const CORS = {
 const OWNER_REPO = "dickypagesdev/server";
 const BRANCH     = "main";
 const API_BASE   = `https://api.github.com/repos/${OWNER_REPO}/contents`;
+const ABS_DIR    = "absensi";
 
 const ghHeaders = (token) => ({
   Authorization: `Bearer ${token}`,
@@ -30,8 +30,9 @@ const ghHeaders = (token) => ({
 
 const withRef = (url) => `${url}?ref=${encodeURIComponent(BRANCH)}`;
 const normKelas = (k) => (String(k || "").startsWith("kelas_") ? String(k) : `kelas_${k}`);
+const isDate = (s) => /^\d{4}-\d{2}-\d{2}$/.test(String(s||""));
 
-// === base64 helpers (tanpa Buffer) ===
+// === base64 helpers ===
 const dec = new TextDecoder();
 const enc = new TextEncoder();
 const b64decode = (b64 = "") => {
@@ -48,80 +49,115 @@ const b64encode = (str = "") => {
 };
 
 const json = (status, data) =>
-  new Response(JSON.stringify(data), {
-    status,
-    headers: { "Content-Type": "application/json", ...CORS },
-  });
+  new Response(JSON.stringify(data), { status, headers: { "Content-Type": "application/json", ...CORS } });
 
-// --- GitHub helpers ---
-const readDir = async (dir, token) => {
-  const res = await fetch(withRef(`${API_BASE}/${dir}`), { headers: ghHeaders(token) });
-  if (!res.ok) {
-    const err = await res.text().catch(() => "");
-    return { ok: false, status: res.status, error: err };
-  }
-  return { ok: true, status: 200, data: await res.json() };
-};
-
-const readJsonFile = async (path, token) => {
+// --- GitHub helpers (agregat) ---
+async function readAggFile(kelas, token) {
+  const path = `${ABS_DIR}/${kelas}.json`;
   const res = await fetch(withRef(`${API_BASE}/${path}`), { headers: ghHeaders(token) });
-  if (res.status === 404) return { ok: true, exists: false, sha: null, data: [] };
+  if (res.status === 404) {
+    return { ok: true, exists: false, sha: null, data: { meta:{kelas,versi:1}, records:[] } };
+  }
   if (!res.ok) {
-    const err = await res.text().catch(() => "");
-    return { ok: false, status: res.status, error: err };
+    const err = await res.text().catch(()=>"");
+    return { ok:false, status:res.status, error:err };
   }
   const js = await res.json();
-  let arr = [];
-  try { arr = JSON.parse(b64decode(js.content || "")); } catch { arr = []; }
-  if (!Array.isArray(arr)) arr = [];
-  return { ok: true, exists: true, sha: js.sha, data: arr };
-};
-
-const writeJsonFile = async (path, arrayData, token, sha = null, message = "update") => {
+  let obj = {};
+  try { obj = JSON.parse(b64decode(js.content || "")) || {}; } catch { obj = {}; }
+  if (!obj.meta) obj.meta = { kelas, versi: 1 };
+  if (!Array.isArray(obj.records)) obj.records = [];
+  return { ok:true, exists:true, sha:js.sha, data: obj };
+}
+async function writeAggFile(kelas, obj, token, sha=null, message="update") {
+  const path = `${ABS_DIR}/${kelas}.json`;
   const body = {
     message,
-    content: b64encode(JSON.stringify(arrayData, null, 2)),
-    committer: { name: "admin", email: "admin@local" }, // opsional
+    content: b64encode(JSON.stringify(obj, null, 2)),
     branch: BRANCH,
     ...(sha ? { sha } : {}),
   };
-  const res = await fetch(`${API_BASE}/${path}`, {
-    method: "PUT",
-    headers: ghHeaders(token),
-    body: JSON.stringify(body),
-  });
-  if (!res.ok) {
-    const err = await res.text().catch(() => "");
-    return { ok: false, status: res.status, error: err };
+  const url = `${API_BASE}/${path}`;
+  let res = await fetch(url, { method:"PUT", headers: ghHeaders(token), body: JSON.stringify(body) });
+  if (res.status === 409 || res.status === 422) {
+    const ref = await fetch(withRef(url), { headers: ghHeaders(token) });
+    if (ref.status === 200) {
+      const meta = await ref.json();
+      res = await fetch(url, { method:"PUT", headers: ghHeaders(token),
+        body: JSON.stringify({ ...body, sha: meta.sha }) });
+    }
   }
-  return { ok: true };
-};
+  if (!res.ok) {
+    const err = await res.text().catch(()=>"");
+    return { ok:false, status:res.status, error:err };
+  }
+  return { ok:true };
+}
 
 // --- util helpers ---
-const mapIdIfNeeded = (row, idMap) => {
-  if (!Array.isArray(idMap) || idMap.length === 0) return row;
-  const oldId = (row.id ?? "").toString();
-  const found = idMap.find((m) => String(m.oldId) === oldId);
-  if (found && found.newId) return { ...row, id: String(found.newId) };
+const buildPickers = (ids=[], nises=[], legacy=[]) => {
+  const raw = [...ids, ...nises, ...legacy].map(x => String(x||"").trim()).filter(Boolean);
+  return {
+    idPick:   new Set(raw),
+    nisPick:  new Set(raw),
+    namePick: new Set(raw.map(v => v.toLowerCase())),
+    hasAny:   raw.length > 0
+  };
+};
+const matchRow = (row, pickers) => {
+  const rid  = (row.id   ?? "").toString();
+  const rnis = (row.nis  ?? "").toString();
+  const rnmL = String(row.nama ?? "").toLowerCase();
+  return (rid && pickers.idPick.has(rid)) || (rnis && pickers.nisPick.has(rnis)) || (rnmL && pickers.namePick.has(rnmL));
+};
+const toIdMap = (arr=[]) => {
+  const m = new Map();
+  for (const x of arr) {
+    const o = (x?.oldId??"").toString();
+    const n = (x?.newId??"").toString();
+    if (o && n) m.set(o, n);
+  }
+  return m;
+};
+const applyIdMap = (row, idMap) => {
+  const rid = (row.id ?? "").toString();
+  if (rid && idMap.has(rid)) return { ...row, id: idMap.get(rid) };
   return row;
 };
+const mergeAudio = (a=[], b=[]) => Array.from(new Set([...(Array.isArray(a)?a:[]), ...(Array.isArray(b)?b:[])]));
 
-const sortByIdNumeric = (arr) =>
-  [...arr].sort((a, b) => {
-    const ai = parseInt(a?.id ?? 0, 10) || 0;
-    const bi = parseInt(b?.id ?? 0, 10) || 0;
-    return ai - bi;
-  });
+const dedupMergeByIdNis = (arr) => {
+  const byId = new Map(), byNis = new Map(), out = [];
+  const put = (r) => {
+    const id  = (r?.id  ?? "").toString();
+    const nis = (r?.nis ?? "").toString();
+    let idx = -1;
+    if (id && byId.has(id)) idx = byId.get(id);
+    else if (nis && byNis.has(nis)) idx = byNis.get(nis);
+    if (idx >= 0) {
+      const old = out[idx] || {};
+      const merged = { ...old, ...r };
+      if (!merged.marks || typeof merged.marks!=="object") merged.marks = {};
+      const aud = mergeAudio(old?.marks?.audio, r?.marks?.audio);
+      if (aud.length) merged.marks.audio = aud;
+      out[idx] = merged; return;
+    }
+    const pos = out.push(r) - 1;
+    if (id)  byId.set(id, pos);
+    if (nis) byNis.set(nis, pos);
+  };
+  for (const r of arr) put(r);
+  out.sort((a,b)=> (parseInt(a?.id||0,10)||0) - (parseInt(b?.id||0,10)||0));
+  return out;
+};
 
 export async function onRequest({ request, env }) {
-  // CORS preflight
   if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: CORS });
   if (request.method !== "POST")   return new Response("Method Not Allowed", { status: 405, headers: CORS });
 
   const token = env.GITHUB_TOKEN || env.MTQ_TOKEN;
   if (!token) return json(500, { error: "GITHUB_TOKEN tidak tersedia" });
 
-  // Payload
   let payload = {};
   try { payload = await request.json(); }
   catch { return json(400, { error: "Body bukan JSON valid" }); }
@@ -131,113 +167,64 @@ export async function onRequest({ request, env }) {
 
   const asal   = normKelas(kelasAsal);
   const tujuan = normKelas(kelasTujuan);
+  const pick   = buildPickers(ids, nises, santriIds);
+  if (!pick.hasAny) return json(400, { error: "Wajib: minimal satu id/nis (ids/nises/santriIds)" });
+  const idMapM = toIdMap(Array.isArray(idMap) ? idMap : []);
 
-  const idsArr   = Array.isArray(ids) ? ids : [];
-  const nisesArr = Array.isArray(nises) ? nises : [];
-  const legacy   = Array.isArray(santriIds) ? santriIds : [];
-  const rawKeys  = [...idsArr, ...nisesArr, ...legacy]
-    .map((x) => String(x || "").trim())
-    .filter(Boolean);
+  // Baca agregat asal & tujuan
+  const src = await readAggFile(asal, token);
+  if (!src.ok) return json(500, { error: "Gagal baca file asal", detail: src.error, status: src.status });
+  const dst = await readAggFile(tujuan, token);
+  if (!dst.ok) return json(500, { error: "Gagal baca file tujuan", detail: dst.error, status: dst.status });
 
-  if (rawKeys.length === 0)
-    return json(400, { error: "Wajib: minimal satu id/nis (ids/nises/santriIds)" });
+  const mapDstByDate = new Map(dst.data.records.map(r => [String(r?.tanggal), r]));
 
-  // matcher: id / nis / nama (lowercase)
-  const idPick   = new Set(rawKeys);
-  const nisPick  = new Set(rawKeys);
-  const namePick = new Set(rawKeys.map((v) => v.toLowerCase()));
-  const matchRow = (row) => {
-    const rid  = (row.id   ?? "").toString();
-    const rnis = (row.nis  ?? "").toString();
-    const rnmL = String(row.nama ?? "").toLowerCase();
-    return (rid && idPick.has(rid)) || (rnis && nisPick.has(rnis)) || (rnmL && namePick.has(rnmL));
-  };
-
-  // list semua file absensi kelas asal
-  const dir = await readDir("absensi", token);
-  if (!dir.ok)
-    return json(500, { error: "Gagal membaca folder absensi", detail: dir.error, status: dir.status });
-
-  const asalFiles = (dir.data || [])
-    .filter((f) => f?.type === "file" && new RegExp(`^${asal}_\\d{4}-\\d{2}-\\d{2}\\.json$`).test(f.name))
-    .map((f) => ({ name: f.name, path: `absensi/${f.name}`, date: f.name.replace(`${asal}_`, "").replace(".json", "") }))
-    .sort((a, b) => a.date.localeCompare(b.date));
-
-  if (asalFiles.length === 0)
-    return json(404, { error: "Tidak ada file absensi untuk kelas asal" });
-
-  const report = [];
   let totalMoved = 0;
+  const report = [];
 
-  for (const f of asalFiles) {
-    const tanggal = f.date;
-    const srcPath = f.path;
-    const dstPath = `absensi/${tujuan}_${tanggal}.json`;
+  for (const rec of src.data.records) {
+    const tgl = String(rec?.tanggal || "");
+    if (!isDate(tgl)) continue;
 
-    // ambil asal
-    const src = await readJsonFile(srcPath, token);
-    if (!src.ok) { report.push({ tanggal, moved: 0, note: `asal gagal dibaca (${src.status})` }); continue; }
-    if (!src.exists || !Array.isArray(src.data) || src.data.length === 0) {
-      report.push({ tanggal, moved: 0, note: "asal kosong/tidak ada" }); continue;
+    const items = Array.isArray(rec?.items) ? rec.items : [];
+    if (!items.length) continue;
+
+    const toMoveRaw = items.filter(r => matchRow(r, pick));
+    if (!toMoveRaw.length) {
+      report.push({ tanggal: tgl, moved: 0, note: "tidak ada match" });
+      continue;
     }
 
-    const toMoveRaw = src.data.filter(matchRow);
-    if (toMoveRaw.length === 0) {
-      report.push({ tanggal, moved: 0, note: "tidak ada match (id/nis/nama)" }); continue;
-    }
+    const toMove = toMoveRaw.map(r => applyIdMap(r, idMapM));
+    const remaining = items.filter(r => !matchRow(r, pick));
 
-    const toMove    = toMoveRaw.map((r) => mapIdIfNeeded(r, idMap));
-    const remaining = src.data.filter((r) => !matchRow(r));
+    // record tujuan
+    let recDst = mapDstByDate.get(tgl);
+    if (!recDst) { recDst = { tanggal: tgl, items: [] }; dst.data.records.push(recDst); mapDstByDate.set(tgl, recDst); }
+    if (!Array.isArray(recDst.items)) recDst.items = [];
+    recDst.items = dedupMergeByIdNis([...(recDst.items||[]), ...toMove]);
 
-    // ambil tujuan
-    const dst = await readJsonFile(dstPath, token);
-    if (!dst.ok) { report.push({ tanggal, moved: 0, note: `gagal baca tujuan (${dst.status})` }); continue; }
-    const dstArr = Array.isArray(dst.data) ? dst.data : [];
-
-    // gabung + dedup id/nis
-    const merged = [...dstArr, ...toMove];
-    const seenId  = new Set();
-    const seenNis = new Set();
-    const deduped = [];
-    for (const r of merged) {
-      const rid  = (r?.id  ?? "").toString();
-      const rnis = (r?.nis ?? "").toString();
-      const k1 = rid  ? `id:${rid}`   : null;
-      const k2 = rnis ? `nis:${rnis}` : null;
-      if (k1 && seenId.has(k1)) continue;
-      if (k2 && seenNis.has(k2)) continue;
-      if (k1) seenId.add(k1);
-      if (k2) seenNis.add(k2);
-      deduped.push(r);
-    }
-    const sortedCombined = sortByIdNumeric(deduped);
-
-    // tulis tujuan
-    const okDst = await writeJsonFile(
-      dstPath,
-      sortedCombined,
-      token,
-      dst.exists ? dst.sha : null,
-      dst.exists
-        ? `Append ${toMove.length} santri -> ${tujuan} (${tanggal}, sorted)`
-        : `Create ${tujuan} (${tanggal}) & seed ${toMove.length} santri (sorted)`
-    );
-    if (!okDst.ok) { report.push({ tanggal, moved: 0, note: `gagal tulis tujuan (${okDst.status})` }); continue; }
-
-    // tulis asal (hapus yang dipindah)
-    const sortedRemaining = sortByIdNumeric(remaining);
-    const okSrc = await writeJsonFile(
-      srcPath,
-      sortedRemaining,
-      token,
-      src.sha || null,
-      `Remove ${toMoveRaw.length} santri pindah dari ${asal} (${tanggal}, sorted)`
-    );
-    if (!okSrc.ok) { report.push({ tanggal, moved: 0, note: `gagal tulis asal (${okSrc.status})` }); continue; }
+    // kurangi di asal
+    rec.items = remaining;
 
     totalMoved += toMove.length;
-    report.push({ tanggal, moved: toMove.length, created: !dst.exists });
+    report.push({ tanggal: tgl, moved: toMove.length });
   }
 
-  return json(200, { success: true, totalMoved, details: report });
+  // bersihkan record kosong di asal
+  src.data.records = src.data.records.filter(r => Array.isArray(r?.items) && r.items.length > 0);
+
+  // sort
+  const sortDate = (a,b)=> String(a?.tanggal||"").localeCompare(String(b?.tanggal||""));
+  src.data.records.sort(sortDate);
+  dst.data.records.sort(sortDate);
+  for (const r of dst.data.records) r.items?.sort?.((a,b)=> (parseInt(a?.id||0,10)||0) - (parseInt(b?.id||0,10)||0));
+
+  const msg = `pindahKelasSemuaTanggal: ${asal} → ${tujuan}, moved=${totalMoved}`;
+  const wDst = await writeAggFile(tujuan, dst.data, token, dst.sha || null, msg);
+  if (!wDst.ok) return json(500, { error:"Gagal tulis tujuan", detail:wDst.error, status:wDst.status });
+  const wSrc = await writeAggFile(asal,   src.data, token, src.sha || null, msg);
+  if (!wSrc.ok) return json(500, { error:"Gagal tulis asal", detail:wSrc.error, status:wSrc.status });
+
+  return json(200, { success:true, totalMoved, details: report });
 }
