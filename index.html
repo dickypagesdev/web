@@ -3838,7 +3838,6 @@ row.querySelector(".total-halaman").textContent = result.total.toFixed(2);
 
 
 // ===== Save Data (meniru B57.html, tanpa hapus fungsi lain) =====
-// ===== Save Data (meniru B57.html, tanpa hapus fungsi lain) =====
 async function simpanDataMutabaah(saveBtn){
   const rows  = document.querySelectorAll('#santri-table tbody tr');
 
@@ -6971,7 +6970,7 @@ kelasSelect?.addEventListener("change", () => loadSantriData());
 
     for (const tgl of tanggalSet){
       try{
-        const res=await fetch(`/.netlify/functions/getAbsensi?kelas=${encodeURIComponent(k)}&tanggal=${encodeURIComponent(tgl)}`);
+        const res=await fetch(`/api/getAbsensi?kelas=${encodeURIComponent(k)}&tanggal=${encodeURIComponent(tgl)}`);
         if(!res.ok) continue;
         const arr=await res.json().catch(()=>[])||[];
         const byId=new Map(), byNis=new Map();
@@ -7142,7 +7141,7 @@ kelasSelect?.addEventListener("change", () => loadSantriData());
   // ===== persist range (server + local) =====
   async function saveRangeServer(kelas, fromDate, toDate, count){
     try{
-      await fetch('/.netlify/functions/aksesAutoUpdateAllJuzMur', {
+      await fetch('/api/aksesAutoUpdateAllJuzMur', {
         method:'POST',
         headers:{'Content-Type':'application/json'},
         body: JSON.stringify({ fromDate, toDate, kelas, data: [{ meta:true, count: Number(count||0) }] })
@@ -7154,7 +7153,7 @@ kelasSelect?.addEventListener("change", () => loadSantriData());
   }
   async function getRangeForKelas(kelas){
     try{
-      const r = await fetch('/.netlify/functions/getAutoUpdateAllJuzMur?t='+Date.now());
+      const r = await fetch('/api/getAutoUpdateAllJuzMur?t='+Date.now());
       if (r.ok){
         const arr = await r.json();
         const it  = (arr||[]).find(x=>x.kelas===kelas);
@@ -7197,7 +7196,7 @@ kelasSelect?.addEventListener("change", () => loadSantriData());
     $('#murRangeStatus').textContent = "⏳ Menghitung…";
 
     try{
-      const res = await fetch(`/.netlify/functions/getAbsensiRange?kelas=${encodeURIComponent(kelas)}&start=${encodeURIComponent(dari)}&end=${encodeURIComponent(sampai)}&t=${Date.now()}`);
+      const res = await fetch(`/api/getAbsensiRange?kelas=${encodeURIComponent(kelas)}&start=${encodeURIComponent(dari)}&end=${encodeURIComponent(sampai)}&t=${Date.now()}`);
       if (!res.ok) throw new Error("Gagal ambil data absensi.");
       const payload = await res.json();
       const allData = Array.isArray(payload) ? payload : (payload?.list || []);
@@ -7318,7 +7317,6 @@ kelasSelect?.addEventListener("change", () => loadSantriData());
   }
 })();
 </script>
-
 
 
 
