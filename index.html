@@ -7102,113 +7102,42 @@ function fillJuzSelect(id){
           if(nis) byNis.set(nis,r);
         });
 
-        rows.forEach(tr => {
-  const rowTgl = String(tr.dataset?.tanggal || '').trim();
-  if (tanggalSet.size > 1 && rowTgl && rowTgl !== tgl) return;
+        rows.forEach(tr=>{
+          const rowTgl = String(tr.dataset?.tanggal||'').trim();
+          if (tanggalSet.size>1 && rowTgl && rowTgl!==tgl) return;
 
-  const cell = tr.querySelector('.murajaah-cell');
-  if (!cell) return;
+          const cell=tr.querySelector('.murajaah-cell'); if(!cell) return;
+          const nis = String(tr.dataset?.nis||'').trim();
+          const id  = String(tr.children?.[0]?.textContent||'').trim();
+          const rec = (nis && byNis.get(nis)) || (id && byId.get(id)) || null;
 
-  const nis = String(tr.dataset?.nis || '').trim();
-  const id  = String(tr.children?.[0]?.textContent || '').trim();
-  const rec = (nis && byNis.get(nis)) || (id && byId.get(id)) || null;
+		  const total = parseNum(rec?.juzmurajaah ?? 0);   // hanya pakai data murajaah
+		  const valEl=cell.querySelector('.mur-val'); valEl && (valEl.textContent=`${total.toFixed(2)} juz`);
+          cell.dataset.murtotal=String(total.toFixed(2));
 
-  // --- helper isi dataset ---
-  const setSA = (src, dsS, dsA) => {
-    if (!src) { cell.dataset[dsS] = ''; cell.dataset[dsA] = ''; return; }
-    const [s, a] = String(src).split(':');
-    cell.dataset[dsS] = s || '';
-    cell.dataset[dsA] = a || '';
-  };
-  const setPages = (src, pfKey = 'pf', ptKey = 'pt') => {
-    if (!src) { cell.dataset[pfKey] = ''; cell.dataset[ptKey] = ''; return; }
-    const [pf, pt] = String(src).split('-');
-    cell.dataset[pfKey] = pf || '';
-    cell.dataset[ptKey] = pt || '';
-  };
+          const setSA=(src,dsS,dsA)=>{ if(!src){cell.dataset[dsS]='';cell.dataset[dsA]='';return;} const [s,a]=String(src).split(':'); cell.dataset[dsS]=s||''; cell.dataset[dsA]=a||''; };
+          const setPages=(src, pfKey='pf', ptKey='pt')=>{ if(!src){cell.dataset[pfKey]='';cell.dataset[ptKey]='';return;} const [pf,pt]=String(src).split('-'); cell.dataset[pfKey]=pf||''; cell.dataset[ptKey]=pt||''; };
 
-  if (!rec) {
-    // bersihkan tampilan jika tak ada record
-    const valEl = cell.querySelector('.mur-val');
-    valEl && (valEl.textContent = '—');
-    cell.dataset.murtotal = '';
-    // kosongkan semua slot sesi 1..3
-    for (let i = 1; i <= 3; i++) {
-      setSA('', `sf${i}`, `af${i}`);
-      setSA('', `st${i}`, `at${i}`);
-      setPages('', `pf${i}`, `pt${i}`);
-      delete cell.dataset[`jfrom${i}`];
-      delete cell.dataset[`jto${i}`];
-      delete cell.dataset[`juz${i}`];
-      delete cell.dataset[`score${i}`];
-      delete cell.dataset[`ptext${i}`];
-      delete cell.dataset[`phuruf${i}`];
-    }
-    return;
-  }
+          // legacy (sesi 1)
+          setSA(rec?.murFrom,'sf','af'); setSA(rec?.murTo,'st','at'); setPages(rec?.murPages);
 
-  // --- total mur: pakai juzmurajaah; fallback jumlah 3 sesi (flat/sessions) ---
-  const s1 = parseNum(rec?.juzmur1 ?? rec?.juzSesi1 ?? rec?.juzmurajaah1 ?? rec?.murSessions?.[0]?.juz ?? 0);
-  const s2 = parseNum(rec?.juzmur2 ?? rec?.juzSesi2 ?? rec?.juzmurajaah2 ?? rec?.murSessions?.[1]?.juz ?? 0);
-  const s3 = parseNum(rec?.juzmur3 ?? rec?.juzSesi3 ?? rec?.juzmurajaah3 ?? rec?.murSessions?.[2]?.juz ?? 0);
-  const total = parseNum(rec?.juzmurajaah, s1 + s2 + s3);
+          // per sesi (jika ada di server)
+          for(let i=1;i<=3;i++){
+            setSA(rec?.[`murFrom${i}`],`sf${i}`,`af${i}`);
+            setSA(rec?.[`murTo${i}`],  `st${i}`,`at${i}`);
+            if(rec?.[`murPages${i}`]) setPages(rec[`murPages${i}`], `pf${i}`, `pt${i}`);
+            if (rec?.[`jFrom${i}`]!=null) cell.dataset[`jfrom${i}`]=String(rec[`jFrom${i}`]);
+            if (rec?.[`jTo${i}`]!=null)   cell.dataset[`jto${i}`]=String(rec[`jTo${i}`]);
+            const jv = parseNum(rec?.[`juzmur${i}`] ?? rec?.[`juzSesi${i}`] ?? 0);
+            if(jv) cell.dataset[`juz${i}`]=jv.toFixed(2);
 
-  const valEl = cell.querySelector('.mur-val');
-  valEl && (valEl.textContent = `${total.toFixed(2)} juz`);
-  cell.dataset.murtotal = String(total.toFixed(2));
-
-  // --- legacy (sesi 1 lama) tetap diisi agar kompatibel ---
-  setSA(rec?.murFrom, 'sf', 'af');
-  setSA(rec?.murTo,   'st', 'at');
-  setPages(rec?.murPages);
-
-  // --- per sesi (flat fields → fallback ke murSessions[i-1]) ---
-  const sessArr = Array.isArray(rec?.murSessions) ? rec.murSessions : [];
-
-  for (let i = 1; i <= 3; i++) {
-    const sObj = sessArr[i - 1] || null;
-
-    const mFrom  = rec?.[`murFrom${i}`]  || sObj?.from  || '';
-    const mTo    = rec?.[`murTo${i}`]    || sObj?.to    || '';
-    const mPages = rec?.[`murPages${i}`] || sObj?.pages || '';
-    const jFrom  = (rec?.[`jFrom${i}`] != null) ? rec[`jFrom${i}`] : (sObj ? sObj.jFrom : null);
-    const jTo    = (rec?.[`jTo${i}`]   != null) ? rec[`jTo${i}`]   : (sObj ? sObj.jTo   : null);
-
-    // total juz sesi i: prefer flat, fallback sessions
-    const jValRaw = (rec?.[`juzmur${i}`] != null)
-      ? rec[`juzmur${i}`]
-      : (rec?.[`juzSesi${i}`] != null
-          ? rec[`juzSesi${i}`]
-          : (sObj ? sObj.juz : 0));
-    const jVal = Number.isFinite(+jValRaw) ? (+jValRaw) : 0;
-
-    // skor & predikat per sesi (opsional)
-    const sc  = (rec?.[`murScore${i}`]    != null) ? rec[`murScore${i}`]     : (sObj ? sObj.score         : null);
-    const pTx = (rec?.[`murPredText${i}`] != null) ? rec[`murPredText${i}`]  : (sObj ? sObj.predikatText  : '');
-    const pHr = (rec?.[`murPredHuruf${i}`]!= null) ? rec[`murPredHuruf${i}`] : (sObj ? sObj.predikatHuruf : '');
-
-    // tulis ke dataset cell
-    setSA(mFrom, `sf${i}`, `af${i}`);
-    setSA(mTo,   `st${i}`, `at${i}`);
-    setPages(mPages, `pf${i}`, `pt${i}`);
-
-    if (jFrom != null) cell.dataset[`jfrom${i}`] = String(jFrom);
-    else               delete cell.dataset[`jfrom${i}`];
-
-    if (jTo   != null) cell.dataset[`jto${i}`]   = String(jTo);
-    else               delete cell.dataset[`jto${i}`];
-
-    if (jVal) cell.dataset[`juz${i}`] = Number(jVal).toFixed(2);
-    else      delete cell.dataset[`juz${i}`];
-
-    if (sc != null) {
-      cell.dataset[`score${i}`] = String(sc);
-      cell.dataset[`ptext${i}`] = String(pTx || '');
-      cell.dataset[`phuruf${i}`]= String(pHr || '');
-    } else {
-      delete cell.dataset[`score${i}`];
-      delete cell.dataset[`ptext${i}`];
-      delete cell.dataset[`phuruf${i}`];
+            // skor & predikat (opsional)
+            if (rec?.[`murScore${i}`]!=null) cell.dataset[`score${i}`]=String(rec[`murScore${i}`]);
+            if (rec?.[`murPredText${i}`]) cell.dataset[`ptext${i}`]=String(rec[`murPredText${i}`]);
+            if (rec?.[`murPredHuruf${i}`]) cell.dataset[`phuruf${i}`]=String(rec[`murPredHuruf${i}`]);
+          }
+        });
+      }catch(e){ console.warn('murajaah refresh fail', e); }
     }
   }
 
