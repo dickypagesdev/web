@@ -6994,33 +6994,52 @@ function fillJuzSelect(id){
     }
     // Prefill dari dataset cell (sesi 1..3; fallback legacy)
     const cell=row.querySelector('.murajaah-cell');
-    const loadOne=(i)=>{
-      let sF=+(cell?.dataset?.[`sf${i}`] ?? cell?.dataset?.sf ?? 1);
-      let aF=+(cell?.dataset?.[`af${i}`] ?? cell?.dataset?.af ?? 1);
-      let sT=+(cell?.dataset?.[`st${i}`] ?? cell?.dataset?.st ?? sF);
-      let aT=+(cell?.dataset?.[`at${i}`] ?? cell?.dataset?.at ?? aF);
+    const loadOne = (i) => {
+  // Ambil dataset per sesi; legacy (sf/af/st/at) hanya dipakai untuk sesi 1
+  function pickDs(dsKey, legacyKey, i) {
+    if (cell?.dataset?.[dsKey] !== undefined) return cell.dataset[dsKey];      // bisa '' (biar aman)
+    if (i === 1 && cell?.dataset?.[legacyKey] !== undefined) return cell.dataset[legacyKey]; // legacy khusus sesi 1
+    return ''; // untuk sesi 2/3 jika belum ada data → kosongkan, nanti dirender aman
+  }
 
-      $(`#mur${i}-surahFrom`).value=String(sF); fillAyahForSurah($(`#mur${i}-ayahFrom`), sF,{preset:aF});
-      $(`#mur${i}-surahTo`).value  =String(sT); fillAyahForSurah($(`#mur${i}-ayahTo`),   sT,{preset:aT});
+  const sFraw = pickDs(`sf${i}`, 'sf', i);
+  const aFraw = pickDs(`af${i}`, 'af', i);
+  const sTraw = pickDs(`st${i}`, 'st', i);
+  const aTraw = pickDs(`at${i}`, 'at', i);
 
-      // score & predikat prefill
-      const sc = cell?.dataset?.[`score${i}`] ? Number(cell.dataset[`score${i}`]) : 0;
-      $(`#mur${i}-score`).value = String(sc||'');
-      setPredikatUI(i);
+  // Normalisasi: kalau kosong → default aman (1), bukan 0
+  const sF = sFraw ? +sFraw : 1;
+  const aF = aFraw ? +aFraw : 1;
+  const sT = sTraw ? +sTraw : sF;
+  const aT = aTraw ? +aTraw : aF;
 
-      renderSession(i);
+  // Set kontrol UI
+  $(`#mur${i}-surahFrom`).value = String(sF);
+  fillAyahForSurah($(`#mur${i}-ayahFrom`), sF, { preset: aF });
 
-      // sinkronkan juzFrom/juzTo bila range cocok
-      const jF=juzOfAyah(sF,aF), jT=juzOfAyah(sT,aT);
-      const jrF=getJuzRange(jF), jrT=getJuzRange(jT);
-      if(jrF && jrT && jrF.sFrom===sF && jrF.aFrom===aF && jrT.sTo===sT && jrT.aTo===aT){
-        $(`#mur${i}-juzFrom`).value=String(jF);
-        $(`#mur${i}-juzTo`).value  =String(jT);
-      } else {
-        $(`#mur${i}-juzFrom`).value='';
-        $(`#mur${i}-juzTo`).value='';
-      }
-    };
+  $(`#mur${i}-surahTo`).value   = String(sT);
+  fillAyahForSurah($(`#mur${i}-ayahTo`),   sT, { preset: aT });
+
+  // score & predikat prefill
+  const sc = (cell?.dataset?.[`score${i}`] !== undefined) ? Number(cell.dataset[`score${i}`]) : 0;
+  $(`#mur${i}-score`).value = (Number.isFinite(sc) && sc > 0) ? String(sc) : '';
+  setPredikatUI(i);
+
+  // Hitung dan sinkron (akan menulis dataset sesi i)
+  renderSession(i);
+
+  // Sinkronkan juzFrom/juzTo bila range cocok full-juz
+  const jF = juzOfAyah(sF, aF), jT = juzOfAyah(sT, aT);
+  const jrF = getJuzRange(jF),  jrT = getJuzRange(jT);
+  if (jrF && jrT && jrF.sFrom===sF && jrF.aFrom===aF && jrT.sTo===sT && jrT.aTo===aT) {
+    $(`#mur${i}-juzFrom`).value = String(jF);
+    $(`#mur${i}-juzTo`).value   = String(jT);
+  } else {
+    $(`#mur${i}-juzFrom`).value = '';
+    $(`#mur${i}-juzTo`).value   = '';
+  }
+};
+
     [1,2,3].forEach(loadOne);
   }
 
@@ -7129,7 +7148,8 @@ function fillJuzSelect(id){
             if (rec?.[`jFrom${i}`]!=null) cell.dataset[`jfrom${i}`]=String(rec[`jFrom${i}`]);
             if (rec?.[`jTo${i}`]!=null)   cell.dataset[`jto${i}`]=String(rec[`jTo${i}`]);
             const jv = parseNum(rec?.[`juzmur${i}`] ?? rec?.[`juzSesi${i}`] ?? 0);
-            if(jv) cell.dataset[`juz${i}`]=jv.toFixed(2);
+			cell.dataset[`juz${i}`] = Number(jv || 0).toFixed(2); // tulis SELALU, termasuk 0.00
+
 
             // skor & predikat (opsional)
             if (rec?.[`murScore${i}`]!=null) cell.dataset[`score${i}`]=String(rec[`murScore${i}`]);
