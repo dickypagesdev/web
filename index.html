@@ -6791,13 +6791,16 @@ function fillJuzSelect(id){
   const juzToVal   = $(`#mur${idx}-juzTo`).value;
 
   const cell = currentRowEl?.querySelector('.murajaah-cell');
-  const hasDataset =
+    const hasDataset =
     !!(cell?.dataset?.[`pf${idx}`] || cell?.dataset?.[`pt${idx}`] ||
        cell?.dataset?.[`sf${idx}`] || cell?.dataset?.[`st${idx}`]);
+
+  const hasSA = Boolean(sF && aF && sT && aT);  // <-- TAMBAHAN: user sudah punya Surah/Ayat yang valid?
 
   const isPristine = !hasDataset &&
                      !juzFromVal && !juzToVal &&
                      !pageFromEl.value && !pageToEl.value &&
+                     !hasSA &&                                // <-- PENTING
                      !murState[idx]?.touched;
 
   // ⇢ Saat pristine: jangan set Page dari Ayat, jangan hitung
@@ -6966,7 +6969,8 @@ function fillJuzSelect(id){
       const sc = cell?.dataset?.[`score${i}`] ? Number(cell.dataset[`score${i}`]) : 0;
       $(`#mur${i}-score`).value = String(sc||'');
       setPredikatUI(i);
-
+	  murState[i] = murState[i] || {};
+      murState[i].touched = true;
       renderSession(i);
 
       // sinkronkan juzFrom/juzTo bila range cocok
