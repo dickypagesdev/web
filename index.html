@@ -6912,50 +6912,57 @@ kelasSelect?.addEventListener("change", () => loadSantriData());
   }
 
   async function openModalForRow(row){
-    currentRowEl=row;
-    $('#murModal').style.display='flex';
-    if(!dataReady){
-      await ensureMap();
-      [1,2,3].forEach(bindSession);
-    }
-    // Prefill dari dataset cell (sesi 1..3; fallback legacy)
-    const cell=row.querySelector('.murajaah-cell');
-    const loadOne=(i)=>{
-      // gunakan ds() agar '' tidak dianggap 0
-      let sF = +(ds(cell, `sf${i}`) ?? ds(cell,'sf') ?? 1);
-      let aF = +(ds(cell, `af${i}`) ?? ds(cell,'af') ?? 1);
-      let sT = +(ds(cell, `st${i}`) ?? ds(cell,'st') ?? sF);
-      let aT = +(ds(cell, `at${i}`) ?? ds(cell,'at') ?? aF);
-
-      // guard agar tidak ada nilai 0 yang invalid
-      if (sF<1) sF=1; if (aF<1) aF=1; if (sT<1) sT=sF; if (aT<1) aT=aF;
-
-      $(`#mur${i}-surahFrom`).value=String(sF);
-      fillAyahForSurah($(`#mur${i}-ayahFrom`), sF,{preset:aF});
-      $(`#mur${i}-surahTo`).value  =String(sT);
-      fillAyahForSurah($(`#mur${i}-ayahTo`),   sT,{preset:aT});
-
-      // score & predikat prefill
-      const scRaw = ds(cell, `score${i}`);
-      const sc = scRaw!=null ? Number(scRaw) : 0;
-      $(`#mur${i}-score`).value = String(sc||'');
-      setPredikatUI(i);
-
-      renderSession(i);
-
-      // sinkronkan juzFrom/juzTo bila range cocok
-      const jF=juzOfAyah(sF,aF), jT=juzOfAyah(sT,aT);
-      const jrF=getJuzRange(jF), jrT=getJuzRange(jT);
-      if(jrF && jrT && jrF.sFrom===sF && jrF.aFrom===aF && jrT.sTo===sT && jrT.aTo===aT){
-        $(`#mur${i}-juzFrom`).value=String(jF);
-        $(`#mur${i}-juzTo`).value  =String(jT);
-      } else {
-        $(`#mur${i}-juzFrom`).value='';
-        $(`#mur${i}-juzTo`).value='';
-      }
-    };
-    [1,2,3].forEach(loadOne);
+  currentRowEl=row;
+  $('#murModal').style.display='flex';
+  if(!dataReady){
+    await ensureMap();
+    [1,2,3].forEach(bindSession);
   }
+  const cell=row.querySelector('.murajaah-cell');
+
+  // helper baca dataset: treat '' as null
+  function ds(cell, key){
+    const v = cell?.dataset?.[key];
+    return (v === '' || v === undefined || v === null) ? null : v;
+  }
+
+  const loadOne=(i)=>{
+    // ⬇️ hanya sesi-1 yang boleh fallback ke legacy (sf/af/st/at)
+    const useLegacy = (i === 1);
+    let sF = +(ds(cell, `sf${i}`) ?? (useLegacy ? ds(cell,'sf') : null) ?? 1);
+    let aF = +(ds(cell, `af${i}`) ?? (useLegacy ? ds(cell,'af') : null) ?? 1);
+    let sT = +(ds(cell, `st${i}`) ?? (useLegacy ? ds(cell,'st') : null) ?? sF);
+    let aT = +(ds(cell, `at${i}`) ?? (useLegacy ? ds(cell,'at') : null) ?? aF);
+
+    if (sF<1) sF=1; if (aF<1) aF=1; if (sT<1) sT=sF; if (aT<1) aT=aF;
+
+    $(`#mur${i}-surahFrom`).value=String(sF);
+    fillAyahForSurah($(`#mur${i}-ayahFrom`), sF,{preset:aF});
+    $(`#mur${i}-surahTo`).value  =String(sT);
+    fillAyahForSurah($(`#mur${i}-ayahTo`),   sT,{preset:aT});
+
+    // score & predikat (tidak ada legacy, jadi langsung dataset sesi i)
+    const scRaw = ds(cell, `score${i}`);
+    const sc = scRaw!=null ? Number(scRaw) : 0;
+    $(`#mur${i}-score`).value = String(sc||'');
+    setPredikatUI(i);
+
+    renderSession(i);
+
+    // sinkronkan juzFrom/juzTo bila range cocok
+    const jF=juzOfAyah(sF,aF), jT=juzOfAyah(sT,aT);
+    const jrF=getJuzRange(jF), jrT=getJuzRange(jT);
+    if(jrF && jrT && jrF.sFrom===sF && jrF.aFrom===aF && jrT.sTo===sT && jrT.aTo===aT){
+      $(`#mur${i}-juzFrom`).value=String(jF);
+      $(`#mur${i}-juzTo`).value  =String(jT);
+    } else {
+      $(`#mur${i}-juzFrom`).value='';
+      $(`#mur${i}-juzTo`).value='';
+    }
+  };
+
+  [1,2,3].forEach(loadOne);
+}
 
   function fillAllBases(idx){
     fillJuzSelect(`#mur${idx}-juzFrom`);
@@ -7036,29 +7043,49 @@ kelasSelect?.addEventListener("change", () => loadSantriData());
           const id  = String(tr.children?.[0]?.textContent||'').trim();
           const rec = (nis && byNis.get(nis)) || (id && byId.get(id)) || null;
 
-          const total = parseNum(rec?.juzmurajaah ?? 0);
-          const valEl=cell.querySelector('.mur-val'); valEl && (valEl.textContent=`${total.toFixed(2)} juz`);
-          cell.dataset.murtotal=String(total.toFixed(2));
+          // ... setelah const cell=tr.querySelector('.murajaah-cell'); if(!cell) return;
 
-          const setSA=(src,dsS,dsA)=>{ if(!src){cell.dataset[dsS]='';cell.dataset[dsA]='';return;} const [s,a]=String(src).split(':'); cell.dataset[dsS]=s||''; cell.dataset[dsA]=a||''; };
-          const setPages=(src, pfKey='pf', ptKey='pt')=>{ if(!src){cell.dataset[pfKey]='';cell.dataset[ptKey]='';return;} const [pf,pt]=String(src).split('-'); cell.dataset[pfKey]=pf||''; cell.dataset[ptKey]=pt||''; };
+// TULIS total dulu (sudah ada di kode Anda)
+const total = parseNum(rec?.juzmurajaah ?? 0);
+const valEl=cell.querySelector('.mur-val'); valEl && (valEl.textContent=`${total.toFixed(2)} juz`);
+cell.dataset.murtotal=String(total.toFixed(2));
 
-          // legacy (sesi 1)
-          setSA(rec?.murFrom,'sf','af'); setSA(rec?.murTo,'st','at'); setPages(rec?.murPages);
+// legacy (sesi 1) – tetap
+const setSA=(src,dsS,dsA)=>{ if(!src){cell.dataset[dsS]='';cell.dataset[dsA]='';return;} const [s,a]=String(src).split(':'); cell.dataset[dsS]=s||''; cell.dataset[dsA]=a||''; };
+const setPages=(src, pfKey='pf', ptKey='pt')=>{ if(!src){cell.dataset[pfKey]='';cell.dataset[ptKey]='';return;} const [pf,pt]=String(src).split('-'); cell.dataset[pfKey]=pf||''; cell.dataset[ptKey]=pt||''; };
 
-          // per sesi (1..3)
-          for(let i=1;i<=3;i++){
-            setSA(rec?.[`murFrom${i}`],`sf${i}`,`af${i}`);
-            setSA(rec?.[`murTo${i}`],  `st${i}`,`at${i}`);
-            if(rec?.[`murPages${i}`]) setPages(rec[`murPages${i}`], `pf${i}`, `pt${i}`);
-            if (rec?.[`jFrom${i}`]!=null) cell.dataset[`jfrom${i}`]=String(rec[`jFrom${i}`]);
-            if (rec?.[`jTo${i}`]!=null)   cell.dataset[`jto${i}`]=String(rec[`jTo${i}`]);
-            const jv = parseNum(rec?.[`juzmur${i}`] ?? rec?.[`juzSesi${i}`] ?? 0);
-            if(jv) cell.dataset[`juz${i}`]=jv.toFixed(2);
-            if (rec?.[`murScore${i}`]!=null) cell.dataset[`score${i}`]=String(rec[`murScore${i}`]);
-            if (rec?.[`murPredText${i}`]) cell.dataset[`ptext${i}`]=String(rec[`murPredText${i}`]);
-            if (rec?.[`murPredHuruf${i}`]) cell.dataset[`phuruf${i}`]=String(rec[`murPredHuruf${i}`]);
-          }
+// bersihkan SEMUA sesi dulu agar tidak ada "bekas" data lama
+for (let i=1;i<=3;i++){
+  ['sf','af','st','at','pf','pt','jfrom','jto','juz','score','ptext','phuruf'].forEach(k=>{
+    cell.dataset[`${k}${i}`] = '';
+  });
+}
+
+// isi legacy (khusus sesi 1) bila memang ada
+setSA(rec?.murFrom,'sf','af'); 
+setSA(rec?.murTo,'st','at'); 
+setPages(rec?.murPages);
+
+// isi per sesi (1..3) — kalau tidak ada di server, biarkan kosong (tidak nimpuk)
+for(let i=1;i<=3;i++){
+  const fromStr = rec?.[`murFrom${i}`] ?? '';
+  const toStr   = rec?.[`murTo${i}`]   ?? '';
+  const pagesStr= rec?.[`murPages${i}`]?? '';
+
+  setSA(fromStr,`sf${i}`,`af${i}`);
+  setSA(toStr,  `st${i}`,`at${i}`);
+  setPages(pagesStr, `pf${i}`, `pt${i}`);
+
+  if (rec?.[`jFrom${i}`]!=null) cell.dataset[`jfrom${i}`]=String(rec[`jFrom${i}`]);
+  if (rec?.[`jTo${i}`]!=null)   cell.dataset[`jto${i}`]=String(rec[`jTo${i}`]);
+
+  const jv = parseNum(rec?.[`juzmur${i}`] ?? rec?.[`juzSesi${i}`] ?? 0);
+  cell.dataset[`juz${i}`] = jv ? jv.toFixed(2) : '';
+
+  if (rec?.[`murScore${i}`]!=null) cell.dataset[`score${i}`]=String(rec[`murScore${i}`]); else cell.dataset[`score${i}`]='';
+  cell.dataset[`ptext${i}`]= rec?.[`murPredText${i}`]  ? String(rec[`murPredText${i}`])  : '';
+  cell.dataset[`phuruf${i}`]=rec?.[`murPredHuruf${i}`] ? String(rec[`murPredHuruf${i}`]) : '';
+}
         });
       }catch(e){ console.warn('murajaah refresh fail', e); }
     }
