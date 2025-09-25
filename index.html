@@ -6704,30 +6704,39 @@ kelasSelect?.addEventListener("change", () => loadSantriData());
 
   function fillSurahSelect(sel){
     const N=["Al-Fatihah","Al-Baqarah","Ali 'Imran","An-Nisa'","Al-Ma'idah","Al-An'am","Al-A'raf","Al-Anfal","At-Taubah","Yunus","Hud","Yusuf","Ar-Ra'd","Ibrahim","Al-Hijr","An-Nahl","Al-Isra'","Al-Kahf","Maryam","Ta Ha","Al-Anbiya'","Al-Hajj","Al-Mu'minun","An-Nur","Al-Furqan","Ash-Shu'ara'","An-Naml","Al-Qasas","Al-'Ankabut","Ar-Rum","Luqman","As-Sajdah","Al-Ahzab","Saba'","Fatir","Ya-Sin","As-Saffat","Sad","Az-Zumar","Ghafir","Fussilat","Ash-Shura","Az-Zukhruf","Ad-Dukhan","Al-Jathiyah","Al-Ahqaf","Muhammad","Al-Fath","Al-Hujurat","Qaf","Adz-Dzariyat","At-Tur","An-Najm","Al-Qamar","Ar-Rahman","Al-Waqi'ah","Al-Hadid","Al-Mujadilah","Al-Hashr","Al-Mumtahanah","As-Saff","Al-Jumu'ah","Al-Munafiqun","At-Taghabun","At-Talaq","At-Tahrim","Al-Mulk","Al-Qalam","Al-Haqqah","Al-Ma'arij","Nuh","Al-Jinn","Al-Muzzammil","Al-Muddaththir","Al-Qiyamah","Al-Insan","Al-Mursalat","An-Naba'","An-Nazi'at","'Abasa","At-Takwir","Al-Infitar","Al-Mutaffifin","Al-Inshiqaq","Al-Buruj","At-Tariq","Al-A'la","Al-Ghashiyah","Al-Fajr","Al-Balad","Ash-Shams","Al-Layl","Ad-Duha","Ash-Sharh","At-Tin","Al-'Alaq","Al-Qadr","Al-Bayyinah","Az-Zalzalah","Al-'Adiyat","Al-Qari'ah","At-Takathur","Al-'Asr","Al-Humazah","Al-Fil","Quraysh","Al-Ma'un","Al-Kawthar","Al-Kafirun","An-Nasr","Al-Masad","Al-Ikhlas","Al-Falaq","An-Nas"];
-    const el=$(sel); el.innerHTML=Array.from({length:114},(_,i)=>`<option value="${i+1}">${i+1} — ${N[i]}</option>`).join('');
+    const el = (typeof sel==='string')?$(sel):sel;
+  if(!el) return;
+  el.innerHTML = '<option value=""></option>' +
+    Array.from({length:114},(_,i)=>`<option value="${i+1}">${i+1} — ${N[i]}</option>`).join('');
+  el.value = ''; // default kosong
+}
+  function fillAyahForSurah(sel, surahId, {keep=false, preset=null}={}){
+  const el=(typeof sel==='string')?$(sel):sel; if(!el) return;
+
+  // kalau surah belum dipilih → ayat juga kosong
+  if(!surahId){
+    el.innerHTML = '<option value=""></option>';
+    el.value = '';
+    return;
   }
-  function fillAyahForSurah(sel,surahId,{keep=false,preset=null}={}){
-    const el=(typeof sel==='string')?$(sel):sel; if(!el) return;
-    const max=Math.max(1, +surahMaxAyah[+surahId]||1);
-    const prev=keep? +el.value : null;
-    el.innerHTML=makeOpts(max);
-    if(preset!=null) el.value=String(Math.min(+preset,max));
-    else if(keep && prev) el.value=String(Math.min(prev,max));
-    else el.value="1";
-  }
+
+  const max = Math.max(1, +surahMaxAyah[+surahId] || 1);
+  const prev = keep ? +el.value : null;
+  el.innerHTML = '<option value=""></option>' + makeOpts(max);
+
+  if (preset != null)      el.value = String(Math.min(+preset, max));
+  else if (keep && prev)   el.value = String(Math.min(prev, max));
+  else                     el.value = ''; // default kosong
+}
 
 function fillPageSelects(idFrom, idTo){
-  const f = (typeof idFrom === 'string') ? $(idFrom) : idFrom;
-  const t = (typeof idTo   === 'string') ? $(idTo)   : idTo;
-  if (!f || !t) return;
+  const f = (typeof idFrom==='string')?$(idFrom):idFrom;
+  const t = (typeof idTo  ==='string')?$(idTo)  :idTo;
+  if(!f || !t) return;
 
   const opts = '<option value=""></option>' + makeOpts(LAST_PAGE);
-  f.innerHTML = opts;
-  t.innerHTML = opts;
-
-  // pastikan default kosong (tidak auto 1–1)
-  f.value = '';
-  t.value = '';
+  f.innerHTML = opts; t.innerHTML = opts;
+  f.value = ''; t.value = ''; // default kosong
 }
 
 function fillJuzSelect(id){
@@ -6766,8 +6775,10 @@ function fillJuzSelect(id){
   }
 
   function renderSession(idx){
-  const sF=+$(`#mur${idx}-surahFrom`).value||1, aF=+$(`#mur${idx}-ayahFrom`).value||1;
-  const sT=+$(`#mur${idx}-surahTo`).value||sF, aT=+$(`#mur${idx}-ayahTo`).value||aF;
+  const sFv = $(`#mur${idx}-surahFrom`).value;
+  const aFv = $(`#mur${idx}-ayahFrom`).value;
+  const sTv = $(`#mur${idx}-surahTo`).value;
+  const aTv = $(`#mur${idx}-ayahTo`).value;
 
   const pageFromEl = $(`#mur${idx}-pageFrom`);
   const pageToEl   = $(`#mur${idx}-pageTo`);
@@ -6775,51 +6786,58 @@ function fillJuzSelect(id){
   const juzToVal   = $(`#mur${idx}-juzTo`).value;
 
   const cell = currentRowEl?.querySelector('.murajaah-cell');
-  const hasDataset =
-    !!(cell?.dataset?.[`pf${idx}`] || cell?.dataset?.[`pt${idx}`] ||
-       cell?.dataset?.[`sf${idx}`] || cell?.dataset?.[`st${idx}`]);
+  const hasDataset = !!(cell?.dataset?.[`pf${idx}`] || cell?.dataset?.[`pt${idx}`]
+                     || cell?.dataset?.[`sf${idx}`] || cell?.dataset?.[`st${idx}`]);
 
-  const isPristine = !hasDataset &&
+  // pristine jika belum ada input apapun
+  const isPristine = (!sFv || !aFv || !sTv || !aTv) &&
+                     !hasDataset &&
                      !juzFromVal && !juzToVal &&
                      !pageFromEl.value && !pageToEl.value &&
                      !murState[idx]?.touched;
 
-  // ⇢ Saat pristine: jangan set Page dari Ayat, jangan hitung
-  if (!isPristine){
-    const pages=ayahRangeToPages(sF,aF,sT,aT);
-    if(pages){
-      // Hanya autofill bila user sudah mulai memilih atau ada data lama
-      if (pageFromEl.value==='' && pageToEl.value==='' || hasDataset || juzFromVal || juzToVal){
-        pageFromEl.value=String(pages.pFrom);
-        pageToEl.value  =String(pages.pTo);
-      }
-      $(`#mur${idx}-pagesHint`).textContent=`Halaman: ${pages.pFrom}—${pages.pTo}`;
-    } else {
-      $(`#mur${idx}-pagesHint`).textContent='';
-    }
-
-    const jF=juzOfAyah(sF,aF), jT=juzOfAyah(sT,aT);
-    const total=computeTotalJuz(sF,aF,sT,aT);
-    $(`#mur${idx}-totalJuz`).textContent=total.toFixed(2);
-
-    // sinkron Juz kalau range full
-    const jrF=getJuzRange(jF), jrT=getJuzRange(jT);
-    if(jrF && jrT && jrF.sFrom===sF && jrF.aFrom===aF && jrT.sTo===sT && jrT.aTo===aT){
-      const jfEl=$(`#mur${idx}-juzFrom`), jtEl=$(`#mur${idx}-juzTo`);
-      if(jfEl && jtEl){ jfEl.value=String(jF); jtEl.value=String(jT); }
-    }
-
-    setPredikatUI(idx);
-
-    murState[idx]={...murState[idx], sF,aF,sT,aT,
-      pFrom:pageFromEl.value||'', pTo:pageToEl.value||'',
-      jFrom:jF, jTo:jT, total};
-  } else {
-    // pristine: tampil 0.00 dan kosongkan hint
+  if (isPristine){
     $(`#mur${idx}-pagesHint`).textContent='';
     $(`#mur${idx}-totalJuz`).textContent='0.00';
     setPredikatUI(idx);
-    murState[idx]={...murState[idx], sF:null,aF:null,sT:null,aT:null, pFrom:'',pTo:'', jFrom:null,jTo:null, total:0};
+    murState[idx]={...murState[idx], sF:null,aF:null,sT:null,aT:null,pFrom:'',pTo:'',jFrom:null,jTo:null,total:0};
+  } else {
+    // jika semua terisi → baru hitung
+    if (sFv && aFv && sTv && aTv){
+      const sF=+sFv, aF=+aFv, sT=+sTv, aT=+aTv;
+      const pages=ayahRangeToPages(sF,aF,sT,aT);
+      if(pages){
+        if ((pageFromEl.value==='' && pageToEl.value==='') || hasDataset || juzFromVal || juzToVal){
+          pageFromEl.value=String(pages.pFrom);
+          pageToEl.value  =String(pages.pTo);
+        }
+        $(`#mur${idx}-pagesHint`).textContent=`Halaman: ${pages.pFrom}—${pages.pTo}`;
+      } else {
+        $(`#mur${idx}-pagesHint`).textContent='';
+      }
+
+      const jF=juzOfAyah(sF,aF), jT=juzOfAyah(sT,aT);
+      const total=computeTotalJuz(sF,aF,sT,aT);
+      $(`#mur${idx}-totalJuz`).textContent=total.toFixed(2);
+
+      const jrF=getJuzRange(jF), jrT=getJuzRange(jT);
+      if(jrF && jrT && jrF.sFrom===sF && jrF.aFrom===aF && jrT.sTo===sT && jrT.aTo===aT){
+        const jfEl=$(`#mur${idx}-juzFrom`), jtEl=$(`#mur${idx}-juzTo`);
+        if(jfEl && jtEl){ jfEl.value=String(jF); jtEl.value=String(jT); }
+      }
+
+      setPredikatUI(idx);
+
+      murState[idx]={...murState[idx], sF,aF,sT,aT,
+        pFrom:pageFromEl.value||'', pTo:pageToEl.value||'',
+        jFrom:jF, jTo:jT, total};
+    } else {
+      // ada input sebagian → jangan hitung
+      $(`#mur${idx}-pagesHint`).textContent='';
+      $(`#mur${idx}-totalJuz`).textContent='0.00';
+      setPredikatUI(idx);
+      murState[idx]={...murState[idx], total:0};
+    }
   }
 
   // --- rekap & sinkron dataset (tetap) ---
@@ -6947,36 +6965,30 @@ async function openModalForRow(row){
 
   // --- RESET PRISTINE per sesi: buang “nyangkut” dari baris sebelumnya ---
   function resetOne(i){
-    // Juz & Page kosong
-    $(`#mur${i}-juzFrom`).value = '';
-    $(`#mur${i}-juzTo`).value   = '';
-    $(`#mur${i}-pageFrom`).value = '';
-    $(`#mur${i}-pageTo`).value   = '';
+  // Juz & Page kosong
+  $(`#mur${i}-juzFrom`).value = '';
+  $(`#mur${i}-juzTo`).value   = '';
+  $(`#mur${i}-pageFrom`).value = '';
+  $(`#mur${i}-pageTo`).value   = '';
 
-    // Surah/Ayat kembali ke 1:1 (safe default) TANPA render
-    $(`#mur${i}-surahFrom`).value = '1';
-    fillAyahForSurah($(`#mur${i}-ayahFrom`), 1, { preset: 1 });
-    $(`#mur${i}-surahTo`).value   = '1';
-    fillAyahForSurah($(`#mur${i}-ayahTo`),   1, { preset: 1 });
+  // Surah/Ayat kosong (bukan 1:1)
+  $(`#mur${i}-surahFrom`).value = '';
+  fillAyahForSurah($(`#mur${i}-ayahFrom`), '', {});
+  $(`#mur${i}-surahTo`).value   = '';
+  fillAyahForSurah($(`#mur${i}-ayahTo`),   '', {});
 
-    // Nilai & badge
-    $(`#mur${i}-score`).value = '';
-    $(`#mur${i}-predikatBadge`).textContent = '–';
+  $(`#mur${i}-score`).value = '';
+  $(`#mur${i}-predikatBadge`).textContent = '–';
 
-    // Hint & total
-    $(`#mur${i}-pagesHint`).textContent = '';
-    $(`#mur${i}-totalJuz`).textContent = '0.00';
+  $(`#mur${i}-pagesHint`).textContent = '';
+  $(`#mur${i}-totalJuz`).textContent  = '0.00';
 
-    // State internal benar-benar pristine
-    murState[i] = {
-      touched:false,
-      sF:null,aF:null,sT:null,aT:null,
-      pFrom:'', pTo:'',
-      jFrom:null, jTo:null,
-      total:0,
-      score:null, pText:'', pHuruf:''
-    };
-  }
+  murState[i] = {
+    touched:false, sF:null,aF:null,sT:null,aT:null,
+    pFrom:'',pTo:'', jFrom:null,jTo:null, total:0,
+    score:null, pText:'', pHuruf:''
+  };
+}
 
   // --- helper2 dari versi kamu (dipakai loadOne) ---
   function pickNonEmpty(...vals){
@@ -7111,8 +7123,9 @@ async function openModalForRow(row){
   fillPageSelects(`#mur${idx}-pageFrom`, `#mur${idx}-pageTo`);
   fillSurahSelect(`#mur${idx}-surahFrom`);
   fillSurahSelect(`#mur${idx}-surahTo`);
-  fillAyahForSurah($(`#mur${idx}-ayahFrom`), 1, {preset:1});
-  fillAyahForSurah($(`#mur${idx}-ayahTo`),   1, {preset:1});
+  // ayat kosong (karena surah belum dipilih)
+  fillAyahForSurah($(`#mur${idx}-ayahFrom`), '', {});
+  fillAyahForSurah($(`#mur${idx}-ayahTo`),   '', {});
 
   $(`#mur${idx}-juzFrom`) ?.addEventListener('change', ()=>applyJuzRange(idx));
   $(`#mur${idx}-juzTo`)   ?.addEventListener('change', ()=>applyJuzRange(idx));
@@ -7134,6 +7147,7 @@ async function openModalForRow(row){
 
   $(`#mur${idx}-score`)    ?.addEventListener('input',  ()=>{ setPredikatUI(idx); renderSession(idx); });
 }
+
   function bindSession(idx){ fillAllBases(idx); }
 
   function ensureMurColumn(){
