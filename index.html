@@ -7182,50 +7182,120 @@ function fillJuzSelect(id){
     });
   }
 }
-  function bindModalShell(){
-    $('#mur-close')?.addEventListener('click',()=>{$('#murModal').style.display='none';});
-    $('#mur-preview')?.addEventListener('click', ()=>{
-      const lines=[1,2,3].map(i=>{
-        const st=murState[i]||{};
-        if(!st.sF) return `<li>Sesi ${i}: -</li>`;
-        const pv = (st.pText && st.pHuruf!=null) ? ` • Nilai ${st.score} → <b>${st.pText} (${st.pHuruf})</b>` : '';
-        return `<li><b>Sesi ${i}</b>: Surah ${st.sF}:${st.aF} → ${st.sT}:${st.aT} • Juz ${st.jFrom} → ${st.jTo} • <b>${(st.total||0).toFixed(2)} juz</b>${pv}</li>`;
-      }).join('');
-      const grand=((murState[1]?.total||0)+(murState[2]?.total||0)+(murState[3]?.total||0)).toFixed(2);
-      $('#murPreviewBody').innerHTML = `<ul style="margin:0 0 10px 18px">${lines}</ul><div><b>Total 3 sesi:</b> ${grand} juz</div>`;
-      $('#murPreviewOverlay').style.display='flex';
-    });
-    $('#mur-save')?.addEventListener('click', async()=>{
-      try{
-        [1,2,3].forEach(renderSession); // pastikan state terakhir
-        if(typeof window.simpanDataMutabaah==='function'){
-          await window.simpanDataMutabaah($('#mur-save'));
-          await refreshMurFromServer();
-          $('#mur-save-status').textContent='✅ Tersimpan';
-          setTimeout(()=>$('#mur-save-status').textContent='',1500);
-        }
-      }catch(e){ console.error(e); $('#mur-save-status').textContent='❌ Gagal simpan'; }
-    });
+	
+// ---------- Modal & lifecycle ----------
+function bindModalShell(){
+  // Close modal
+  $('#mur-close')?.addEventListener('click', ()=>{
+    $('#murModal').style.display='none';
+  });
+
+  // Preview modal
+  $('#mur-preview')?.addEventListener('click', ()=>{
+    const lines=[1,2,3].map(i=>{
+      const st=murState[i]||{};
+      if(!st.sF) return `<li>Sesi ${i}: -</li>`;
+      const pv = (st.pText && st.pHuruf!=null) ? ` • Nilai ${st.score} → <b>${st.pText} (${st.pHuruf})</b>` : '';
+      return `<li><b>Sesi ${i}</b>: Surah ${st.sF}:${st.aF} → ${st.sT}:${st.aT} • Juz ${st.jFrom} → ${st.jTo} • <b>${(st.total||0).toFixed(2)} juz</b>${pv}</li>`;
+    }).join('');
+    const grand=((murState[1]?.total||0)+(murState[2]?.total||0)+(murState[3]?.total||0)).toFixed(2);
+    $('#murPreviewBody').innerHTML = `<ul style="margin:0 0 10px 18px">${lines}</ul><div><b>Total 3 sesi:</b> ${grand} juz</div>`;
+    $('#murPreviewOverlay').style.display='flex';
+  });
+
+  // Save
+  $('#mur-save')?.addEventListener('click', async()=>{
+    try{
+      // pastikan state & dataset baris tersinkron
+      [1,2,3].forEach(renderSession);
+
+      if(typeof window.simpanDataMutabaah==='function'){
+        await window.simpanDataMutabaah($('#mur-save'));
+        // setelah tersimpan, ambil ulang dari server lalu update tampilan
+        await refreshMurFromServer();
+        $('#mur-save-status').textContent='✅ Tersimpan';
+        setTimeout(()=>$('#mur-save-status').textContent='',1500);
+      }
+    }catch(e){
+      console.error(e);
+      $('#mur-save-status').textContent='❌ Gagal simpan';
+    }
+  });
+}
+
+// Pastikan kolom Murajaah ada sebelum refresh
+function ensureMurColumn(){
+  const table=$('#santri-table'); if(!table) return;
+  const theadRow=table.tHead?.rows?.[0];
+  if(theadRow && !theadRow.querySelector('th.mur-header')){
+    const th=document.createElement('th');
+    th.className='mur-header';
+    th.textContent='Murajaah';
+    theadRow.appendChild(th);
   }
+  const rows=table.tBodies?.[0]?.rows||[];
+  [...rows].forEach(tr=>{
+    if(tr.querySelector('.murajaah-cell')) return;
+    const td=document.createElement('td');
+    td.className='murajaah-cell';
+    td.innerHTML = `
+      <div class="mur-val" style="font-weight:600;min-height:1em">—</div>
+      <div class="mur-label" style="font-size:11px; color:#6b7280;"></div>
+      <button type="button" class="btn-mur" style="margin-top:6px; padding:4px 8px;">Input</button>`;
+    tr.appendChild(td);
+    td.querySelector('.btn-mur').addEventListener('click',()=>openModalForRow(tr));
+  });
+}
 
-  function afterTableRendered(){ ensureMurColumn(); refreshMurFromServer(); }
+// Tunggu tbody punya baris
+function waitRows(){
+  return new Promise(resolve=>{
+    const table=$('#santri-table'); const tbody=table?.tBodies?.[0];
+    if(!tbody){ resolve(); return; }
+    if(tbody.rows.length){ resolve(); return; }
+    const obs=new MutationObserver(()=>{
+      if(tbody.rows.length){ obs.disconnect(); resolve(); }
+    });
+    obs.observe(tbody,{childList:true,subtree:false});
+    setTimeout(()=>{ try{obs.disconnect();}catch{} resolve(); },3000);
+  });
+}
 
-  // ekspor
-  window.murajaah = { afterTableRendered, refreshServer: refreshMurFromServer };
+// Jalankan dalam urutan yang benar & ditunggu
+async function afterTableRendered(){
+  ensureMurColumn();
+  await waitRows();
+  await refreshMurFromServer(); // <- ini yang penting: TUNGGU
+}
 
-  // init
-  (async function init(){
-    bindModalShell();
-    if (document.readyState==='loading') document.addEventListener('DOMContentLoaded', afterTableRendered);
-    else afterTableRendered();
-    const _origLoad=window.loadSantriData;
-    window.loadSantriData=async function(...args){
-      if(typeof _origLoad==='function') await _origLoad.apply(this,args);
-      setTimeout(afterTableRendered,0);
-    };
+// ekspor
+window.murajaah = { afterTableRendered, refreshServer: refreshMurFromServer };
+
+// init
+(async function init(){
+  bindModalShell();
+
+  // kalau elemen modal sudah ada saat awal, baru bind sessionnya
+  const modalReady = !!document.getElementById('murModal');
+  if (modalReady){
     await ensureMap();
     [1,2,3].forEach(bindSession);
-  })();
+  }
+
+  if (document.readyState==='loading'){
+    document.addEventListener('DOMContentLoaded', ()=> { afterTableRendered(); });
+  } else {
+    await afterTableRendered();
+  }
+
+  // Hook load data → tunggu, lalu refresh (sekali, tertib)
+  const _origLoad=window.loadSantriData;
+  window.loadSantriData=async function(...args){
+    if(typeof _origLoad==='function') await _origLoad.apply(this,args);
+    // biar layout settle dulu
+    await new Promise(r=>requestAnimationFrame(()=>setTimeout(r,0)));
+    await afterTableRendered();
+  };
 })();
 </script>
 
