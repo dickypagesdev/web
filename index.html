@@ -7010,70 +7010,137 @@ function fillJuzSelect(id){
     });
   }
 
-  // ---------- Refresh dari server (muat juga skor/predikat jika ada) ----------
-  async function refreshMurFromServer(){
-    const k = resolveKelas();
-    const table = $('#santri-table'); if(!k || !table) { console.warn('murajaah: kelas kosong atau table tidak ada'); return; }
+  // ---------- Refresh dari server (robust: sesi 1..3) ----------
+async function refreshMurFromServer(){
+  const k = resolveKelas();
+  const table = $('#santri-table');
+  if (!k || !table) { console.warn('murajaah: kelas kosong atau table tidak ada'); return; }
 
-    const rows = [...(table.tBodies?.[0]?.rows||[])];
-    const tanggalSet = new Set(rows.map(r=>String(r.dataset?.tanggal||'').trim()).filter(Boolean));
-    if (!tanggalSet.size) {
-      const tg = resolveTanggalGlobal();
-      if (tg) tanggalSet.add(tg);
-    }
-    if (!tanggalSet.size) { console.warn('murajaah: tidak ada tanggal (global/baris)'); return; }
+  const rows = [...(table.tBodies?.[0]?.rows||[])];
 
-    for (const tgl of tanggalSet){
-      try{
-        const res=await fetch(`/api/getAbsensi?kelas=${encodeURIComponent(k)}&tanggal=${encodeURIComponent(tgl)}`);
-        if(!res.ok) continue;
-        const arr=await res.json().catch(()=>[])||[];
-        const byId=new Map(), byNis=new Map();
-        arr.forEach(r=>{
-          const id =(r.id!=null?String(r.id):'').trim();
-          const nis=(r.nis!=null?String(r.nis):'').trim();
-          if(id)  byId.set(id,r);
-          if(nis) byNis.set(nis,r);
-        });
+  // Kumpulkan tanggal yang dipakai
+  const tanggalSet = new Set(rows.map(r=>String(r.dataset?.tanggal||'').trim()).filter(Boolean));
+  if (!tanggalSet.size) {
+    const tg = resolveTanggalGlobal();
+    if (tg) tanggalSet.add(tg);
+  }
+  if (!tanggalSet.size) { console.warn('murajaah: tidak ada tanggal (global/baris)'); return; }
 
-        rows.forEach(tr=>{
-          const rowTgl = String(tr.dataset?.tanggal||'').trim();
-          if (tanggalSet.size>1 && rowTgl && rowTgl!==tgl) return;
+  // helper: aman-kan nilai kosong agar tidak overwrite data yang valid
+  const isBlank = (v) => v==null || v==='' || v==='undefined' || v==='null' || (typeof v==='string' && !v.trim());
+  const setSA = (cell, src, dsS, dsA) => {
+    if (isBlank(src)) return;
+    const [s,a] = String(src).split(':');
+    if (!isBlank(s)) cell.dataset[dsS] = s;
+    if (!isBlank(a)) cell.dataset[dsA] = a;
+  };
+  const setPages = (cell, src, pfKey='pf', ptKey='pt') => {
+    if (isBlank(src)) return;
+    const [pf,pt] = String(src).split('-');
+    if (!isBlank(pf)) cell.dataset[pfKey] = pf;
+    if (!isBlank(pt)) cell.dataset[ptKey] = pt;
+  };
+  const setIfNum = (cell, key, v) => {
+    const n = Number(v);
+    if (Number.isFinite(n)) cell.dataset[key] = String(n);
+  };
+  const num = (x) => {
+    const s = String(x ?? '').replace(/[^0-9.,-]/g,'').replace(',', '.');
+    const n = parseFloat(s);
+    return Number.isFinite(n) ? n : 0;
+  };
 
-          const cell=tr.querySelector('.murajaah-cell'); if(!cell) return;
-          const nis = String(tr.dataset?.nis||'').trim();
-          const id  = String(tr.children?.[0]?.textContent||'').trim();
-          const rec = (nis && byNis.get(nis)) || (id && byId.get(id)) || null;
+  for (const tgl of tanggalSet){
+    try{
+      const res = await fetch(`/api/getAbsensi?kelas=${encodeURIComponent(k)}&tanggal=${encodeURIComponent(tgl)}`);
+      if (!res.ok) continue;
+      const arr = await res.json().catch(()=>[]) || [];
 
-		  const total = parseNum(rec?.juzmurajaah ?? 0);   // hanya pakai data murajaah
-		  const valEl=cell.querySelector('.mur-val'); valEl && (valEl.textContent=`${total.toFixed(2)} juz`);
-          cell.dataset.murtotal=String(total.toFixed(2));
+      // Bangun beberapa index agar matching lebih kebal
+      const byNis = new Map();
+      const byId  = new Map();
+      const byKey = new Map(); // student_key style (nis||id)
+      const byName= new Map(); // lowercase nama → record (fallback)
+      for (const rec of arr){
+        const nis = String(rec?.nis ?? '').trim();
+        const id  = String(rec?.id  ?? '').trim();
+        const key = nis || id || '';
+        const nm  = String(rec?.nama ?? '').trim().toLowerCase();
+        if (nis) byNis.set(nis, rec);
+        if (id)  byId.set(id, rec);
+        if (key) byKey.set(key, rec);
+        if (nm)  byName.set(nm, rec);
+      }
 
-          const setSA=(src,dsS,dsA)=>{ if(!src){cell.dataset[dsS]='';cell.dataset[dsA]='';return;} const [s,a]=String(src).split(':'); cell.dataset[dsS]=s||''; cell.dataset[dsA]=a||''; };
-          const setPages=(src, pfKey='pf', ptKey='pt')=>{ if(!src){cell.dataset[pfKey]='';cell.dataset[ptKey]='';return;} const [pf,pt]=String(src).split('-'); cell.dataset[pfKey]=pf||''; cell.dataset[ptKey]=pt||''; };
+      rows.forEach(tr=>{
+        // Kalau tabel memuat beberapa tanggal, hormati dataset.tanggal
+        const rowTgl = String(tr.dataset?.tanggal||'').trim();
+        if (tanggalSet.size>1 && rowTgl && rowTgl!==tgl) return;
 
-          // legacy (sesi 1)
-          setSA(rec?.murFrom,'sf','af'); setSA(rec?.murTo,'st','at'); setPages(rec?.murPages);
+        const cell = tr.querySelector('.murajaah-cell'); if (!cell) return;
 
-          // per sesi (jika ada di server)
-          for(let i=1;i<=3;i++){
-            setSA(rec?.[`murFrom${i}`],`sf${i}`,`af${i}`);
-            setSA(rec?.[`murTo${i}`],  `st${i}`,`at${i}`);
-            if(rec?.[`murPages${i}`]) setPages(rec[`murPages${i}`], `pf${i}`, `pt${i}`);
-            if (rec?.[`jFrom${i}`]!=null) cell.dataset[`jfrom${i}`]=String(rec[`jFrom${i}`]);
-            if (rec?.[`jTo${i}`]!=null)   cell.dataset[`jto${i}`]=String(rec[`jTo${i}`]);
-            const jv = parseNum(rec?.[`juzmur${i}`] ?? rec?.[`juzSesi${i}`] ?? 0);
-            if(jv) cell.dataset[`juz${i}`]=jv.toFixed(2);
+        // Cari key sebanyak mungkin
+        const nis   = String(tr.dataset?.nis||'').trim();
+        const idTxt = String(tr.children?.[0]?.textContent||'').trim(); // hati2: bisa nomor urut, bukan ID
+        const keyDs = String(tr.dataset?.key||'').trim();
+        const name  = (tr.children?.[1] ? (tr.children[1].childNodes?.[0]?.textContent || tr.children[1].textContent) : '') || '';
+        const nameL = name.trim().toLowerCase();
 
-            // skor & predikat (opsional)
-            if (rec?.[`murScore${i}`]!=null) cell.dataset[`score${i}`]=String(rec[`murScore${i}`]);
-            if (rec?.[`murPredText${i}`]) cell.dataset[`ptext${i}`]=String(rec[`murPredText${i}`]);
-            if (rec?.[`murPredHuruf${i}`]) cell.dataset[`phuruf${i}`]=String(rec[`murPredHuruf${i}`]);
-          }
-        });
-      }catch(e){ console.warn('murajaah refresh fail', e); }
+        let rec = null;
+        if (keyDs && byKey.has(keyDs)) rec = byKey.get(keyDs);
+        else if (nis && byNis.has(nis)) rec = byNis.get(nis);
+        else if (idTxt && byId.has(idTxt)) rec = byId.get(idTxt);
+        else if (nameL && byName.has(nameL)) rec = byName.get(nameL);
+
+        if (!rec){
+          // DEBUG: nyalakan ini jika perlu tracing
+          // console.warn('murajaah: record tidak ketemu untuk baris', {nis, idTxt, keyDs, name});
+          return;
+        }
+
+        // Total utama (jika ada); tidak memaksakan overwrite ke 0
+        const tot = num(rec?.juzmurajaah ?? rec?.totalJuz ?? 0);
+        if (tot > 0) {
+          const valEl = cell.querySelector('.mur-val');
+          if (valEl) valEl.textContent = `${tot.toFixed(2)} juz`;
+          cell.dataset.murtotal = String(tot.toFixed(2));
+        }
+
+        // Legacy (sesi 1 “tanpa index”)
+        setSA(cell, rec?.murFrom, 'sf', 'af');
+        setSA(cell, rec?.murTo,   'st', 'at');
+        setPages(cell, rec?.murPages, 'pf', 'pt');
+
+        // Per-sesi 1..3 (kebalkan terhadap variasi nama & nilai kosong)
+        for (let i=1;i<=3;i++){
+          setSA(cell, rec?.[`murFrom${i}`], `sf${i}`, `af${i}`);
+          setSA(cell, rec?.[`murTo${i}`],   `st${i}`, `at${i}`);
+          setPages(cell, rec?.[`murPages${i}`], `pf${i}`, `pt${i}`);
+
+          // Juz per sesi — terima beberapa alias lama
+          const jv = num(
+            rec?.[`juzmur${i}`] ??
+            rec?.[`juzSesi${i}`] ??
+            rec?.[`juzmurajaah${i}`] ?? 0
+          );
+          if (jv>0) cell.dataset[`juz${i}`] = jv.toFixed(2);
+
+          // Juz range (optional)
+          if (!isBlank(rec?.[`jFrom${i}`])) setIfNum(cell, `jfrom${i}`, rec[`jFrom${i}`]);
+          if (!isBlank(rec?.[`jTo${i}`]))   setIfNum(cell, `jto${i}`,   rec[`jTo${i}`]);
+
+          // Nilai/predikat (optional)
+          if (!isBlank(rec?.[`murScore${i}`]))    setIfNum(cell, `score${i}`, rec[`murScore${i}`]);
+          if (!isBlank(rec?.[`murPredText${i}`])) cell.dataset[`ptext${i}`] = String(rec[`murPredText${i}`]);
+          if (!isBlank(rec?.[`murPredHuruf${i}`]])cell.dataset[`phuruf${i}`]= String(rec[`murPredHuruf${i}`]);
+        }
+      });
+
+    }catch(e){
+      console.warn('murajaah refresh fail', e);
     }
   }
+}
 
   function bindModalShell(){
     $('#mur-close')?.addEventListener('click',()=>{$('#murModal').style.display='none';});
