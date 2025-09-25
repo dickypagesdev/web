@@ -6997,62 +6997,81 @@ kelasSelect?.addEventListener("change", () => loadSantriData());
   }
 
   // ---------- Modal ----------
-  async function openModalForRow(row){
-    currentRowEl=row;
-    $('#murModal').style.display='flex';
-    if(!dataReady){
-      await ensureMap();
-      [1,2,3].forEach(bindSession);
-    }
+async function openModalForRow(row){
+  currentRowEl = row;
+  $('#murModal').style.display = 'flex';
 
-    // Prefill dari dataset cell (sesi 1..3; fallback legacy)
-    const cell = row.querySelector('.murajaah-cell');
+  if (!dataReady){
+    await ensureMap();
+    [1,2,3].forEach(bindSession);
+  }
 
-    const loadOne = (i) => {
-      const ds = cell?.dataset || {};
-      const sF = +(ds[`sf${i}`] || ds.sf || 1);
-      const aF = +(ds[`af${i}`] || ds.af || 1);
-      const sT = +(ds[`st${i}`] || ds.st || sF);
-      const aT = +(ds[`at${i}`] || ds.at || aF);
+  // Prefill dari dataset cell (sesi 1..3; fallback legacy HANYA untuk sesi-1)
+  const cell = row.querySelector('.murajaah-cell');
 
-      // surah/ayat
-      $(`#mur${i}-surahFrom`).value = String(sF);
-      fillAyahForSurah($(`#mur${i}-ayahFrom`), sF, { preset: aF });
-      $(`#mur${i}-surahTo`).value = String(sT);
-      fillAyahForSurah($(`#mur${i}-ayahTo`), sT, { preset: aT });
+  const loadOne = (i) => {
+    const ds = cell?.dataset || {};
 
-      // page (pf/pt)
-      const pf = ds[`pf${i}`] || ''; const pt = ds[`pt${i}`] || '';
-      if (pf || pt){ $(`#mur${i}-pageFrom`).value = pf; $(`#mur${i}-pageTo`).value = pt; }
-
-      // juzFrom/juzTo
-      const jFrom = ds[`jfrom${i}`] ? Number(ds[`jfrom${i}`]) : '';
-      const jTo   = ds[`jto${i}`]   ? Number(ds[`jto${i}`])   : '';
-      if (jFrom !== '') $(`#mur${i}-juzFrom`).value = String(jFrom);
-      if (jTo   !== '') $(`#mur${i}-juzTo`).value   = String(jTo);
-
-      // skor/predikat
-      const sc = (ds[`score${i}`] != null) ? Number(ds[`score${i}`]) : 0;
-      $(`#mur${i}-score`).value = (Number.isFinite(sc) ? String(sc) : '');
-      setPredikatUI(i);
-
-      // render → hitung total & sinkron dataset
-      renderSession(i);
-
-      // kalau range ayat pas di awal/akhir juz → sinkron select Juz
-      const jF=juzOfAyah(sF,aF), jT=juzOfAyah(sT,aT);
-      const jrF=getJuzRange(jF), jrT=getJuzRange(jT);
-      if(jrF && jrT && jrF.sFrom===sF && jrF.aFrom===aF && jrT.sTo===sT && jrT.aTo===aT){
-        $(`#mur${i}-juzFrom`).value=String(jF);
-        $(`#mur${i}-juzTo`).value  =String(jT);
-      } else {
-        if (jFrom==='') $(`#mur${i}-juzFrom`).value='';
-        if (jTo==='')   $(`#mur${i}-juzTo`).value='';
+    // helper: ambil nilai dataset; untuk sesi-1 boleh fallback ke legacyKey
+    const pick = (key, legacyKey) => {
+      const v = ds[key];
+      if (v !== undefined && v !== '') return v;
+      if (i === 1 && legacyKey){
+        const lv = ds[legacyKey];
+        if (lv !== undefined && lv !== '') return lv;
       }
+      return '';
     };
 
-    [1,2,3].forEach(loadOne);
-  }
+    // --- Surah/Ayat (tanpa copy dari sesi-1 ke sesi-2/3)
+    const sF = +(pick(`sf${i}`, 'sf') || 1);
+    const aF = +(pick(`af${i}`, 'af') || 1);
+    const sT = +(pick(`st${i}`, 'st') || sF);
+    const aT = +(pick(`at${i}`, 'at') || aF);
+
+    $(`#mur${i}-surahFrom`).value = String(sF);
+    fillAyahForSurah($(`#mur${i}-ayahFrom`), sF, { preset: aF });
+
+    $(`#mur${i}-surahTo`).value = String(sT);
+    fillAyahForSurah($(`#mur${i}-ayahTo`), sT, { preset: aT });
+
+    // --- Page (pf/pt) – tidak ada fallback legacy lintas sesi
+    const pf = pick(`pf${i}`, null);
+    const pt = pick(`pt${i}`, null);
+    $(`#mur${i}-pageFrom`).value = pf || '';
+    $(`#mur${i}-pageTo`).value   = pt || '';
+
+    // --- Juz From/To (opsional)
+    const jFromRaw = pick(`jfrom${i}`, null);
+    const jToRaw   = pick(`jto${i}`,   null);
+    if (jFromRaw !== '') $(`#mur${i}-juzFrom`).value = String(Number(jFromRaw));
+    else                 $(`#mur${i}-juzFrom`).value = '';
+    if (jToRaw   !== '') $(`#mur${i}-juzTo`).value   = String(Number(jToRaw));
+    else                 $(`#mur${i}-juzTo`).value   = '';
+
+    // --- Skor/Predikat per sesi (0 tetap disimpan)
+    const scRaw = pick(`score${i}`, null);
+    $(`#mur${i}-score`).value = (scRaw === '' ? '' : String(Number(scRaw) || 0));
+    setPredikatUI(i);
+
+    // Hitung total & sync dataset
+    renderSession(i);
+
+    // --- Sinkron select Juz bila range tepat di batas Juz
+    const jF = juzOfAyah(sF, aF), jT = juzOfAyah(sT, aT);
+    const jrF = getJuzRange(jF),   jrT = getJuzRange(jT);
+    if (jrF && jrT && jrF.sFrom === sF && jrF.aFrom === aF && jrT.sTo === sT && jrT.aTo === aT){
+      $(`#mur${i}-juzFrom`).value = String(jF);
+      $(`#mur${i}-juzTo`).value   = String(jT);
+    } else {
+      // biarkan kosong jika memang tidak ada jFrom/jTo asalnya
+      if (jFromRaw === '') $(`#mur${i}-juzFrom`).value = '';
+      if (jToRaw   === '') $(`#mur${i}-juzTo`).value   = '';
+    }
+  };
+
+  [1,2,3].forEach(loadOne);
+}
 
   // ---------- Binding per sesi ----------
   function fillAllBases(idx){
