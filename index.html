@@ -7143,27 +7143,18 @@ async function openModalForRow(row){
   })();
   if(!kelas || !table) return;
 
-  // >>> REVISI: selalu utamakan tanggal global dari dashboard
-const rows = [...(table.tBodies?.[0]?.rows||[])];
-
-const globalTanggal = String(
-  window.tanggalInput?.value ||
-  $('#tanggalInput')?.value || $('#tanggal')?.value || $('#date')?.value ||
-  document.querySelector('input[name="tanggal"]')?.value ||
-  document.querySelector('input[name="date"]')?.value || ''
-).trim();
-
-const tglSet = new Set();
-if (globalTanggal) {
-  tglSet.add(globalTanggal);
-  // sinkronkan ke setiap baris supaya tidak ada "tanggal campur"
-  rows.forEach(r => r.dataset.tanggal = globalTanggal);
-} else {
-  // fallback lama: ambil dari dataset baris kalau memang tidak ada input global
-  rows.map(r=>String(r.dataset?.tanggal||'').trim()).filter(Boolean).forEach(d=>tglSet.add(d));
-}
-
-if (!tglSet.size) return;
+  const rows = [...(table.tBodies?.[0]?.rows||[])];
+  const tglSet = new Set(rows.map(r=>String(r.dataset?.tanggal||'').trim()).filter(Boolean));
+  if(!tglSet.size){
+    const g = String(
+      window.tanggalInput?.value ||
+      $('#tanggalInput')?.value || $('#tanggal')?.value || $('#date')?.value ||
+      document.querySelector('input[name="tanggal"]')?.value ||
+      document.querySelector('input[name="date"]')?.value || ''
+    ).trim();
+    if(g) tglSet.add(g);
+  }
+  if(!tglSet.size) return;
 
   // helper tulis dataset
   const setSA=(cell,src,dsS,dsA)=>{ if(!src){cell.dataset[dsS]='';cell.dataset[dsA]='';return;}
@@ -7316,82 +7307,6 @@ for (let i = 1; i <= 3; i++) {
     await ensureMap();
     [1,2,3].forEach(bindSession);
   })();
-})();
-
-	// === GUARD: bersihkan jejak Murajaah saat tanggal dashboard berubah ===
-(function bindTanggalChangeGuard(){
-  const $ = (s,r=document)=>r.querySelector(s);
-
-  // cari elemen tanggal yang mungkin dipakai
-  const kandidatTanggal = [
-    '#tanggalInput', '#tanggal', '#date', 'input[name="tanggal"]', 'input[name="date"]'
-  ].map(sel => $(sel)).filter(Boolean);
-
-  if (!kandidatTanggal.length) return;
-
-  // fungsi untuk benar-benar mengosongkan dataset & UI murajaah di tabel
-  function clearMurajaahForNewDate(newDate){
-    const table = document.getElementById('santri-table')
-              || document.getElementById('santriTable')
-              || document.querySelector('table[data-role="santri-table"]')
-              || document.querySelector('table.santri-table');
-    if (!table) return;
-
-    const rows = [...(table.tBodies?.[0]?.rows || [])];
-
-    rows.forEach(tr=>{
-      // update tanggal baris ke tanggal baru agar tidak terjadi "tgl campur"
-      if (newDate) tr.dataset.tanggal = String(newDate);
-
-      const cell = tr.querySelector('.murajaah-cell');
-      if (!cell) return;
-
-      // 1) kosongkan UI minimal (label & total)
-      const valEl = cell.querySelector('.mur-val');
-      if (valEl) valEl.textContent = '—';
-      const labelEl = cell.querySelector('.mur-label');
-      if (labelEl) labelEl.textContent = '';
-
-      // 2) kosongkan dataset semua sesi (1..3) + legacy
-      const keys = [
-        'sf','af','st','at','pf','pt', 'murlabel', 'murtotal',
-        ...[1,2,3].flatMap(i=>[
-          `sf${i}`,`af${i}`,`st${i}`,`at${i}`,
-          `pf${i}`,`pt${i}`,
-          `jfrom${i}`,`jto${i}`,`juz${i}`,
-          `score${i}`,`ptext${i}`,`phuruf${i}`
-        ])
-      ];
-      keys.forEach(k=>{ if (k in cell.dataset) delete cell.dataset[k]; });
-    });
-
-    // 3) reset ringkasan total di modal (kalau kebetulan sedang terbuka)
-    const t1 = document.getElementById('mur-t1'); if (t1) t1.textContent='0.00';
-    const t2 = document.getElementById('mur-t2'); if (t2) t2.textContent='0.00';
-    const t3 = document.getElementById('mur-t3'); if (t3) t3.textContent='0.00';
-    const tall = document.getElementById('mur-totalJuzAll'); if (tall) tall.textContent='0.00';
-
-    // 4) juga reset state internal modal
-    if (window.murState){
-      window.murState[1] = { total:0 };
-      window.murState[2] = { total:0 };
-      window.murState[3] = { total:0 };
-    }
-
-    // 5) langsung muat ulang data hanya untuk tanggal baru (tanpa reload halaman)
-    if (window.murajaah?.refreshServer) {
-      window.murajaah.refreshServer();
-    }
-  }
-
-  // pasang listener ke semua input tanggal yang ditemukan
-  kandidatTanggal.forEach(inp=>{
-    // gunakan 'change' agar hanya ketika user selesai memilih tanggal
-    inp.addEventListener('change', ()=>{
-      const newDate = inp.value || '';
-      clearMurajaahForNewDate(newDate);
-    });
-  });
 })();
 </script>
 
