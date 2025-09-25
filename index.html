@@ -7001,18 +7001,37 @@ async function openModalForRow(row){
   currentRowEl = row;
   $('#murModal').style.display = 'flex';
 
+  // pastikan peta siap
   if (!dataReady){
     await ensureMap();
-    [1,2,3].forEach(bindSession);
   }
 
-  // Prefill dari dataset cell (sesi 1..3; fallback legacy HANYA untuk sesi-1)
-  const cell = row.querySelector('.murajaah-cell');
+  // Pastikan kontrol/opsi & event tiap sesi sudah diisi sekali (tanpa dobel listener)
+  function ensureSessionUI(idx){
+    const marker = document.querySelector(`#mur${idx}-surahFrom`);
+    if (!marker) return;
+    if (!marker._murBound){
+      bindSession(idx);               // ini memanggil fillAllBases + bind events
+      marker._murBound = true;        // tandai agar tidak dobel-bind
+    } else {
+      // jika sudah pernah bound tapi options kosong (tertimpa render lain), isi ulang minimal
+      if (!marker.options || marker.options.length === 0){
+        fillAllBases(idx);
+      }
+    }
+  }
+  [1,2,3].forEach(ensureSessionUI);
+
+  // helper set value yang aman (tidak melempar error kalau elemennya belum ada)
+  const setVal = (sel, v) => { const el = $(sel); if (el) el.value = v; };
+
+  // Prefill dari dataset cell (fallback legacy HANYA utk sesi-1)
+  const cell = row.querySelector('.murajaah-cell') || null;
 
   const loadOne = (i) => {
     const ds = cell?.dataset || {};
 
-    // helper: ambil nilai dataset; untuk sesi-1 boleh fallback ke legacyKey
+    // Ambil nilai dataset; utk sesi-1 boleh fallback ke legacyKey (sf/af/st/at dari versi lama)
     const pick = (key, legacyKey) => {
       const v = ds[key];
       if (v !== undefined && v !== '') return v;
@@ -7023,50 +7042,48 @@ async function openModalForRow(row){
       return '';
     };
 
-    // --- Surah/Ayat (tanpa copy dari sesi-1 ke sesi-2/3)
+    // --- Surah/Ayat
     const sF = +(pick(`sf${i}`, 'sf') || 1);
     const aF = +(pick(`af${i}`, 'af') || 1);
     const sT = +(pick(`st${i}`, 'st') || sF);
     const aT = +(pick(`at${i}`, 'at') || aF);
 
-    $(`#mur${i}-surahFrom`).value = String(sF);
+    setVal(`#mur${i}-surahFrom`, String(sF));
     fillAyahForSurah($(`#mur${i}-ayahFrom`), sF, { preset: aF });
 
-    $(`#mur${i}-surahTo`).value = String(sT);
+    setVal(`#mur${i}-surahTo`, String(sT));
     fillAyahForSurah($(`#mur${i}-ayahTo`), sT, { preset: aT });
 
     // --- Page (pf/pt) – tidak ada fallback legacy lintas sesi
     const pf = pick(`pf${i}`, null);
     const pt = pick(`pt${i}`, null);
-    $(`#mur${i}-pageFrom`).value = pf || '';
-    $(`#mur${i}-pageTo`).value   = pt || '';
+    setVal(`#mur${i}-pageFrom`, pf || '');
+    setVal(`#mur${i}-pageTo`,   pt || '');
 
     // --- Juz From/To (opsional)
     const jFromRaw = pick(`jfrom${i}`, null);
     const jToRaw   = pick(`jto${i}`,   null);
-    if (jFromRaw !== '') $(`#mur${i}-juzFrom`).value = String(Number(jFromRaw));
-    else                 $(`#mur${i}-juzFrom`).value = '';
-    if (jToRaw   !== '') $(`#mur${i}-juzTo`).value   = String(Number(jToRaw));
-    else                 $(`#mur${i}-juzTo`).value   = '';
+    setVal(`#mur${i}-juzFrom`, jFromRaw === '' ? '' : String(Number(jFromRaw)));
+    setVal(`#mur${i}-juzTo`,   jToRaw   === '' ? '' : String(Number(jToRaw)));
 
     // --- Skor/Predikat per sesi (0 tetap disimpan)
     const scRaw = pick(`score${i}`, null);
-    $(`#mur${i}-score`).value = (scRaw === '' ? '' : String(Number(scRaw) || 0));
+    setVal(`#mur${i}-score`, scRaw === '' ? '' : String(Number(scRaw) || 0));
     setPredikatUI(i);
 
-    // Hitung total & sync dataset
+    // Hitung total & sinkron dataset
     renderSession(i);
 
     // --- Sinkron select Juz bila range tepat di batas Juz
     const jF = juzOfAyah(sF, aF), jT = juzOfAyah(sT, aT);
     const jrF = getJuzRange(jF),   jrT = getJuzRange(jT);
     if (jrF && jrT && jrF.sFrom === sF && jrF.aFrom === aF && jrT.sTo === sT && jrT.aTo === aT){
-      $(`#mur${i}-juzFrom`).value = String(jF);
-      $(`#mur${i}-juzTo`).value   = String(jT);
+      setVal(`#mur${i}-juzFrom`, String(jF));
+      setVal(`#mur${i}-juzTo`,   String(jT));
     } else {
       // biarkan kosong jika memang tidak ada jFrom/jTo asalnya
-      if (jFromRaw === '') $(`#mur${i}-juzFrom`).value = '';
-      if (jToRaw   === '') $(`#mur${i}-juzTo`).value   = '';
+      if (jFromRaw === '') setVal(`#mur${i}-juzFrom`, '');
+      if (jToRaw   === '') setVal(`#mur${i}-juzTo`,   '');
     }
   };
 
