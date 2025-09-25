@@ -1401,7 +1401,7 @@ async function buatUserNIS() {
       <button id="download-pdf-rekap" class="rekap-btn">PDF Halaqoh</button>
 
       <!-- Row 2, Col 2: Excel Halaqoh -->
-      <button id="download-xls-rekap" class="rekap-btn">Excel Halaqoh</button>
+      <button id="download-xls-allkelas" class="rekap-btn">Excel All Halaqoh</button>
 
       <!-- Row 3, Col 1: PDF Individual -->
       <button id="download-pdf-santri" class="rekap-btn">PDF Individual</button>
@@ -5383,6 +5383,205 @@ if (typeof window.drawTableHeader !== 'function') {
       setBtnLoading(xlsBtn, false);
     }
   }
+
+
+
+(function(){
+  const $ = sel => document.querySelector(sel);
+
+  // ===== Download Excel All Kelas =====
+  (function ensureAllKelasXlsButton(){
+    const wrap = document.querySelector('.pdf-rekap-controls');
+    if (!wrap) return;
+    let btn = document.getElementById('download-xls-allkelas');
+    if (!btn){
+      btn = document.createElement('button');
+      btn.id = 'download-xls-allkelas';
+      btn.className = 'rekap-btn';
+      btn.style.background = '#16a34a';
+      btn.textContent = 'Download Excel All Kelas';
+      wrap.appendChild(btn);
+      const span = document.createElement('span');
+      span.id = 'status-xls-allkelas';
+      span.style.fontSize = '.95rem';
+      span.style.marginLeft = '8px';
+      wrap.appendChild(span);
+    }
+    if (!btn.dataset.listenerAttached){
+      btn.addEventListener('click', xlsAllKelasDownload);
+      btn.dataset.listenerAttached = '1';
+    }
+  })();
+
+  // ===== Util kecil: status dan sheet name aman =====
+  function setBtnLoading(btn, loading, txt='Mengerjakan…'){
+    if (!btn) return;
+    if (loading){
+      btn.dataset._oldText = btn.textContent;
+      btn.textContent = txt;
+      btn.disabled = true;
+    } else {
+      if (btn.dataset._oldText) btn.textContent = btn.dataset._oldText;
+      btn.disabled = false;
+      delete btn.dataset._oldText;
+    }
+  }
+  function safeSheetName(name){
+    const bad = /[\\/?*\[\]:]/g;
+    let n = String(name || 'Sheet').replace(bad, ' ');
+    if (n.length > 31) n = n.slice(0,31);
+    if (!n.trim()) n = 'Sheet';
+    return n;
+  }
+
+  // ===== Batas concurrency sederhana =====
+  async function pMap(arr, mapper, { concurrency = 4 } = {}){
+    const ret = new Array(arr.length);
+    let i = 0;
+    const workers = Array.from({length: Math.min(concurrency, arr.length)}, async () => {
+      while (i < arr.length){
+        const idx = i++;
+        ret[idx] = await mapper(arr[idx], idx);
+      }
+    });
+    await Promise.all(workers);
+    return ret;
+  }
+
+  // ===== Bentuk baris Excel agar konsisten dengan versi 1 kelas =====
+  function buildHeader(){
+    return [
+      "No","NIS","Nama","SM","KLS","H","A","S","I","Hadir %","SP",
+      "Setoran (Surah: Ayat s.d. Surah: Ayat)","Juz","Total Juz","Murajaah","THMS","Nilai Rata2","Predikat"
+    ];
+  }
+  function buildRow(r, idx){
+    const nilaiAvg  = r.nilaiCount ? (r.nilaiSum / r.nilaiCount) : 0;
+    const pred      = window.PDF_predikatFromScore?.(nilaiAvg) || { huruf:'-' };
+    const statusJuz = window.PDF_totalAllJuzStatus?.(r.totalJuz, r.semester) || { label:'' };
+    const setoranText = window.PDF_joinSAsegmentsNama?.(r.saSegments) || '-';
+    const juzText     = window.PDF_joinRangeSegments?.(r.juzSegments, true) || '-';
+
+    const hadirSlots = Number(r.hadirSlots ?? r.hadir ?? 0);
+    const izinSlots  = Number(r.izinSlots  ?? r.izin  ?? 0);
+    const sakitSlots = Number(r.sakitSlots ?? r.sakit ?? 0);
+    const alphaSlots = Number(r.alphaSlots ?? r.alpha ?? 0);
+    const targetSlots= Number(r.targetSlots ?? 0);
+    const hadirPct   = targetSlots > 0 ? Math.round((hadirSlots / targetSlots) * 100) : 0;
+
+    const fmtMur = (window.fmtMurRange || ((t,c)=>`${Number(t||0).toFixed(2)} (${Number(c||0)})`));
+    return [
+      idx+1,
+      r.nis || r.id || '',
+      r.nama || '',
+      (r.semester ?? ''),
+      window.jenjangLabel?.(r.jenjang ?? '') ?? (r.jenjang ?? ''),
+      hadirSlots, alphaSlots, sakitSlots, izinSlots,
+      hadirPct,
+      (r.keterangan ?? ''),
+      setoranText,
+      juzText,
+      Number(Number(r.totalJuz||0).toFixed(2)),
+      fmtMur(r.murTotalJuz || 0, r.murCount || 0),
+      statusJuz.label,
+      (nilaiAvg ? Number(nilaiAvg.toFixed(1)) : null),
+      pred.huruf
+    ];
+  }
+
+  // ===== Auto-fit kolom (pakai util kamu yang sudah ada) =====
+  function autoFitColumns(aoa){
+    const colCount = Math.max(...aoa.map(r => r.length));
+    const cols = Array.from({length: colCount}, (_,i) => {
+      const maxLen = Math.max(...aoa.map(row => {
+        const v = row[i];
+        if (v == null) return 0;
+        const s = (typeof v === 'string') ? v : String(v);
+        return s.length;
+      }), 0);
+      return { wch: Math.min(60, Math.max(6, Math.ceil(maxLen * 1.1) + 2)) };
+    });
+    return cols;
+  }
+
+  // ===== Handler: Excel All Kelas =====
+  async function xlsAllKelasDownload(){
+    const btn = document.getElementById('download-xls-allkelas');
+    const statusEl = document.getElementById('status-xls-allkelas');
+    const setStatus = (t)=>{ if(statusEl) statusEl.textContent = t; };
+
+    try{
+      setBtnLoading(btn, true, 'Membuat Excel…');
+      await (window.ensureXLSX ? window.ensureXLSX() : (async()=>{})());
+
+      const startDate = document.querySelector('#pdf-start-date')?.value;
+      const endDate   = document.querySelector('#pdf-end-date')?.value;
+      if (!startDate || !endDate) throw new Error('Mohon pilih tanggal mulai & akhir.');
+
+      const kelasKeys = window._getAllKelasKeys ? window._getAllKelasKeys() : [];
+      if (!kelasKeys.length) throw new Error('Tidak menemukan daftar kelas.');
+
+      setStatus(`Memuat ${kelasKeys.length} kelas…`);
+
+      // Kumpulkan semua data kelas (batasi concurrency)
+      const results = await pMap(kelasKeys, async (kelasKey, i) => {
+        try{
+          setStatus(`Memuat: ${kelasKey} (${i+1}/${kelasKeys.length})…`);
+          const data = await window.collectRekapDataForClass?.(kelasKey, startDate, endDate);
+          return { kelasKey, data };
+        } catch(e){
+          console.warn('Gagal memuat', kelasKey, e);
+          return { kelasKey, data: null };
+        }
+      }, { concurrency: 4 });
+
+      // Bangun workbook
+      const wb = XLSX.utils.book_new();
+
+      // Sheet per kelas
+      let nonEmpty = 0;
+      for (const {kelasKey, data} of results){
+        const sheetName = safeSheetName(kelasKey);
+        if (!data || !Array.isArray(data.rows) || data.rows.length === 0){
+          const wsEmpty = XLSX.utils.aoa_to_sheet([["(kosong)"]]);
+          XLSX.utils.book_append_sheet(wb, wsEmpty, sheetName);
+          continue;
+        }
+        nonEmpty++;
+        const header = buildHeader();
+        const body = data.rows.map((r, idx) => buildRow(r, idx));
+        const aoa = [header, ...body];
+        const ws = XLSX.utils.aoa_to_sheet(aoa);
+        ws['!cols'] = autoFitColumns(aoa);
+        XLSX.utils.book_append_sheet(wb, ws, sheetName);
+      }
+
+      // Sheet ringkasan
+      const summary = [["Kelas","Total Santri (ber-NIS)","KBM (hari)"]];
+      for (const {kelasKey, data} of results){
+        if (!data) { summary.push([kelasKey, 0, 0]); continue; }
+        summary.push([kelasKey, (data.rows||[]).length, data.kbmDays||0]);
+      }
+      const wsSum = XLSX.utils.aoa_to_sheet(summary);
+      wsSum['!cols'] = [{wch:28},{wch:22},{wch:12}];
+      XLSX.utils.book_append_sheet(wb, wsSum, safeSheetName('RINGKASAN'));
+
+      const ymd = new Date().toISOString().slice(0,10);
+      const fileName = `Rekap_All_Kelas_${startDate}_sd_${endDate}_${ymd}.xlsx`;
+
+      setStatus(`Menyimpan workbook (${nonEmpty} kelas berisi)…`);
+      XLSX.writeFile(wb, fileName);
+      setStatus(`✅ Selesai: ${fileName}`);
+    }catch(err){
+      console.error(err);
+      alert('Gagal mengunduh Excel All Kelas: ' + (err.message || err));
+      if (statusEl) statusEl.textContent = '❌ ' + (err.message || err);
+    }finally{
+      setBtnLoading(document.getElementById('download-xls-allkelas'), false);
+    }
+  }
+})();
+	 
 
   // ===== Util umum (widths) =====
   function fmtMurRange(total, count){
