@@ -7130,7 +7130,7 @@ async function openModalForRow(row){
   }
 
   // ---------- Refresh dari server (muat juga skor/predikat jika ada) ----------
-  async function refreshMurFromServer(){
+async function refreshMurFromServer(){
   const $ = (s,r=document)=>r.querySelector(s);
   const table = $('#santri-table');
   const kelas = (function(){
@@ -7143,18 +7143,34 @@ async function openModalForRow(row){
   })();
   if(!kelas || !table) return;
 
-  const rows = [...(table.tBodies?.[0]?.rows||[])];
-  const tglSet = new Set(rows.map(r=>String(r.dataset?.tanggal||'').trim()).filter(Boolean));
-  if(!tglSet.size){
-    const g = String(
+  // ==== REVISI PENENTU TANGGAL ====
+  // Ambil tanggal TERKINI dari input global, bukan dari dataset baris lama
+  const tanggalStart =
+    String(
       window.tanggalInput?.value ||
       $('#tanggalInput')?.value || $('#tanggal')?.value || $('#date')?.value ||
       document.querySelector('input[name="tanggal"]')?.value ||
       document.querySelector('input[name="date"]')?.value || ''
     ).trim();
-    if(g) tglSet.add(g);
+
+  const tanggalEnd =
+    String(
+      $('#tanggalFilterAkhir')?.value || ''  // kalau kamu pakai filter akhir/range
+    ).trim();
+
+  const isRange = (tanggalEnd && tanggalEnd !== tanggalStart);
+
+  // Saat BUKAN range → pakai **hanya** tanggalStart
+  // (jangan kumpulkan dari dataset baris; itu penyebab “nyangkut”)
+  const tglSet = new Set();
+  if (isRange) {
+    // untuk mode range, biarkan pengambilan lewat API range di loadSantriData
+    tglSet.add(tanggalStart || '');
+  } else {
+    if (tanggalStart) tglSet.add(tanggalStart);
   }
   if(!tglSet.size) return;
+  // ==== /REVISI ====
 
   // helper tulis dataset
   const setSA=(cell,src,dsS,dsA)=>{ if(!src){cell.dataset[dsS]='';cell.dataset[dsA]='';return;}
@@ -7659,6 +7675,52 @@ for (let i = 1; i <= 3; i++) {
 
   // Ekspos fungsi hitung (dipakai tombol)
   window.hitungTotalMurRangeFromTable = hitungTotalMurRangeFromTable;
+})();
+
+	// === Sinkron otomatis saat tanggal berubah (tanpa reload browser)
+(function(){
+  const sels = [
+    '#tanggalInput', '#tanggal', '#date',
+    'input[name="tanggal"]', 'input[name="date"]'
+  ];
+  const wired = new Set();
+
+  async function onDateChange(){
+    try{
+      // Tutup modal jika sedang terbuka & reset state modal
+      const mm = document.getElementById('murModal');
+      if (mm && mm.style) mm.style.display = 'none';
+      if (window.murState){
+        window.murState[1] = {}; window.murState[2] = {}; window.murState[3] = {};
+      }
+
+      // Render ulang tabel sesuai tanggal baru
+      if (typeof window.loadSantriData === 'function'){
+        await window.loadSantriData();
+      }
+
+      // Paksa refresh kolom Murajaah dari server (tanggal baru)
+      if (window.murajaah && typeof window.murajaah.refreshServer === 'function'){
+        await window.murajaah.refreshServer();
+      }
+    } catch(e){
+      console.warn('Tanggal change refresh failed:', e);
+    }
+  }
+
+  function wire(el){
+    if (!el || wired.has(el)) return;
+    wired.add(el);
+    el.addEventListener('change', onDateChange);
+  }
+
+  function scan(){ sels.forEach(sel => wire(document.querySelector(sel))); }
+
+  if (document.readyState === 'loading'){
+    document.addEventListener('DOMContentLoaded', scan);
+  } else {
+    scan();
+  }
 })();
 </script>
 
