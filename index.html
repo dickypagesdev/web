@@ -3474,85 +3474,33 @@ if (!Array.isArray(santriData)) santriData = [];   // <<< penting: kalau API bal
 
         santriTableBody.appendChild(row);
 
-		// ----[ Tambahan penting: isi kolom Murajaah per-sesi dari dataAbsensi ]----
-(function ensureAndFillMurCell(){
-  // pastikan kolom mur ada
-  let cell = row.querySelector('.murajaah-cell');
-  if (!cell) {
-    cell = document.createElement('td');
-    cell.className = 'murajaah-cell';
-    cell.dataset.murtotal = "";
-    cell.innerHTML = `
-      <div class="mur-val" style="font-weight:600;min-height:1em">—</div>
-      <div class="mur-label" style="font-size:11px; color:#6b7280;"></div>
-      <button type="button" class="btn-mur" style="margin-top:6px; padding:4px 8px;">Input</button>
-    `;
-    row.appendChild(cell);
-    cell.querySelector('.btn-mur').addEventListener('click',()=> {
-      // buka modal untuk baris ini
-      if (window.murajaah && typeof window.murajaah.afterTableRendered === 'function') {
-        // pastikan infrastruktur siap
-        window.murajaah.afterTableRendered();
-      }
-      if (typeof window.openModalForRow === 'function') {
-        window.openModalForRow(row);
-      } else {
-        // fallback ke global yang dipasang di script mur
-        const btn = cell.querySelector('.btn-mur');
-        btn && btn.blur();
-        // fungsi openModalForRow didefinisikan di script mur
-        try { window.openModalForRow && window.openModalForRow(row); } catch(_) {}
-      }
-    });
-  }
-
-  // helper tulis dataset
-  const setSA=(src,dsS,dsA)=>{ if(!src){cell.dataset[dsS]='';cell.dataset[dsA]='';return;}
-    const [s,a]=String(src).split(':'); cell.dataset[dsS]=s||''; cell.dataset[dsA]=a||'';
+		// setelah row selesai di-append:
+const cell = row.querySelector('.murajaah-cell');
+if (cell) {
+  const setSA = (src, dsS, dsA) => {
+    if (!src){ cell.dataset[dsS]=''; cell.dataset[dsA]=''; return; }
+    const [s,a] = String(src).split(':'); cell.dataset[dsS]=s||''; cell.dataset[dsA]=a||'';
   };
-  const setPages=(src,pfKey,ptKey)=>{ if(!src){cell.dataset[pfKey]='';cell.dataset[ptKey]='';return;}
-    const [pf,pt]=String(src).split('-'); cell.dataset[pfKey]=pf||''; cell.dataset[ptKey]=pt||'';
+  const setPages = (src, pfKey, ptKey) => {
+    if (!src){ cell.dataset[pfKey]=''; cell.dataset[ptKey]=''; return; }
+    const [pf,pt] = String(src).split('-'); cell.dataset[pfKey]=pf||''; cell.dataset[ptKey]=pt||'';
   };
-  const num=(v)=>{ if(typeof v==='number') return Number.isFinite(v)?v:0;
-    const n=parseFloat(String(v??'').replace(/[^0-9.,-]/g,'').replace(',', '.')); return Number.isFinite(n)?n:0; };
 
   const rec = dataAbsensi || {};
-
-  // legacy sesi-1 (kompatibel)
+  // legacy sesi-1 (opsional)
   setSA(rec.murFrom || rec.dari || '', 'sf', 'af');
   setSA(rec.murTo   || rec.sampai|| '', 'st', 'at');
   setPages(rec.murPages || rec.halamanRange || '', 'pf', 'pt');
 
-  // isi PER-SESI eksplisit (1..3) – dukung beberapa nama properti
+  // per sesi 1..3
   for (let i=1;i<=3;i++){
-    // from/to
-    setSA(rec[`murFrom${i}`]  || rec[`from${i}`]   || '', `sf${i}`, `af${i}`);
-    setSA(rec[`murTo${i}`]    || rec[`to${i}`]     || '', `st${i}`, `at${i}`);
-    // pages
-    setPages(rec[`murPages${i}`] || rec[`pages${i}`] || '', `pf${i}`, `pt${i}`);
-    // juz range optional
-    const jF = rec[`jFrom${i}`] ?? rec[`juzFrom${i}`];
-    const jT = rec[`jTo${i}`]   ?? rec[`juzTo${i}`];
-    if (jF!=null && jF!=='') cell.dataset[`jfrom${i}`]=String(jF); else delete cell.dataset[`jfrom${i}`];
-    if (jT!=null && jT!=='') cell.dataset[`jto${i}`]  =String(jT); else delete cell.dataset[`jto${i}`];
-    // total juz per sesi
-    const jz = num(rec[`juzmur${i}`] ?? rec[`juzSesi${i}`] ?? rec[`juz${i}`] ?? 0);
-    cell.dataset[`juz${i}`]=jz.toFixed(2);
-    // skor/predikat
-    if (rec[`murScore${i}`]     != null) cell.dataset[`score${i}`] = String(rec[`murScore${i}`]);
-    if (rec[`murPredText${i}`]  != null) cell.dataset[`ptext${i}`] = String(rec[`murPredText${i}`]);
-    if (rec[`murPredHuruf${i}`] != null) cell.dataset[`phuruf${i}`]= String(rec[`murPredHuruf${i}`]);
+    setSA(rec[`murFrom${i}`] || '', `sf${i}`, `af${i}`);
+    setSA(rec[`murTo${i}`]   || '', `st${i}`, `at${i}`);
+    setPages(rec[`murPages${i}`] || '', `pf${i}`, `pt${i}`);
+    if (rec[`jFrom${i}`] != null && rec[`jFrom${i}`] !== '') cell.dataset[`jfrom${i}`] = String(rec[`jFrom${i}`]); else delete cell.dataset[`jfrom${i}`];
+    if (rec[`jTo${i}`]   != null && rec[`jTo${i}`]   !== '') cell.dataset[`jto${i}`]   = String(rec[`jTo${i}`]);   else delete cell.dataset[`jto${i}`];
   }
-
-  // label & total tampilan kolom
-  const t1 = Number(cell.dataset.juz1||0);
-  const t2 = Number(cell.dataset.juz2||0);
-  const t3 = Number(cell.dataset.juz3||0);
-  const grand = (t1+t2+t3) || num(rec.juzmurajaah ?? rec.totalJuz ?? 0);
-  cell.dataset.murtotal = grand.toFixed(2);
-  const valEl = cell.querySelector('.mur-val');
-  if (valEl) valEl.textContent = `${grand.toFixed(2)} juz`;
-})();
+}
 
         const totalAllJuzTd = row.querySelector("td.total-all-juz");
         if (totalAllJuzTd && totalAllJuzTd.textContent.trim() === "0") {
