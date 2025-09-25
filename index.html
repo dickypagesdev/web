@@ -3829,12 +3829,11 @@ row.querySelector(".total-halaman").textContent = result.total.toFixed(2);
     tanggalInput.addEventListener("change", loadSantriData);
 
 
-
-// ===== Save Data (3 sesi, kompatibel) =====
+// ===== Save Data (meniru B57.html, tanpa hapus fungsi lain) =====
 async function simpanDataMutabaah(saveBtn){
-  const table = document.querySelector('#santri-table');
   const rows  = document.querySelectorAll('#santri-table tbody tr');
 
+  // --- Resolve kelas & tanggal global (fleksibel) ---
   function resolveKelas(){
     const byWin=(window.kelasSelect?.value)||'';
     const byId =document.querySelector('#kelasSelect')?.value || document.querySelector('#kelas')?.value || '';
@@ -3856,14 +3855,12 @@ async function simpanDataMutabaah(saveBtn){
     if (String(byNm).trim())  return String(byNm).trim();
     return '';
   }
+
   const kelas = resolveKelas();
-  const tanggalGlobal = resolveTanggalGlobal();
-  if (!kelas) { alert('Kelas belum terdeteksi.'); return; }
+  const tanggalUtama = resolveTanggalGlobal();
+  if (!kelas){ alert('Kelas belum terdeteksi.'); return; }
 
-  const tanggalSet = new Set([...rows].map(r=>String(r.dataset?.tanggal||'').trim()).filter(Boolean));
-  if (!tanggalSet.size && tanggalGlobal) tanggalSet.add(tanggalGlobal);
-  if (!tanggalSet.size){ alert('Tanggal tidak ditemukan baik di baris maupun header.'); return; }
-
+  // helpers kecil
   const parseNum=(v)=>{ if(typeof v==='number')return Number.isFinite(v)?v:0; const s=String(v??'').replace(/[^0-9.,-]/g,'').replace(',', '.'); const n=parseFloat(s); return Number.isFinite(n)?n:0; };
   function getNamaFromCell(cell){ if(!cell)return ""; const first=cell.childNodes&&cell.childNodes[0]; const txt=(first&&first.textContent)?first.textContent:cell.textContent; return String(txt).trim(); }
   function getRowId(row){ const raw=row.children[0]?.textContent?.trim()||""; const asNum=parseInt(raw,10); return Number.isNaN(asNum)?raw:asNum; }
@@ -3876,79 +3873,123 @@ async function simpanDataMutabaah(saveBtn){
     const rest=parts.filter((_,i)=>i!==numIdx).map(p=>p.replace(/[^\p{L}\p{N}\-]/gu,'')).filter(Boolean);
     const gIdx=rest.findIndex(p=>/^[A-E]$/i.test(p));
     const huruf=gIdx!==-1?rest[gIdx].toUpperCase():null;
-    const teks =rest.filter((_,i)=>i!==gIdx && rest[i]!=='-');
-    return { nilai, predikatText: (teks.length?teks.join(' '):null), predikatHuruf:huruf };
+    const teks =rest.filter((_,i)=>i!==gIdx && rest[i]!=='-'); 
+    return { nilai, predikatText:(teks.length?teks.join(' '):null), predikatHuruf:huruf };
+  }
+
+  // === ABSENSI FLEX — persis pola B57 ===
+  function buildAbsensi6(items, target){
+    const t = Math.max(1, Math.min(6, Number(target)||1));
+    const chosen = (items||[])
+      .filter(it=>it.checked)
+      .map(it=>String(it.key).toLowerCase().replace(/\d+$/,''));
+    const out=[]; for(let i=0;i<t;i++) out.push(chosen[i]||"");
+    return out;
+  }
+  function buildAbsensiExpanded(items, target){
+    const t = Math.max(1, Math.min(6, Number(target)||1));
+    const perStatus = Number(window.ABS_FLEX_CFG?.perStatus ?? 2);
+    const stOrder = Array.isArray(window.ABS_FLEX_CFG?.statuses) && window.ABS_FLEX_CFG.statuses.length
+      ? window.ABS_FLEX_CFG.statuses : ["hadir","izin","sakit","alpha"];
+    const checkedSet = new Set((items||[]).filter(it=>it.checked).map(it=>String(it.key).toLowerCase()));
+    const title = s => s.charAt(0).toUpperCase() + s.slice(1);
+    const result=[]; let seq=1;
+    for (const st of stOrder){
+      for(let i=1;i<=perStatus;i++){
+        const key=`${st}${i}`;
+        if (checkedSet.has(key) && seq<=t){ result.push(`${title(st)}${i}`); seq++; }
+      }
+    }
+    return result;
+  }
+  function getAbsensiFlexFromRow(row, existing = {}){
+    const cell = row.querySelector(".abs-flex-cell");
+    if (!cell){
+      const items = Array.isArray(existing.absensiItems)? existing.absensiItems : [];
+      const target = Number(existing.absensiTarget)||0;
+      const expanded = buildAbsensiExpanded(items, target);
+      return {
+        absensiItems: items,
+        absensiTarget: target,
+        absensiChecked: Number(existing.absensiChecked)||0,
+        absensiPercent: Number(existing.absensiPercent)||0,
+        absensi6: Array.isArray(existing.absensi6)? existing.absensi6 : [],
+        absensiExpanded: expanded,
+        absensiExpandedStr: expanded.join(", ")
+      };
+    }
+    const absensiItems   = Array.isArray(cell._absensiItems)? cell._absensiItems : [];
+    const absensiTarget  = Number(cell._absensiTarget||0);
+    const absensiChecked = Number(cell._absensiChecked||0);
+    const absensiPercent = Number(cell._absensiPercent||0);
+    const absensi6       = buildAbsensi6(absensiItems, absensiTarget);
+    const absensiExpanded= buildAbsensiExpanded(absensiItems, absensiTarget);
+    const absensiExpandedStr = absensiExpanded.join(", ");
+    return { absensiItems, absensiTarget, absensiChecked, absensiPercent, absensi6, absensiExpanded, absensiExpandedStr };
   }
 
   if (saveBtn){ saveBtn.disabled=true; saveBtn.dataset._old=saveBtn.textContent; saveBtn.textContent='⏳ Menyimpan...'; }
 
-  const controller = new AbortController();
-  const cancelTimer = setTimeout(()=>controller.abort(), 15000);
-
   try{
+    const groupByTanggal = new Map();
+    rows.forEach(row=>{
+      const tglBaris = (row.dataset?.tanggal && row.dataset.tanggal.trim()) ? row.dataset.tanggal.trim() : tanggalUtama;
+      if (!groupByTanggal.has(tglBaris)) groupByTanggal.set(tglBaris, []);
+      groupByTanggal.get(tglBaris).push(row);
+    });
+
     const hasilKirim=[];
 
-    for (const tanggal of tanggalSet){
-      const rowsTanggal = [...rows].filter(r=>{
-        const rt = String(r.dataset?.tanggal||'').trim();
-        return tanggalGlobal && !rt ? true : (rt===tanggal);
-      });
-
+    for (const [tanggal, rowsTanggal] of groupByTanggal.entries()){
       let dataLama=[];
       try{
-        const r=await fetch(`/api/getAbsensi?kelas=${encodeURIComponent(kelas)}&tanggal=${encodeURIComponent(tanggal)}&t=${Date.now()}`, { signal: controller.signal });
-        if(r.ok){ dataLama=await r.json(); }
-      }catch{}
+        const resLama=await fetch(`/api/getAbsensi?kelas=${encodeURIComponent(kelas)}&tanggal=${encodeURIComponent(tanggal)}`);
+        if(resLama.ok) dataLama=await resLama.json();
+      }catch(e){ console.warn('Tidak bisa ambil data lama', e); }
+
       const dataMerged = Array.isArray(dataLama)?[...dataLama]:[];
 
       rowsTanggal.forEach(row=>{
-        const id=getRowId(row);
-        const existing=dataMerged.find(d=>String(d.id)===String(id))||{};
-        const nama=getNamaFromCell(row.children[1]);
+        const id   = getRowId(row);
+        const nama = getNamaFromCell(row.children[1]);
+        const nis  = String(row.dataset?.nis||"").trim();
 
-        const keySem=String((row.dataset?.nis||row.dataset?.id||"")||"").trim();
-        const semester=(window.semesterMap?.[keySem]) ?? existing.semester ?? "";
-        const jenjang =(window.jenjangMap?.[keySem])  ?? existing.jenjang  ?? "";
-        const keterangan=(window.keteranganMap?.[keySem]) ?? existing.keterangan ?? "";
-        const nis=String(row.dataset?.nis || existing.nis || "").trim();
+        let existing = dataMerged.find(d=>String(d.id)===String(id));
+        if (!existing && nis) existing = dataMerged.find(d=>String(d.nis||"")===nis) || {};
+
+        const keySem = String((row.dataset?.nis||row.dataset?.id||"")||"").trim();
+        const semester   = (window.semesterMap?.[keySem])   ?? existing.semester ?? "";
+        const jenjang    = (window.jenjangMap?.[keySem])    ?? existing.jenjang  ?? "";
+        const keterangan = (window.keteranganMap?.[keySem]) ?? existing.keterangan ?? "";
+
+        const flex = getAbsensiFlexFromRow(row, existing||{});
+        const { absensiItems, absensiTarget, absensiChecked, absensiPercent, absensi6, absensiExpanded, absensiExpandedStr } = flex;
 
         const surahDari    = row.querySelector(".surah-dari")?.value ?? "";
         const ayatDari     = row.querySelector(".ayat-dari")?.value ?? "";
         const surahSampai  = row.querySelector(".surah-sampai")?.value ?? "";
         const ayatSampai   = row.querySelector(".ayat-sampai")?.value ?? "";
-        const totalJuz     = row.querySelector(".total-juz")?.textContent ?? existing.totalJuz ?? "0";
-        const halaman      = row.querySelector(".halaman-terbaca")?.textContent ?? existing.halaman ?? "";
-        const totalHalaman = row.querySelector(".total-halaman")?.textContent ?? existing.totalHalaman ?? "";
-        const juzTerbaca   = row.querySelector(".juz-terbaca")?.textContent ?? existing.juzTerbaca ?? "";
+        const totalJuz     = row.querySelector(".total-juz")?.textContent ?? existing?.totalJuz ?? "0";
+        const halaman      = row.querySelector(".halaman-terbaca")?.textContent ?? existing?.halaman ?? "";
+        const totalHalaman = row.querySelector(".total-halaman")?.textContent ?? existing?.totalHalaman ?? "";
+        const juzTerbaca   = row.querySelector(".juz-terbaca")?.textContent ?? existing?.juzTerbaca ?? "";
 
-        const nilaiCell=row.querySelector(".lihat-quran-btn")?.parentElement;
-        const nilaiStr =nilaiCell?.querySelector("div:nth-child(1)")?.innerText?.trim()||"";
-        const parsed =parseNilaiStr(nilaiStr);
+        // Nilai umum (tetap ada)
+        const nilaiCell = row.querySelector(".lihat-quran-btn")?.parentElement;
+        const nilaiStr  = nilaiCell?.querySelector("div:nth-child(1)")?.innerText?.trim()||"";
+        const parsed    = parseNilaiStr(nilaiStr);
         let buttonCell;
         if (typeof parsed.nilai==="number" && !Number.isNaN(parsed.nilai)){
-          const predikatText  =(parsed.predikatText && parsed.predikatText!=='-') ? parsed.predikatText : (existing.buttonCell?.predikatText ?? "-");
-          const predikatHuruf =(parsed.predikatHuruf && parsed.predikatHuruf!=='-') ? parsed.predikatHuruf : (existing.buttonCell?.predikatHuruf ?? "-");
+          const predikatText  =(parsed.predikatText && parsed.predikatText!=='-') ? parsed.predikatText : (existing?.buttonCell?.predikatText ?? "-");
+          const predikatHuruf =(parsed.predikatHuruf && parsed.predikatHuruf!=='-') ? parsed.predikatHuruf : (existing?.buttonCell?.predikatHuruf ?? "-");
           buttonCell = { nilai: parsed.nilai, predikatText, predikatHuruf };
-        } else if (existing.buttonCell) { buttonCell=existing.buttonCell; }
+        } else if (existing?.buttonCell) { buttonCell=existing.buttonCell; }
 
-        let absensi =
-          row.querySelector('.absensi')?.value
-          ?? row.querySelector('select[name="absensi"]')?.value
-          ?? row.querySelector('input[name="absensi"]')?.value
-          ?? row.querySelector(`input[name="absensi-${id}"]:checked`)?.value
-          ?? row.dataset?.absensi
-          ?? existing.absensi
-          ?? "";
-
-        const marks = (row.markData && typeof row.markData === 'object')
-          ? row.markData
-          : (existing.marks || { audio: [] });
-        if (!marks.audio) marks.audio = [];
-
-        // --- data 3 sesi dari .murajaah-cell dataset ---
+        // -------- Murajaah (3 sesi + nilai/predikat per sesi) --------
         const murCell=row.querySelector('.murajaah-cell');
+
         function collectSess(i){
-          if (!murCell) return { from:"",to:"",pages:"", jFrom:null, jTo:null, juz:0 };
+          if (!murCell) return {from:"",to:"",pages:"", jFrom:null, jTo:null, juz:0, score:null, pText:null, pHuruf:null};
           const sF=murCell.dataset[`sf${i}`]||"", aF=murCell.dataset[`af${i}`]||"";
           const sT=murCell.dataset[`st${i}`]||"", aT=murCell.dataset[`at${i}`]||"";
           const pF=murCell.dataset[`pf${i}`]||"", pT=murCell.dataset[`pt${i}`]||"";
@@ -3958,53 +3999,123 @@ async function simpanDataMutabaah(saveBtn){
           const from  = (sF && aF) ? `${sF}:${aF}` : "";
           const to    = (sT && aT) ? `${sT}:${aT}` : "";
           const pages = (pF && pT) ? `${pF}-${pT}` : "";
-          return { from,to,pages,jFrom,jTo,juz };
+          const score = murCell.dataset[`score${i}`]!=null ? Number(murCell.dataset[`score${i}`]) : null;
+          const pText = murCell.dataset[`ptext${i}`] || null;
+          const pHuruf= murCell.dataset[`phuruf${i}`] || null;
+          return { from,to,pages,jFrom,jTo,juz, score, pText, pHuruf };
         }
-        const s1 = collectSess(1);
-        const s2 = collectSess(2);
-        const s3 = collectSess(3);
 
-        let juzMurAll = s1.juz + s2.juz + s3.juz;
-        if (!juzMurAll && murCell){
-          juzMurAll = parseNum(murCell.dataset.murtotal || murCell.querySelector('.mur-val')?.textContent || 0);
+        let s1 = collectSess(1);
+        let s2 = collectSess(2);
+        let s3 = collectSess(3);
+
+        if (!murCell){
+          // fallback bila tidak ada modal dataset
+          s1 = {
+            from: existing?.murFrom || "",
+            to:   existing?.murTo   || "",
+            pages:existing?.murPages|| "",
+            jFrom: existing?.jFrom1 ?? null,
+            jTo:   existing?.jTo1   ?? null,
+            juz:   parseNum(existing?.juzmur1 || existing?.juzmurajaah || 0),
+            score: existing?.murScore1 ?? null,
+            pText: existing?.murPredText1 || null,
+            pHuruf: existing?.murPredHuruf1 || null
+          };
+          s2 = {
+            from: existing?.murFrom2 || "",
+            to:   existing?.murTo2   || "",
+            pages:existing?.murPages2|| "",
+            jFrom: existing?.jFrom2 ?? null,
+            jTo:   existing?.jTo2   ?? null,
+            juz:   parseNum(existing?.juzmur2 || 0),
+            score: existing?.murScore2 ?? null,
+            pText: existing?.murPredText2 || null,
+            pHuruf: existing?.murPredHuruf2 || null
+          };
+          s3 = {
+            from: existing?.murFrom3 || "",
+            to:   existing?.murTo3   || "",
+            pages:existing?.murPages3|| "",
+            jFrom: existing?.jFrom3 ?? null,
+            jTo:   existing?.jTo3   ?? null,
+            juz:   parseNum(existing?.juzmur3 || 0),
+            score: existing?.murScore3 ?? null,
+            pText: existing?.murPredText3 || null,
+            pHuruf: existing?.murPredHuruf3 || null
+          };
+        }
+
+        let juzMurAll = 0;
+        if (murCell){
+          const valTxt = (murCell.dataset.murtotal ?? "").trim();
+			const parsedTotal = parseNum(valTxt);
+			const sumSess = parseNum(s1.juz) + parseNum(s2.juz) + parseNum(s3.juz);
+			// pakai parsedTotal meskipun 0 (bukan truthy check)
+			juzMurAll = Number.isFinite(parsedTotal) ? parsedTotal : sumSess;
+        } else {
+          const sumSess = parseNum(s1.juz)+parseNum(s2.juz)+parseNum(s3.juz);
+          juzMurAll = sumSess || parseNum(existing?.juzmurajaah || 0);
         }
         juzMurAll = Number(juzMurAll.toFixed(2));
 
-        const murFromLegacy  = s1.from  || existing.murFrom  || "";
-        const murToLegacy    = s1.to    || existing.murTo    || "";
-        const murPagesLegacy = s1.pages || existing.murPages || "";
-
-        const murSessions = [];
-        [s1,s2,s3].forEach((s,idx)=>{
-          if (s.from || s.to || s.pages || s.juz>0){
+        const murSessions=[];
+        [s1,s2,s3].forEach((s)=>{
+          if (s.from || s.to || s.pages || s.juz > 0 || s.juz === 0 || s.score != null){
             murSessions.push({
               from: s.from, to: s.to, pages: s.pages,
-              jFrom: s.jFrom, jTo: s.jTo, juz: Number(s.juz.toFixed(2))
+              jFrom: s.jFrom, jTo: s.jTo, juz: Number(parseNum(s.juz).toFixed(2)),
+              score: (s.score!=null ? Number(s.score) : null),
+              predikatText: s.pText || null,
+              predikatHuruf: s.pHuruf || null
             });
           }
         });
 
-        const base={
+        const murFromLegacy  = s1.from  || existing?.murFrom  || "";
+        const murToLegacy    = s1.to    || existing?.murTo    || "";
+        const murPagesLegacy = s1.pages || existing?.murPages || "";
+
+        const marks = (row.markData && typeof row.markData === 'object')
+          ? row.markData
+          : (existing?.marks || { audio: [] });
+        if (!marks.audio) marks.audio = [];
+
+        const base = {
           ...existing,
           id, nis, nama, jenjang, semester,
-          absensi,
+
+          absensi: absensiExpandedStr,
+          absensiItems, absensiTarget, absensiChecked, absensiPercent, absensi6,
+          absensiExpanded, absensiExpandedStr,
+
           dari:`${surahDari}:${ayatDari}`,
           sampai:`${surahSampai}:${ayatSampai}`,
           totalJuz, halaman, totalHalaman, juzTerbaca, keterangan,
 
-          // === field baru 3 sesi ===
-          juzmur1: Number(s1.juz.toFixed(2)),
-          juzmur2: Number(s2.juz.toFixed(2)),
-          juzmur3: Number(s3.juz.toFixed(2)),
-          juzmurajaah: juzMurAll, // total 3 sesi
+          // Murajaah 3 sesi + skor/predikat
+          juzmur1: Number(parseNum(s1.juz).toFixed(2)),
+          juzmur2: Number(parseNum(s2.juz).toFixed(2)),
+          juzmur3: Number(parseNum(s3.juz).toFixed(2)),
+          juzmurajaah: juzMurAll,
 
           murFrom1: s1.from,  murTo1: s1.to,  murPages1: s1.pages, jFrom1: s1.jFrom, jTo1: s1.jTo,
           murFrom2: s2.from,  murTo2: s2.to,  murPages2: s2.pages, jFrom2: s2.jFrom, jTo2: s2.jTo,
           murFrom3: s3.from,  murTo3: s3.to,  murPages3: s3.pages, jFrom3: s3.jFrom, jTo3: s3.jTo,
 
-          murSessions, // opsional
+          murScore1: (s1.score!=null ? Number(s1.score) : null),
+          murScore2: (s2.score!=null ? Number(s2.score) : null),
+          murScore3: (s3.score!=null ? Number(s3.score) : null),
+          murPredText1: s1.pText || null,
+          murPredText2: s2.pText || null,
+          murPredText3: s3.pText || null,
+          murPredHuruf1: s1.pHuruf || null,
+          murPredHuruf2: s2.pHuruf || null,
+          murPredHuruf3: s3.pHuruf || null,
 
-          // legacy (kompat) dari sesi 1
+          murSessions,
+
+          // Legacy
           murFrom:  murFromLegacy,
           murTo:    murToLegacy,
           murPages: murPagesLegacy,
@@ -4013,51 +4124,36 @@ async function simpanDataMutabaah(saveBtn){
         };
         const newData = buttonCell ? { ...base, buttonCell } : base;
 
-        const idx=dataMerged.findIndex(d=>String(d.id)===String(id));
-        if(idx!==-1) dataMerged[idx]=newData; else dataMerged.push(newData);
+        const idx = dataMerged.findIndex(d=>String(d.id)===String(id));
+        if (idx!==-1) dataMerged[idx]=newData;
+        else dataMerged.push(newData);
       });
 
-      // Kirim ke server
-      let result = {};
-      try{
-        const res=await fetch('/api/saveData',{
-          method:'POST',
-          headers:{ 'Content-Type':'application/json', 'Accept':'application/json' },
-          body: JSON.stringify({ tanggal, kelas, data: dataMerged }),
-          signal: controller.signal,
-          credentials: 'same-origin'
-        });
-        const ct = res.headers.get('content-type') || '';
-        const isJSON = ct.includes('application/json');
-        result = isJSON ? await res.json() : { success: res.ok, message: await res.text() };
-        if(!res.ok){
-          throw new Error((result && result.message) || `Gagal (${res.status})`);
-        }
-      }catch(err){
-        hasilKirim.push({ tanggal, ok:false, result:{ success:false, message:String(err.message||err) } });
-        continue;
-      }
-      hasilKirim.push({ tanggal, ok: !!result?.success, result });
+      const res=await fetch('/api/saveData',{
+        method:'POST',
+        headers:{'Content-Type':'application/json','Accept':'application/json'},
+        body: JSON.stringify({ tanggal, kelas, data: dataMerged })
+      });
+      const result=await res.json().catch(()=>({}));
+      hasilKirim.push({tanggal, ok:!!result?.success, result});
     }
 
     const gagal=hasilKirim.filter(h=>!h.ok);
     if(!gagal.length){
       if(saveBtn) saveBtn.textContent='✅ Tersimpan';
       if (window.murajaah && typeof window.murajaah.refreshServer==='function'){
-        try{ await window.murajaah.refreshServer(); }catch{}
+        await window.murajaah.refreshServer();
       }
     }else{
       const daftar=gagal.map(g=>g.tanggal).join(', ');
       alert(`❌ Sebagian tanggal gagal disimpan: ${daftar}`);
       if(saveBtn) saveBtn.textContent='❌ Gagal Sebagian';
-      console.warn('Detail gagal:', gagal);
     }
 
   }catch(e){
     console.error(e);
     alert('⚠️ Error menyimpan data!');
   }finally{
-    clearTimeout(cancelTimer);
     if(saveBtn){
       setTimeout(()=>{
         saveBtn.textContent = saveBtn.dataset._old || 'Save Data';
@@ -4068,10 +4164,11 @@ async function simpanDataMutabaah(saveBtn){
   }
 }
 
-// Listener tombol
+// Listener tombol (biarkan seperti semula)
 document.getElementById('save-btn')?.addEventListener('click', function(){ simpanDataMutabaah(this); });
 document.getElementById('save-btn-modal')?.addEventListener('click', function(){ simpanDataMutabaah(this); });
 document.getElementById('mur-save')?.addEventListener('click', function(){ simpanDataMutabaah(this); });
+
 
 
 
@@ -6491,8 +6588,11 @@ kelasSelect?.addEventListener("change", () => loadSantriData());
 	 
 </script>
 
+
+
+
 <script>
-// ---------- Murajaah (3 sesi, Juz terintegrasi, hasil via overlay) ----------
+// ---------- Murajaah (3 sesi, Juz Range + Nilai per sesi) ----------
 (function(){
   const MAP_URL='https://raw.githubusercontent.com/dickymiswardi/tadabbur/main/ayah_page_map.json';
   const LAST_PAGE=604;
@@ -6501,6 +6601,19 @@ kelasSelect?.addEventListener("change", () => loadSantriData());
   const $$=(s,r=document)=>[...r.querySelectorAll(s)];
   const makeOpts=(n)=>Array.from({length:n},(_,i)=>`<option value="${i+1}">${i+1}</option>`).join('');
   const parseNum=(v)=>{ if(typeof v==='number')return Number.isFinite(v)?v:0; const s=String(v??'').replace(/[^0-9.,-]/g,'').replace(',', '.'); const n=parseFloat(s); return Number.isFinite(n)?n:0; };
+
+  // Predikat
+  const PREDIKATS = [
+    { max: 59,  text: 'ROSIB',         huruf: 'D'  },
+    { max: 69,  text: 'MAQBUL',        huruf: 'C'  },
+    { max: 79,  text: 'JAYYID',        huruf: 'B'  },
+    { max: 89,  text: 'JAYYID JIDDAN', huruf: 'A'  },
+    { max: 100, text:'MUMTAZ',         huruf: 'A+' },
+  ];
+  function getPredikat(score){
+    const s = Math.max(0, Math.min(100, Number(score)||0));
+    return PREDIKATS.find(p=>s<=p.max) || PREDIKATS[PREDIKATS.length-1];
+  }
 
   // ------ Peta awal Juz ------
   const JUZ_STARTS = [
@@ -6593,75 +6706,157 @@ kelasSelect?.addEventListener("change", () => loadSantriData());
     else if(keep && prev) el.value=String(Math.min(prev,max));
     else el.value="1";
   }
-  function fillPageSelects(idFrom,idTo){ $(idFrom).innerHTML=makeOpts(LAST_PAGE); $(idTo).innerHTML=makeOpts(LAST_PAGE); }
-  function fillJuzSelect(id){ const el=$(id); el.innerHTML = '<option value="">—</option>'+Array.from({length:30},(_,i)=>`<option value="${i+1}">${i+1}</option>`).join(''); }
 
+function fillPageSelects(idFrom, idTo){
+  const f = (typeof idFrom === 'string') ? $(idFrom) : idFrom;
+  const t = (typeof idTo   === 'string') ? $(idTo)   : idTo;
+  if (!f || !t) return;
+
+  const opts = '<option value=""></option>' + makeOpts(LAST_PAGE);
+  f.innerHTML = opts;
+  t.innerHTML = opts;
+
+  // pastikan default kosong (tidak auto 1–1)
+  f.value = '';
+  t.value = '';
+}
+
+function fillJuzSelect(id){
+  const el = (typeof id === 'string') ? $(id) : id;
+  if (!el) return;
+
+  let opts = '<option value=""></option>';
+  for (let i = 1; i <= 30; i++){
+    opts += `<option value="${i}">Juz ${i}</option>`;
+  }
+  el.innerHTML = opts;
+
+  // default kosong
+  el.value = '';
+}
+	
   const murState = {1:{},2:{},3:{}};
 
-  function renderSession(idx){
-    const sF=+$(`#mur${idx}-surahFrom`).value||1, aF=+$(`#mur${idx}-ayahFrom`).value||1;
-    const sT=+$(`#mur${idx}-surahTo`).value||sF, aT=+$(`#mur${idx}-ayahTo`).value||aF;
+  function setPredikatUI(idx){
+    const sc = Math.max(0, Math.min(100, parseInt($(`#mur${idx}-score`).value||'0',10)||0));
+    const p = getPredikat(sc);
+    $(`#mur${idx}-predikatBadge`).textContent = `${p.text} (${p.huruf})`;
+    // simpan ke state (dan nantinya dataset)
+    murState[idx].score = sc;
+    murState[idx].pText = p.text;
+    murState[idx].pHuruf = p.huruf;
+    // sinkron ke cell dataset jika ada currentRowEl
+    if(currentRowEl){
+      const cell=currentRowEl.querySelector('.murajaah-cell');
+      if(cell){
+        cell.dataset[`score${idx}`]=String(sc);
+        cell.dataset[`ptext${idx}`]=p.text;
+        cell.dataset[`phuruf${idx}`]=p.huruf;
+      }
+    }
+  }
 
+  function renderSession(idx){
+  const sF=+$(`#mur${idx}-surahFrom`).value||1, aF=+$(`#mur${idx}-ayahFrom`).value||1;
+  const sT=+$(`#mur${idx}-surahTo`).value||sF, aT=+$(`#mur${idx}-ayahTo`).value||aF;
+
+  const pageFromEl = $(`#mur${idx}-pageFrom`);
+  const pageToEl   = $(`#mur${idx}-pageTo`);
+  const juzFromVal = $(`#mur${idx}-juzFrom`).value;
+  const juzToVal   = $(`#mur${idx}-juzTo`).value;
+
+  const cell = currentRowEl?.querySelector('.murajaah-cell');
+  const hasDataset =
+    !!(cell?.dataset?.[`pf${idx}`] || cell?.dataset?.[`pt${idx}`] ||
+       cell?.dataset?.[`sf${idx}`] || cell?.dataset?.[`st${idx}`]);
+
+  const isPristine = !hasDataset &&
+                     !juzFromVal && !juzToVal &&
+                     !pageFromEl.value && !pageToEl.value &&
+                     !murState[idx]?.touched;
+
+  // ⇢ Saat pristine: jangan set Page dari Ayat, jangan hitung
+  if (!isPristine){
     const pages=ayahRangeToPages(sF,aF,sT,aT);
-    if(pages){
-      $(`#mur${idx}-pageFrom`).value=String(pages.pFrom);
-      $(`#mur${idx}-pageTo`).value  =String(pages.pTo);
-      $(`#mur${idx}-pagesHint`).textContent=`Halaman: ${pages.pFrom}—${pages.pTo}`;
-    } else $(`#mur${idx}-pagesHint`).textContent='';
+    if (pages){
+  // ⚖️ Jika dataset sudah punya pf/pt, hormati dulu dataset (jangan timpa)
+  const ds = currentRowEl?.querySelector('.murajaah-cell')?.dataset || {};
+  const havePfPt = !!(ds[`pf${idx}`] || ds[`pt${idx}`]);
+
+  if (!havePfPt && (pageFromEl.value==='' && pageToEl.value==='' || hasDataset || juzFromVal || juzToVal)) {
+    pageFromEl.value = String(pages.pFrom);
+    pageToEl.value   = String(pages.pTo);
+  }
+  $(`#mur${idx}-pagesHint`).textContent = `Halaman: ${pages.pFrom}—${pages.pTo}`;
+} else {
+      $(`#mur${idx}-pagesHint`).textContent='';
+    }
 
     const jF=juzOfAyah(sF,aF), jT=juzOfAyah(sT,aT);
     const total=computeTotalJuz(sF,aF,sT,aT);
     $(`#mur${idx}-totalJuz`).textContent=total.toFixed(2);
 
-    murState[idx]={sF,aF,sT,aT, pFrom:pages?.pFrom||'', pTo:pages?.pTo||'', jFrom:jF, jTo:jT, total};
-
-    // tandai pilihan Juz bila range == full juz
-    const jr=getJuzRange(jF);
-    if(jr && jr.sFrom===sF && jr.aFrom===aF && jr.sTo===sT && jr.aTo===aT){
-      $(`#mur${idx}-juz`).value=String(jF);
+    // sinkron Juz kalau range full
+    const jrF=getJuzRange(jF), jrT=getJuzRange(jT);
+    if(jrF && jrT && jrF.sFrom===sF && jrF.aFrom===aF && jrT.sTo===sT && jrT.aTo===aT){
+      const jfEl=$(`#mur${idx}-juzFrom`), jtEl=$(`#mur${idx}-juzTo`);
+      if(jfEl && jtEl){ jfEl.value=String(jF); jtEl.value=String(jT); }
     }
 
-    // rekap total
-    $('#mur-t1').textContent=(murState[1]?.total||0).toFixed(2);
-    $('#mur-t2').textContent=(murState[2]?.total||0).toFixed(2);
-    $('#mur-t3').textContent=(murState[3]?.total||0).toFixed(2);
-    const grand=(murState[1]?.total||0)+(murState[2]?.total||0)+(murState[3]?.total||0);
-    $('#mur-totalJuzAll').textContent=grand.toFixed(2);
+    setPredikatUI(idx);
 
-    // sinkronkan ke cell dataset (untuk simpan)
-    if(currentRowEl){
-      const cell=currentRowEl.querySelector('.murajaah-cell'); if(cell){
-        cell.dataset.murtotal=String(grand.toFixed(2));
-        // legacy isi dari sesi 1
-        cell.dataset.sf = String(sF); cell.dataset.af = String(aF);
-        cell.dataset.st = String(sT); cell.dataset.at = String(aT);
-        cell.dataset.pf = String(pages?.pFrom||''); cell.dataset.pt = String(pages?.pTo||'');
-        // per sesi
-        [1,2,3].forEach(i=>{
-          const st=murState[i]||{};
-          cell.dataset[`sf${i}`]=st.sF||''; cell.dataset[`af${i}`]=st.aF||'';
-          cell.dataset[`st${i}`]=st.sT||''; cell.dataset[`at${i}`]=st.aT||'';
-          cell.dataset[`pf${i}`]=st.pFrom||''; cell.dataset[`pt${i}`]=st.pTo||'';
-          cell.dataset[`jfrom${i}`]=st.jFrom||''; cell.dataset[`jto${i}`]=st.jTo||'';
-          cell.dataset[`juz${i}`]=(st.total||0).toFixed(2);
-        });
-        const valEl=cell.querySelector('.mur-val'); if(valEl) valEl.textContent = grand.toFixed(2)+' juz';
-      }
-    }
+    murState[idx]={...murState[idx], sF,aF,sT,aT,
+      pFrom:pageFromEl.value||'', pTo:pageToEl.value||'',
+      jFrom:jF, jTo:jT, total};
+  } else {
+    // pristine: tampil 0.00 dan kosongkan hint
+    $(`#mur${idx}-pagesHint`).textContent='';
+    $(`#mur${idx}-totalJuz`).textContent='0.00';
+    setPredikatUI(idx);
+    murState[idx]={...murState[idx], sF:null,aF:null,sT:null,aT:null, pFrom:'',pTo:'', jFrom:null,jTo:null, total:0};
   }
 
-  function applyJuz(idx){
-    const v=$(`#mur${idx}-juz`).value;
-    if(!v) return;
-    const jr=getJuzRange(+v);
-    if(!jr) return;
-    const aEnd = jr.aTo && jr.aTo>0 ? jr.aTo : surahMaxAyah[jr.sTo];
-    $(`#mur${idx}-surahFrom`).value=String(jr.sFrom);
-    fillAyahForSurah($(`#mur${idx}-ayahFrom`), jr.sFrom,{preset:jr.aFrom});
-    $(`#mur${idx}-surahTo`).value=String(jr.sTo);
-    fillAyahForSurah($(`#mur${idx}-ayahTo`), jr.sTo,{preset:aEnd});
+  // --- rekap & sinkron dataset (tetap) ---
+  $('#mur-t1').textContent=(murState[1]?.total||0).toFixed(2);
+  $('#mur-t2').textContent=(murState[2]?.total||0).toFixed(2);
+  $('#mur-t3').textContent=(murState[3]?.total||0).toFixed(2);
+  const grand=(murState[1]?.total||0)+(murState[2]?.total||0)+(murState[3]?.total||0);
+  $('#mur-totalJuzAll').textContent=grand.toFixed(2);
+
+  if(currentRowEl){
+    const cell=currentRowEl.querySelector('.murajaah-cell'); if(cell){
+      cell.dataset.murtotal=String(grand.toFixed(2));
+      // isi per sesi (tetap seperti sebelumnya) …
+      [1,2,3].forEach(i=>{
+        const st=murState[i]||{};
+        cell.dataset[`sf${i}`]=st.sF||''; cell.dataset[`af${i}`]=st.aF||'';
+        cell.dataset[`st${i}`]=st.sT||''; cell.dataset[`at${i}`]=st.aT||'';
+        cell.dataset[`pf${i}`]=st.pFrom||''; cell.dataset[`pt${i}`]=st.pTo||'';
+        cell.dataset[`jfrom${i}`]=st.jFrom||''; cell.dataset[`jto${i}`]=st.jTo||'';
+        cell.dataset[`juz${i}`]=(st.total||0).toFixed(2);
+        if(st.score!=null){ cell.dataset[`score${i}`]=String(st.score); cell.dataset[`ptext${i}`]=st.pText||''; cell.dataset[`phuruf${i}`]=st.pHuruf||''; }
+      });
+      const valEl=cell.querySelector('.mur-val'); if(valEl) valEl.textContent = grand.toFixed(2)+' juz';
+    }
+  }
+}
+
+  function applyJuzRange(idx){
+    const jf = +($(`#mur${idx}-juzFrom`).value)||0;
+    let jt = +($(`#mur${idx}-juzTo`).value)||jf;
+    if(!jf){ return; }
+    if(jt<jf){ jt=jf; $(`#mur${idx}-juzTo`).value=String(jf); }
+    const rF=getJuzRange(jf), rT=getJuzRange(jt);
+    if(!rF||!rT) return;
+    // set ke awal juzFrom dan akhir juzTo
+    $(`#mur${idx}-surahFrom`).value=String(rF.sFrom);
+    fillAyahForSurah($(`#mur${idx}-ayahFrom`), rF.sFrom,{preset:rF.aFrom});
+    $(`#mur${idx}-surahTo`).value=String(rT.sTo);
+    const aEnd = rT.aTo && rT.aTo>0 ? rT.aTo : surahMaxAyah[rT.sTo];
+    fillAyahForSurah($(`#mur${idx}-ayahTo`), rT.sTo,{preset:aEnd});
     renderSession(idx);
   }
+
   function onPagesChange(idx){
     let pF=+($(`#mur${idx}-pageFrom`).value)||1, pT=+($(`#mur${idx}-pageTo`).value)||pF;
     if(pT<pF){pT=pF; $(`#mur${idx}-pageTo`).value=String(pF);}
@@ -6735,35 +6930,90 @@ kelasSelect?.addEventListener("change", () => loadSantriData());
       [1,2,3].forEach(bindSession);
     }
     // Prefill dari dataset cell (sesi 1..3; fallback legacy)
-    const cell=row.querySelector('.murajaah-cell');
-    const loadOne=(i)=>{
-      let sF=+(cell?.dataset?.[`sf${i}`] ?? cell?.dataset?.sf ?? 1);
-      let aF=+(cell?.dataset?.[`af${i}`] ?? cell?.dataset?.af ?? 1);
-      let sT=+(cell?.dataset?.[`st${i}`] ?? cell?.dataset?.st ?? sF);
-      let aT=+(cell?.dataset?.[`at${i}`] ?? cell?.dataset?.at ?? aF);
-      $(`#mur${i}-surahFrom`).value=String(sF); fillAyahForSurah($(`#mur${i}-ayahFrom`), sF,{preset:aF});
-      $(`#mur${i}-surahTo`).value  =String(sT); fillAyahForSurah($(`#mur${i}-ayahTo`),   sT,{preset:aT});
-      renderSession(i);
+    const loadOne = (i) => {
+  const cell = row.querySelector('.murajaah-cell');
+
+  // Ambil dari dataset (pakai || supaya "" jatuh ke fallback)
+  const ds = cell?.dataset || {};
+  const sF = +(ds[`sf${i}`] || ds.sf || 1);
+  const aF = +(ds[`af${i}`] || ds.af || 1);
+  const sT = +(ds[`st${i}`] || ds.st || sF);
+  const aT = +(ds[`at${i}`] || ds.at || aF);
+
+  // Prefill surah/ayat
+  $(`#mur${i}-surahFrom`).value = String(sF);
+  fillAyahForSurah($(`#mur${i}-ayahFrom`), sF, { preset: aF });
+
+  $(`#mur${i}-surahTo`).value = String(sT);
+  fillAyahForSurah($(`#mur${i}-ayahTo`), sT, { preset: aT });
+
+  // Prefill PAGE kalau ada di dataset (pf/pt)
+  const pf = ds[`pf${i}`] || '';
+  const pt = ds[`pt${i}`] || '';
+  if (pf || pt) {
+    $(`#mur${i}-pageFrom`).value = pf || '';
+    $(`#mur${i}-pageTo`).value   = pt || '';
+  }
+
+  // Prefill JUZ if available
+  const jFrom = ds[`jfrom${i}`] ? Number(ds[`jfrom${i}`]) : '';
+  const jTo   = ds[`jto${i}`]   ? Number(ds[`jto${i}`])   : '';
+  if (jFrom !== '') $(`#mur${i}-juzFrom`).value = String(jFrom);
+  if (jTo   !== '') $(`#mur${i}-juzTo`).value   = String(jTo);
+
+  // Prefill skor/predikat per sesi
+  const sc = (ds[`score${i}`] != null) ? Number(ds[`score${i}`]) : 0;
+  $(`#mur${i}-score`).value = (Number.isFinite(sc) ? String(sc) : '');
+  // badge diproduksi ulang di setPredikatUI
+  setPredikatUI(i);
+
+  // Terakhir: render (akan menghitung total & sinkron dataset)
+  renderSession(i);
+};
+
+      // sinkronkan juzFrom/juzTo bila range cocok
+      const jF=juzOfAyah(sF,aF), jT=juzOfAyah(sT,aT);
+      const jrF=getJuzRange(jF), jrT=getJuzRange(jT);
+      if(jrF && jrT && jrF.sFrom===sF && jrF.aFrom===aF && jrT.sTo===sT && jrT.aTo===aT){
+        $(`#mur${i}-juzFrom`).value=String(jF);
+        $(`#mur${i}-juzTo`).value  =String(jT);
+      } else {
+        $(`#mur${i}-juzFrom`).value='';
+        $(`#mur${i}-juzTo`).value='';
+      }
     };
     [1,2,3].forEach(loadOne);
   }
 
   function fillAllBases(idx){
-    fillJuzSelect(`#mur${idx}-juz`);
-    fillPageSelects(`#mur${idx}-pageFrom`, `#mur${idx}-pageTo`);
-    fillSurahSelect(`#mur${idx}-surahFrom`);
-    fillSurahSelect(`#mur${idx}-surahTo`);
-    fillAyahForSurah($(`#mur${idx}-ayahFrom`), 1, {preset:1});
-    fillAyahForSurah($(`#mur${idx}-ayahTo`),   1, {preset:1});
+  fillJuzSelect(`#mur${idx}-juzFrom`);
+  fillJuzSelect(`#mur${idx}-juzTo`);
+  fillPageSelects(`#mur${idx}-pageFrom`, `#mur${idx}-pageTo`);
+  fillSurahSelect(`#mur${idx}-surahFrom`);
+  fillSurahSelect(`#mur${idx}-surahTo`);
+  fillAyahForSurah($(`#mur${idx}-ayahFrom`), 1, {preset:1});
+  fillAyahForSurah($(`#mur${idx}-ayahTo`),   1, {preset:1});
 
-    $(`#mur${idx}-juz`)      ?.addEventListener('change', ()=>applyJuz(idx));
-    $(`#mur${idx}-pageFrom`) ?.addEventListener('change', ()=>onPagesChange(idx));
-    $(`#mur${idx}-pageTo`)   ?.addEventListener('change', ()=>onPagesChange(idx));
-    $(`#mur${idx}-surahFrom`)?.addEventListener('change', ()=>onSurahChange(idx,'from'));
-    $(`#mur${idx}-surahTo`)  ?.addEventListener('change', ()=>onSurahChange(idx,'to'));
-    $(`#mur${idx}-ayahFrom`) ?.addEventListener('change', ()=>onAyahChange(idx));
-    $(`#mur${idx}-ayahTo`)   ?.addEventListener('change', ()=>onAyahChange(idx));
-  }
+  $(`#mur${idx}-juzFrom`) ?.addEventListener('change', ()=>applyJuzRange(idx));
+  $(`#mur${idx}-juzTo`)   ?.addEventListener('change', ()=>applyJuzRange(idx));
+  $(`#mur${idx}-pageFrom`)?.addEventListener('change', ()=>onPagesChange(idx));
+  $(`#mur${idx}-pageTo`)  ?.addEventListener('change', ()=>onPagesChange(idx));
+
+  $(`#mur${idx}-surahFrom`)?.addEventListener('change', ()=>{
+    murState[idx].touched = true; onSurahChange(idx,'from');
+  });
+  $(`#mur${idx}-surahTo`)  ?.addEventListener('change', ()=>{
+    murState[idx].touched = true; onSurahChange(idx,'to');
+  });
+  $(`#mur${idx}-ayahFrom`) ?.addEventListener('change', ()=>{
+    murState[idx].touched = true; onAyahChange(idx);
+  });
+  $(`#mur${idx}-ayahTo`)   ?.addEventListener('change', ()=>{
+    murState[idx].touched = true; onAyahChange(idx);
+  });
+
+  $(`#mur${idx}-score`)    ?.addEventListener('input',  ()=>{ setPredikatUI(idx); renderSession(idx); });
+}
   function bindSession(idx){ fillAllBases(idx); }
 
   function ensureMurColumn(){
@@ -6776,16 +7026,18 @@ kelasSelect?.addEventListener("change", () => loadSantriData());
     [...rows].forEach(tr=>{
       if(tr.querySelector('.murajaah-cell')) return;
       const td=document.createElement('td'); td.className='murajaah-cell';
-      td.innerHTML=`
-        <div class="mur-val" style="font-weight:600">0.00 juz</div>
-        <div class="mur-label" style="font-size:11px; color:#6b7280;"></div>
-        <button type="button" class="btn-mur" style="margin-top:6px; padding:4px 8px;">Input</button>`;
+      td.dataset.murtotal = "";          // sumber kebenaran awal: kosong
+		td.dataset.murlabel = "";
+		td.innerHTML = `
+  		<div class="mur-val" style="font-weight:600;min-height:1em">—</div>
+  		<div class="mur-label" style="font-size:11px; color:#6b7280;"></div>
+  		<button type="button" class="btn-mur" style="margin-top:6px; padding:4px 8px;">Input</button>`;
       tr.appendChild(td);
       td.querySelector('.btn-mur').addEventListener('click',()=>openModalForRow(tr));
     });
   }
 
-  // ---------- Refresh dari server (tambahkan dukungan 3 sesi) ----------
+  // ---------- Refresh dari server (muat juga skor/predikat jika ada) ----------
   async function refreshMurFromServer(){
     const k = resolveKelas();
     const table = $('#santri-table'); if(!k || !table) { console.warn('murajaah: kelas kosong atau table tidak ada'); return; }
@@ -6820,8 +7072,8 @@ kelasSelect?.addEventListener("change", () => loadSantriData());
           const id  = String(tr.children?.[0]?.textContent||'').trim();
           const rec = (nis && byNis.get(nis)) || (id && byId.get(id)) || null;
 
-          const total=parseNum(rec?.juzmurajaah||rec?.totalJuz||0);
-          const valEl=cell.querySelector('.mur-val'); valEl && (valEl.textContent=`${total.toFixed(2)} juz`);
+		  const total = parseNum(rec?.juzmurajaah ?? 0);   // hanya pakai data murajaah
+		  const valEl=cell.querySelector('.mur-val'); valEl && (valEl.textContent=`${total.toFixed(2)} juz`);
           cell.dataset.murtotal=String(total.toFixed(2));
 
           const setSA=(src,dsS,dsA)=>{ if(!src){cell.dataset[dsS]='';cell.dataset[dsA]='';return;} const [s,a]=String(src).split(':'); cell.dataset[dsS]=s||''; cell.dataset[dsA]=a||''; };
@@ -6831,15 +7083,30 @@ kelasSelect?.addEventListener("change", () => loadSantriData());
           setSA(rec?.murFrom,'sf','af'); setSA(rec?.murTo,'st','at'); setPages(rec?.murPages);
 
           // per sesi (jika ada di server)
-          for(let i=1;i<=3;i++){
-            setSA(rec?.[`murFrom${i}`],`sf${i}`,`af${i}`);
-            setSA(rec?.[`murTo${i}`],  `st${i}`,`at${i}`);
-            if(rec?.[`murPages${i}`]) setPages(rec[`murPages${i}`], `pf${i}`, `pt${i}`);
-            if (rec?.[`jFrom${i}`]!=null) cell.dataset[`jfrom${i}`]=String(rec[`jFrom${i}`]);
-            if (rec?.[`jTo${i}`]!=null)   cell.dataset[`jto${i}`]=String(rec[`jTo${i}`]);
-            const jv = parseNum(rec?.[`juzmur${i}`] ?? rec?.[`juzSesi${i}`] ?? 0);
-            if(jv) cell.dataset[`juz${i}`]=jv.toFixed(2);
-          }
+          for (let i = 1; i <= 3; i++) {
+  // Selalu tulis/bersihkan supaya tidak “warisan” nilai lama
+  const fromStr  = rec?.[`murFrom${i}`]  || '';
+  const toStr    = rec?.[`murTo${i}`]    || '';
+  const pagesStr = rec?.[`murPages${i}`] || '';
+
+  setSA(fromStr, `sf${i}`, `af${i}`);
+  setSA(toStr,   `st${i}`, `at${i}`);
+
+  // Set pages; kalau kosong, kosongkan pf/pt
+  if (pagesStr) setPages(pagesStr, `pf${i}`, `pt${i}`); else { cell.dataset[`pf${i}`]=''; cell.dataset[`pt${i}`]=''; }
+
+  if (rec?.[`jFrom${i}`] != null) cell.dataset[`jfrom${i}`] = String(rec[`jFrom${i}`]); else delete cell.dataset[`jfrom${i}`];
+  if (rec?.[`jTo${i}`]   != null) cell.dataset[`jto${i}`]   = String(rec[`jTo${i}`]);   else delete cell.dataset[`jto${i}`];
+
+  // ⛑️ Penting: set SELALU selama angka sah, termasuk 0.00
+  const jv = parseNum(rec?.[`juzmur${i}`] ?? rec?.[`juzSesi${i}`] ?? 0);
+  if (Number.isFinite(jv)) cell.dataset[`juz${i}`] = jv.toFixed(2);
+
+  // skor & predikat per sesi (boleh 0/null)
+  if (rec?.[`murScore${i}`] != null) cell.dataset[`score${i}`] = String(rec[`murScore${i}`]); else delete cell.dataset[`score${i}`];
+  if (rec?.[`murPredText${i}`] != null) cell.dataset[`ptext${i}`] = String(rec[`murPredText${i}`]); else delete cell.dataset[`ptext${i}`];
+  if (rec?.[`murPredHuruf${i}`] != null) cell.dataset[`phuruf${i}`] = String(rec[`murPredHuruf${i}`]); else delete cell.dataset[`phuruf${i}`];
+}
         });
       }catch(e){ console.warn('murajaah refresh fail', e); }
     }
@@ -6851,7 +7118,8 @@ kelasSelect?.addEventListener("change", () => loadSantriData());
       const lines=[1,2,3].map(i=>{
         const st=murState[i]||{};
         if(!st.sF) return `<li>Sesi ${i}: -</li>`;
-        return `<li><b>Sesi ${i}</b>: Surah ${st.sF}:${st.aF} → ${st.sT}:${st.aT} • Juz ${st.jFrom} → ${st.jTo} • <b>${(st.total||0).toFixed(2)} juz</b></li>`;
+        const pv = (st.pText && st.pHuruf!=null) ? ` • Nilai ${st.score} → <b>${st.pText} (${st.pHuruf})</b>` : '';
+        return `<li><b>Sesi ${i}</b>: Surah ${st.sF}:${st.aF} → ${st.sT}:${st.aT} • Juz ${st.jFrom} → ${st.jTo} • <b>${(st.total||0).toFixed(2)} juz</b>${pv}</li>`;
       }).join('');
       const grand=((murState[1]?.total||0)+(murState[2]?.total||0)+(murState[3]?.total||0)).toFixed(2);
       $('#murPreviewBody').innerHTML = `<ul style="margin:0 0 10px 18px">${lines}</ul><div><b>Total 3 sesi:</b> ${grand} juz</div>`;
@@ -6955,6 +7223,7 @@ kelasSelect?.addEventListener("change", () => loadSantriData());
       if (tr.querySelector('.total-mur-range')) return;
       const td = document.createElement('td');
       td.className = 'total-mur-range';
+      // placeholder awal; akan ditimpa oleh hitung()
       td.innerHTML = `0.00&nbsp;juz <span class="mur-range-badge" style="color:#999; font-size:12px">total 0%</span> <small class="mur-range-count" style="color:#6b7280">(0)</small>`;
       const murCell = tr.querySelector('.murajaah-cell');
       if (murCell && murCell.nextSibling) tr.insertBefore(td, murCell.nextSibling);
@@ -6980,7 +7249,7 @@ kelasSelect?.addEventListener("change", () => loadSantriData());
       const r = await fetch('/api/getAutoUpdateAllJuzMur?t='+Date.now());
       if (r.ok){
         const arr = await r.json();
-        const it  = (arr||[]).find(x=>x.kelas===kelas);
+        const it  = (arr||[]).find(x=>String(x.kelas||"")===String(kelas));
         if (it && (it.fromDate || it.toDate)) return { fromDate: it.fromDate||"", toDate: it.toDate||"" };
       }
     }catch(_){}
@@ -7001,12 +7270,11 @@ kelasSelect?.addEventListener("change", () => loadSantriData());
     const dari = $('#murRangeDari'); const sampai = $('#murRangeSampai');
     if (dari){ dari.max = todayStr; if (!dari.value || dari.value > todayStr) dari.value = todayStr; }
     if (sampai){ sampai.removeAttribute('max'); if (!sampai.value) sampai.value = todayStr; }
-    $('#murRangeStatus').textContent = '';
+    $('#murRangeStatus') && ($('#murRangeStatus').textContent = '');
     el.style.display = 'flex';
   }
 
-  // ===== hitung dari server → tampilkan (1 persen total penjumlahan) =====
-  // totalPct = p1 + p2 + p3  (p1..p3 dibanding target semester, TANPA dibatasi 100)
+  // ===== hitung dari server → tampilkan (total % penjumlahan 3 sesi) =====
   async function hitungTotalMurRangeFromTable(){
     const kelas  = kelasNow();
     const table  = getSantriTable();
@@ -7018,10 +7286,9 @@ kelasSelect?.addEventListener("change", () => loadSantriData());
     if (!dari){ alert("Mohon pilih tanggal Dari."); return; }
     if (!sampai){ alert("Mohon pilih tanggal Sampai."); return; }
 
-    $('#murRangeStatus').textContent = "⏳ Menghitung…";
+    $('#murRangeStatus') && ($('#murRangeStatus').textContent = "⏳ Menghitung…");
 
     try{
-      // ambil data range
       const res = await fetch(`/api/getAbsensiRange?kelas=${encodeURIComponent(kelas)}&start=${encodeURIComponent(dari)}&end=${encodeURIComponent(sampai)}&t=${Date.now()}`);
       if (!res.ok) throw new Error("Gagal ambil data absensi.");
       const payload = await res.json();
@@ -7029,7 +7296,6 @@ kelasSelect?.addEventListener("change", () => loadSantriData());
 
       const rows = [...(table.tBodies?.[0]?.rows || [])];
 
-      // peta nama → key (fallback)
       const nameToKey = new Map();
       rows.forEach(row=>{
         const key = normKey(row.dataset?.nis || row.dataset?.id || row.dataset?.key);
@@ -7037,7 +7303,6 @@ kelasSelect?.addEventListener("change", () => loadSantriData());
         if (key && nm) nameToKey.set(nm.trim().toLowerCase(), key);
       });
 
-      // util ambil 3 sesi dari item
       const extract3 = (item)=>{
         const v1 = parseNum(item?.juzmur1 ?? item?.juzSesi1 ?? item?.juzmurajaah1 ?? 0);
         const v2 = parseNum(item?.juzmur2 ?? item?.juzSesi2 ?? item?.juzmurajaah2 ?? 0);
@@ -7047,8 +7312,7 @@ kelasSelect?.addEventListener("change", () => loadSantriData());
         return [t,0,0];
       };
 
-      // rekap per key dan per sesi
-      const rekap = Object.create(null); // key → { s1,s2,s3, cAll, semester }
+      const rekap = Object.create(null);
       (allData||[]).forEach(item=>{
         let id  = normKey(item?.id);
         let nis = normKey(item?.nis);
@@ -7065,7 +7329,6 @@ kelasSelect?.addEventListener("change", () => loadSantriData());
         if (sum>0) rekap[key].cAll += 1;
       });
 
-      // tampilkan (badge: total % dari 3 sesi)
       rows.forEach(row=>{
         const key  = normKey(row.dataset?.key || row.dataset?.nis || row.dataset?.id);
         const cell = row.querySelector('.total-mur-range');
@@ -7077,22 +7340,15 @@ kelasSelect?.addEventListener("change", () => loadSantriData());
         const s3 = rec ? Number(rec.s3||0) : 0;
         const totalNum = s1+s2+s3;
 
-        // semester & target
         let semester = 1;
         if (typeof window.getSemesterForKey === "function") semester = Number(window.getSemesterForKey(key,row,rec?.semester)||1);
         else if (row?.querySelector?.(".semester")?.value) semester = Number(row.querySelector(".semester").value||1);
         else if (rec?.semester) semester = Number(rec.semester||1);
         const target = BATAS[semester]||0;
 
-        // persentase per sesi (tidak dicap 100)
-        const pct = v => {
-          if(!target) return 0;
-          let p = Math.floor((v/target)*100);
-          if (p < 0) p = 0;
-          return p; // no upper clamp
-        };
+        const pct = v => { if(!target) return 0; let p=Math.floor((v/target)*100); if(p<0)p=0; return p; };
         const p1=pct(s1), p2=pct(s2), p3=pct(s3);
-        const pSum = p1 + p2 + p3; // contoh: 120 + 80 + 100 = 300
+        const pSum = p1 + p2 + p3;
 
         let totalLabel = `${totalNum.toFixed(2)}&nbsp;juz`;
         if (totalNum >= 30) totalLabel = `<span style="color:#7c3aed;font-weight:600">KHATAM</span> (${totalNum.toFixed(2)} juz)`;
@@ -7101,64 +7357,161 @@ kelasSelect?.addEventListener("change", () => loadSantriData());
           <span class="mur-range-badge" style="color:#6b7280; font-size:12px">total ${pSum}%</span>
           <small class="mur-range-count" style="color:#6b7280">(${rec?.cAll||0})</small>`;
 
+        // simpan jejak di dataset agar tidak "mentul"
         cell.dataset.murRangeTotal = totalNum.toFixed(2);
         cell.dataset.murRangePsum  = String(pSum);
-        // tetap simpan avg jika ada yang butuh
         const pAvg = Math.floor((p1+p2+p3)/3);
         cell.dataset.murRangePavg  = String(pAvg);
       });
 
-      // simpan tanggal pilihan
       const totalKeys = Object.keys(rekap).length;
       await saveRangeServer(kelas, dari, sampai, totalKeys);
       saveRangeLocal(kelas, dari, sampai);
 
-      $('#murRangeStatus').textContent = "✅ Disimpan. Rentang ini akan otomatis terpakai saat refresh.";
+      $('#murRangeStatus') && ($('#murRangeStatus').textContent = "✅ Disimpan. Rentang ini akan otomatis terpakai saat refresh.");
     }catch(err){
       console.error(err);
-      $('#murRangeStatus').textContent = "❌ " + (err?.message || err);
+      $('#murRangeStatus') && ($('#murRangeStatus').textContent = "❌ " + (err?.message || err));
       alert("❌ Terjadi kesalahan: " + (err?.message || err));
     }
   }
 
-  // buka overlay (dipakai header)
   window.bukaOverlayTotalMurRange = bukaOverlayTotalMurRange;
   $('#btnHitungTotalMur')?.addEventListener('click', hitungTotalMurRangeFromTable);
 
-  // auto-attach kolom & auto-restore
+  // ===== SCHEDULER & OBSERVER TABEL (fix “muncul lalu mentul 0.00”) =====
   let autoRanForKelas = "";
-  async function autoApplyMurRangeIfAvailable(){
-    const kelas = kelasNow(); const table = getSantriTable();
-    if (!kelas || !table) { setTimeout(autoApplyMurRangeIfAvailable, 120); return; }
-    if (autoRanForKelas === kelas) return;
-    const rows = table.tBodies?.[0]?.rows || [];
-    if (!rows.length){ setTimeout(autoApplyMurRangeIfAvailable, 120); return; }
+  let autoApplyLock = false;
+  let recalcTimer = null;
+  let runningCalc = false;
+  let tbodyObserver = null;
 
-    const { fromDate, toDate } = await getRangeForKelas(kelas);
-    if (fromDate && toDate){
-      if ($('#murRangeDari'))   $('#murRangeDari').value   = fromDate;
-      if ($('#murRangeSampai')) $('#murRangeSampai').value = toDate;
-      await hitungTotalMurRangeFromTable();
-      autoRanForKelas = kelas;
-    }
+  function debounce(fn, ms){
+    return function(...args){
+      clearTimeout(recalcTimer);
+      recalcTimer = setTimeout(()=>fn.apply(this,args), ms);
+    };
   }
+
+  async function scheduleRecalcMurRange(){
+    // only if range tersedia
+    const kelas = kelasNow();
+    if (!kelas) return;
+    const dari = $('#murRangeDari')?.value;
+    const sampai = $('#murRangeSampai')?.value;
+    if (!dari || !sampai) return;
+
+    if (runningCalc) return;
+    runningCalc = true;
+    try { await hitungTotalMurRangeFromTable(); }
+    finally { runningCalc = false; }
+  }
+  const scheduleRecalcMurRangeDebounced = debounce(scheduleRecalcMurRange, 100);
+
+  function watchTableBody(){
+    const table = getSantriTable();
+    const tbody = table?.tBodies?.[0];
+    if (!tbody) return;
+    if (tbodyObserver) { try{tbodyObserver.disconnect();}catch{} }
+    tbodyObserver = new MutationObserver((mut)=>{
+      // kalau baris berubah (render ulang), hitung lagi pakai rentang yang sudah diset
+      if (mut.some(m=>m.type==='childList')) {
+        scheduleRecalcMurRangeDebounced();
+      }
+    });
+    tbodyObserver.observe(tbody, { childList:true, subtree:false });
+  }
+
+  function waitForRows(timeoutMs=7000){
+    return new Promise(resolve=>{
+      const table = getSantriTable();
+      const tbody = table?.tBodies?.[0];
+      if (!tbody){ return resolve(false); }
+      if (tbody.rows.length){ return resolve(true); }
+      const obs = new MutationObserver(()=>{
+        if (tbody.rows.length){
+          obs.disconnect(); resolve(true);
+        }
+      });
+      obs.observe(tbody, {childList:true, subtree:false});
+      setTimeout(()=>{ try{obs.disconnect();}catch{} resolve(tbody.rows.length>0); }, timeoutMs);
+    });
+  }
+
+  async function autoApplyMurRangeIfAvailable(){
+    if (autoApplyLock) return;
+    autoApplyLock = true;
+    try{
+      const kelas = kelasNow();
+      const table = getSantriTable();
+      if (!kelas || !table){ setTimeout(()=>{ autoApplyLock=false; autoApplyMurRangeIfAvailable(); }, 150); return; }
+      if (autoRanForKelas === kelas){ autoApplyLock=false; return; }
+
+      ensureMurRangeColumn();
+
+      const ok = await waitForRows(7000);
+      if (!ok){ autoApplyLock=false; return; }
+
+      // mulai mengawasi tbody; jika render ulang -> recalc
+      watchTableBody();
+
+      const { fromDate, toDate } = await getRangeForKelas(kelas);
+      if (fromDate && toDate){
+        if ($('#murRangeDari'))   $('#murRangeDari').value   = fromDate;
+        if ($('#murRangeSampai')) $('#murRangeSampai').value = toDate;
+
+        requestAnimationFrame(()=> setTimeout(async ()=>{
+          try{
+            await hitungTotalMurRangeFromTable();
+            autoRanForKelas = kelas;
+          } finally {
+            autoApplyLock = false;
+          }
+        }, 0));
+        return;
+      }
+    } catch(e){
+      console.warn('autoApplyMurRangeIfAvailable:', e);
+    }
+    autoApplyLock = false;
+  }
+
   function afterTableRenderedMurRange(){
     ensureMurRangeColumn();
     autoApplyMurRangeIfAvailable();
   }
+
+  // Hook ke loadSantriData
   const _origLoad = window.loadSantriData;
   window.loadSantriData = async function(...args){
-    if (typeof _origLoad === 'function') await _origLoad.apply(this, args);
+    const kelasBefore = kelasNow();
+    await (_origLoad?.apply ? _origLoad.apply(this, args) : Promise.resolve());
     setTimeout(afterTableRenderedMurRange, 30);
+    const kelasAfter = kelasNow();
+    if (kelasBefore !== kelasAfter){ autoRanForKelas = ""; }
   };
+
+  // Reset guard saat user mengganti kelas secara manual
+  ['#kelasSelect','#kelas','select[name="kelas"]','.kelas','.kelasSelect','.kelas-select'].forEach(sel=>{
+    const el = document.querySelector(sel);
+    if (el) el.addEventListener('change', ()=>{
+      autoRanForKelas = "";
+      setTimeout(()=>{ autoApplyMurRangeIfAvailable(); }, 200);
+    });
+  });
+
   if (document.readyState === 'loading'){
     document.addEventListener('DOMContentLoaded', afterTableRenderedMurRange);
   } else {
     afterTableRenderedMurRange();
   }
+
+  // Ekspos fungsi hitung (dipakai tombol)
+  window.hitungTotalMurRangeFromTable = hitungTotalMurRangeFromTable;
 })();
 </script>
-		
+
+
 <script>
   // ====== KONFIG (opsional dari window.*) ======
   const JENJANG_MAX = Number(window.JENJANG_MAX ?? 9);             // 34 default; 0 = tanpa batas atas
