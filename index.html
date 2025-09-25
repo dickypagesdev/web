@@ -3896,7 +3896,7 @@ async function simpanDataMutabaah(saveBtn){
 
       let dataLama=[];
       try{
-        const r=await fetch(`/.netlify/functions/getAbsensi?kelas=${encodeURIComponent(kelas)}&tanggal=${encodeURIComponent(tanggal)}&t=${Date.now()}`, { signal: controller.signal });
+        const r=await fetch(`/api/getAbsensi?kelas=${encodeURIComponent(kelas)}&tanggal=${encodeURIComponent(tanggal)}&t=${Date.now()}`, { signal: controller.signal });
         if(r.ok){ dataLama=await r.json(); }
       }catch{}
       const dataMerged = Array.isArray(dataLama)?[...dataLama]:[];
@@ -4020,7 +4020,7 @@ async function simpanDataMutabaah(saveBtn){
       // Kirim ke server
       let result = {};
       try{
-        const res=await fetch('/.netlify/functions/saveData',{
+        const res=await fetch('/api/saveData',{
           method:'POST',
           headers:{ 'Content-Type':'application/json', 'Accept':'application/json' },
           body: JSON.stringify({ tanggal, kelas, data: dataMerged }),
@@ -6800,7 +6800,7 @@ kelasSelect?.addEventListener("change", () => loadSantriData());
 
     for (const tgl of tanggalSet){
       try{
-        const res=await fetch(`/.netlify/functions/getAbsensi?kelas=${encodeURIComponent(k)}&tanggal=${encodeURIComponent(tgl)}`);
+        const res=await fetch(`/api/getAbsensi?kelas=${encodeURIComponent(k)}&tanggal=${encodeURIComponent(tgl)}`);
         if(!res.ok) continue;
         const arr=await res.json().catch(()=>[])||[];
         const byId=new Map(), byNis=new Map();
@@ -6965,7 +6965,7 @@ kelasSelect?.addEventListener("change", () => loadSantriData());
   // ===== persist range (server + local) =====
   async function saveRangeServer(kelas, fromDate, toDate, count){
     try{
-      await fetch('/.netlify/functions/aksesAutoUpdateAllJuzMur', {
+      await fetch('/api/aksesAutoUpdateAllJuzMur', {
         method:'POST',
         headers:{'Content-Type':'application/json'},
         body: JSON.stringify({ fromDate, toDate, kelas, data: [{ meta:true, count: Number(count||0) }] })
@@ -6977,7 +6977,7 @@ kelasSelect?.addEventListener("change", () => loadSantriData());
   }
   async function getRangeForKelas(kelas){
     try{
-      const r = await fetch('/.netlify/functions/getAutoUpdateAllJuzMur?t='+Date.now());
+      const r = await fetch('/api/getAutoUpdateAllJuzMur?t='+Date.now());
       if (r.ok){
         const arr = await r.json();
         const it  = (arr||[]).find(x=>x.kelas===kelas);
@@ -7022,7 +7022,7 @@ kelasSelect?.addEventListener("change", () => loadSantriData());
 
     try{
       // ambil data range
-      const res = await fetch(`/.netlify/functions/getAbsensiRange?kelas=${encodeURIComponent(kelas)}&start=${encodeURIComponent(dari)}&end=${encodeURIComponent(sampai)}&t=${Date.now()}`);
+      const res = await fetch(`/api/getAbsensiRange?kelas=${encodeURIComponent(kelas)}&start=${encodeURIComponent(dari)}&end=${encodeURIComponent(sampai)}&t=${Date.now()}`);
       if (!res.ok) throw new Error("Gagal ambil data absensi.");
       const payload = await res.json();
       const allData = Array.isArray(payload) ? payload : (payload?.list || []);
