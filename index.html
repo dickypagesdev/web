@@ -6702,238 +6702,225 @@ kelasSelect?.addEventListener("change", () => loadSantriData());
     return { sFrom:sF, aFrom:aF, sTo:sT, aTo:aT };
   }
 
+  // ---------- UI Fills (tanpa autofill nilai) ----------
   function fillSurahSelect(sel){
-  const N=["Al-Fatihah","Al-Baqarah","Ali 'Imran","An-Nisa'","Al-Ma'idah","Al-An'am","Al-A'raf","Al-Anfal","At-Taubah","Yunus","Hud","Yusuf","Ar-Ra'd","Ibrahim","Al-Hijr","An-Nahl","Al-Isra'","Al-Kahf","Maryam","Ta Ha","Al-Anbiya'","Al-Hajj","Al-Mu'minun","An-Nur","Al-Furqan","Ash-Shu'ara'","An-Naml","Al-Qasas","Al-'Ankabut","Ar-Rum","Luqman","As-Sajdah","Al-Ahzab","Saba'","Fatir","Ya-Sin","As-Saffat","Sad","Az-Zumar","Ghafir","Fussilat","Ash-Shura","Az-Zukhruf","Ad-Dukhan","Al-Jathiyah","Al-Ahqaf","Muhammad","Al-Fath","Al-Hujurat","Qaf","Adz-Dzariyat","At-Tur","An-Najm","Al-Qamar","Ar-Rahman","Al-Waqi'ah","Al-Hadid","Al-Mujadilah","Al-Hashr","Al-Mumtahanah","As-Saff","Al-Jumu'ah","Al-Munafiqun","At-Taghabun","At-Talaq","At-Tahrim","Al-Mulk","Al-Qalam","Al-Haqqah","Al-Ma'arij","Nuh","Al-Jinn","Al-Muzzammil","Al-Muddaththir","Al-Qiyamah","Al-Insan","Al-Mursalat","An-Naba'","An-Nazi'at","'Abasa","At-Takwir","Al-Infitar","Al-Mutaffifin","Al-Inshiqaq","Al-Buruj","At-Tariq","Al-A'la","Al-Ghashiyah","Al-Fajr","Al-Balad","Ash-Shams","Al-Layl","Ad-Duha","Ash-Sharh","At-Tin","Al-'Alaq","Al-Qadr","Al-Bayyinah","Az-Zalzalah","Al-'Adiyat","Al-Qari'ah","At-Takathur","Al-'Asr","Al-Humazah","Al-Fil","Quraysh","Al-Ma'un","Al-Kawthar","Al-Kafirun","An-Nasr","Al-Masad","Al-Ikhlas","Al-Falaq","An-Nas"];
-  const el = (typeof sel==='string')?$(sel):sel;
-  if(!el) return;
-  el.innerHTML = '<option value=""></option>' +
-    Array.from({length:114},(_,i)=>`<option value="${i+1}">${i+1} — ${N[i]}</option>`).join('');
-  el.value = ''; // default kosong
-}
-
-function fillAyahForSurah(sel, surahId, {keep=false, preset=null}={}){
-  const el=(typeof sel==='string')?$(sel):sel; if(!el) return;
-
-  // kalau surah belum dipilih → ayat juga kosong
-  if(!surahId){
-    el.innerHTML = '<option value=""></option>';
+    const N=["Al-Fatihah","Al-Baqarah","Ali 'Imran","An-Nisa'","Al-Ma'idah","Al-An'am","Al-A'raf","Al-Anfal","At-Taubah","Yunus","Hud","Yusuf","Ar-Ra'd","Ibrahim","Al-Hijr","An-Nahl","Al-Isra'","Al-Kahf","Maryam","Ta Ha","Al-Anbiya'","Al-Hajj","Al-Mu'minun","An-Nur","Al-Furqan","Ash-Shu'ara'","An-Naml","Al-Qasas","Al-'Ankabut","Ar-Rum","Luqman","As-Sajdah","Al-Ahzab","Saba'","Fatir","Ya-Sin","As-Saffat","Sad","Az-Zumar","Ghafir","Fussilat","Ash-Shura","Az-Zukhruf","Ad-Dukhan","Al-Jathiyah","Al-Ahqaf","Muhammad","Al-Fath","Al-Hujurat","Qaf","Adz-Dzariyat","At-Tur","An-Najm","Al-Qamar","Ar-Rahman","Al-Waqi'ah","Al-Hadid","Al-Mujadilah","Al-Hashr","Al-Mumtahanah","As-Saff","Al-Jumu'ah","Al-Munafiqun","At-Taghabun","At-Talaq","At-Tahrim","Al-Mulk","Al-Qalam","Al-Haqqah","Al-Ma'arij","Nuh","Al-Jinn","Al-Muzzammil","Al-Muddaththir","Al-Qiyamah","Al-Insan","Al-Mursalat","An-Naba'","An-Nazi'at","'Abasa","At-Takwir","Al-Infitar","Al-Mutaffifin","Al-Inshiqaq","Al-Buruj","At-Tariq","Al-A'la","Al-Ghashiyah","Al-Fajr","Al-Balad","Ash-Shams","Al-Layl","Ad-Duha","Ash-Sharh","At-Tin","Al-'Alaq","Al-Qadr","Al-Bayyinah","Az-Zalzalah","Al-'Adiyat","Al-Qari'ah","At-Takathur","Al-'Asr","Al-Humazah","Al-Fil","Quraysh","Al-Ma'un","Al-Kawthar","Al-Kafirun","An-Nasr","Al-Masad","Al-Ikhlas","Al-Falaq","An-Nas"];
+    const el = (typeof sel==='string')?$(sel):sel;
+    if(!el) return;
+    el.innerHTML = '<option value=""></option>' +
+      Array.from({length:114},(_,i)=>`<option value="${i+1}">${i+1} — ${N[i]}</option>`).join('');
     el.value = '';
-    return;
   }
 
-  const max = Math.max(1, +surahMaxAyah[+surahId] || 1);
-  const prev = keep ? +el.value : null;
-  el.innerHTML = '<option value=""></option>' + makeOpts(max);
-
-  if (preset != null)      el.value = String(Math.min(+preset, max));
-  else if (keep && prev)   el.value = String(Math.min(prev, max));
-  else                     el.value = ''; // default kosong
-}
-
-function fillPageSelects(idFrom, idTo){
-  const f = (typeof idFrom==='string')?$(idFrom):idFrom;
-  const t = (typeof idTo  ==='string')?$(idTo)  :idTo;
-  if(!f || !t) return;
-
-  const opts = '<option value=""></option>' + makeOpts(LAST_PAGE);
-  f.innerHTML = opts; t.innerHTML = opts;
-  f.value = ''; t.value = ''; // default kosong
-}
-
-function fillJuzSelect(id){
-  const el = (typeof id === 'string') ? $(id) : id;
-  if (!el) return;
-
-  let opts = '<option value=""></option>';
-  for (let i = 1; i <= 30; i++){
-    opts += `<option value="${i}">Juz ${i}</option>`;
+  function fillAyahForSurah(sel, surahId, {keep=false, preset=null}={}){
+    const el=(typeof sel==='string')?$(sel):sel; if(!el) return;
+    if(!surahId){
+      el.innerHTML = '<option value=""></option>';
+      el.value = '';
+      return;
+    }
+    const max = Math.max(1, +surahMaxAyah[+surahId] || 1);
+    const prev = keep ? +el.value : null;
+    el.innerHTML = '<option value=""></option>' + makeOpts(max);
+    if (preset != null)      el.value = String(Math.min(+preset, max));
+    else if (keep && prev)   el.value = String(Math.min(prev, max));
+    else                     el.value = '';
   }
-  el.innerHTML = opts;
-  el.value = ''; // default kosong
-}
 
-const murState = {1:{},2:{},3:{}};
+  function fillPageSelects(idFrom, idTo){
+    const f = (typeof idFrom==='string')?$(idFrom):idFrom;
+    const t = (typeof idTo  ==='string')?$(idTo)  :idTo;
+    if(!f || !t) return;
+    const opts = '<option value=""></option>' + makeOpts(LAST_PAGE);
+    f.innerHTML = opts; t.innerHTML = opts;
+    f.value = ''; t.value = '';
+  }
 
-function setPredikatUI(idx){
-  const sc = Math.max(0, Math.min(100, parseInt($(`#mur${idx}-score`).value||'0',10)||0));
-  const p = getPredikat(sc);
-  $(`#mur${idx}-predikatBadge`).textContent = `${p.text} (${p.huruf})`;
-  murState[idx].score = sc;
-  murState[idx].pText = p.text;
-  murState[idx].pHuruf = p.huruf;
-  if(currentRowEl){
-    const cell=currentRowEl.querySelector('.murajaah-cell');
-    if(cell){
-      cell.dataset[`score${idx}`]=String(sc);
-      cell.dataset[`ptext${idx}`]=p.text;
-      cell.dataset[`phuruf${idx}`]=p.huruf;
+  function fillJuzSelect(id){
+    const el = (typeof id === 'string') ? $(id) : id;
+    if (!el) return;
+    let opts = '<option value=""></option>';
+    for (let i = 1; i <= 30; i++) opts += `<option value="${i}">Juz ${i}</option>`;
+    el.innerHTML = opts;
+    el.value = '';
+  }
+
+  const murState = {1:{},2:{},3:{}};
+
+  function setPredikatUI(idx){
+    const sc = Math.max(0, Math.min(100, parseInt($(`#mur${idx}-score`).value||'0',10)||0));
+    const p = getPredikat(sc);
+    $(`#mur${idx}-predikatBadge`).textContent = `${p.text} (${p.huruf})`;
+    murState[idx].score = sc; murState[idx].pText = p.text; murState[idx].pHuruf = p.huruf;
+    if(currentRowEl){
+      const cell=currentRowEl.querySelector('.murajaah-cell');
+      if(cell){
+        cell.dataset[`score${idx}`]=String(sc);
+        cell.dataset[`ptext${idx}`]=p.text;
+        cell.dataset[`phuruf${idx}`]=p.huruf;
+      }
     }
   }
-}
 
-function renderSession(idx){
-  const sFv = $(`#mur${idx}-surahFrom`).value;
-  const aFv = $(`#mur${idx}-ayahFrom`).value;
-  const sTv = $(`#mur${idx}-surahTo`).value;
-  const aTv = $(`#mur${idx}-ayahTo`).value;
+  function renderSession(idx){
+    const sFv = $(`#mur${idx}-surahFrom`).value;
+    const aFv = $(`#mur${idx}-ayahFrom`).value;
+    const sTv = $(`#mur${idx}-surahTo`).value;
+    const aTv = $(`#mur${idx}-ayahTo`).value;
 
-  const pageFromEl = $(`#mur${idx}-pageFrom`);
-  const pageToEl   = $(`#mur${idx}-pageTo`);
-  const juzFromVal = $(`#mur${idx}-juzFrom`).value;
-  const juzToVal   = $(`#mur${idx}-juzTo`).value;
+    const pageFromEl = $(`#mur${idx}-pageFrom`);
+    const pageToEl   = $(`#mur${idx}-pageTo`);
+    const juzFromVal = $(`#mur${idx}-juzFrom`).value;
+    const juzToVal   = $(`#mur${idx}-juzTo`).value;
 
-  const cell = currentRowEl?.querySelector('.murajaah-cell');
-  const hasDataset = !!(cell?.dataset?.[`pf${idx}`] || cell?.dataset?.[`pt${idx}`]
-                     || cell?.dataset?.[`sf${idx}`] || cell?.dataset?.[`st${idx}`]);
+    const cell = currentRowEl?.querySelector('.murajaah-cell');
+    const hasDataset = !!(cell?.dataset?.[`pf${idx}`] || cell?.dataset?.[`pt${idx}`]
+                       || cell?.dataset?.[`sf${idx}`] || cell?.dataset?.[`st${idx}`]);
 
-  const isPristine = (!sFv || !aFv || !sTv || !aTv) &&
-                     !hasDataset &&
-                     !juzFromVal && !juzToVal &&
-                     !pageFromEl.value && !pageToEl.value &&
-                     !murState[idx]?.touched;
+    const isPristine = (!sFv || !aFv || !sTv || !aTv) &&
+                       !hasDataset &&
+                       !juzFromVal && !juzToVal &&
+                       !pageFromEl.value && !pageToEl.value &&
+                       !murState[idx]?.touched;
 
-  if (isPristine){
-    $(`#mur${idx}-pagesHint`).textContent='';
-    $(`#mur${idx}-totalJuz`).textContent='0.00';
-    setPredikatUI(idx);
-    murState[idx]={...murState[idx], sF:null,aF:null,sT:null,aT:null,pFrom:'',pTo:'',jFrom:null,jTo:null,total:0};
-  } else {
-    // hitung hanya jika input lengkap
-    if (sFv && aFv && sTv && aTv){
-      const sF=+sFv, aF=+aFv, sT=+sTv, aT=+aTv;
-      const pages=ayahRangeToPages(sF,aF,sT,aT);
-      if(pages){
-        if ((pageFromEl.value==='' && pageToEl.value==='') || hasDataset || juzFromVal || juzToVal){
-          pageFromEl.value=String(pages.pFrom);
-          pageToEl.value  =String(pages.pTo);
-        }
-        $(`#mur${idx}-pagesHint`).textContent=`Halaman: ${pages.pFrom}—${pages.pTo}`;
-      } else {
-        $(`#mur${idx}-pagesHint`).textContent='';
-      }
-
-      const jF=juzOfAyah(sF,aF), jT=juzOfAyah(sT,aT);
-      const total=computeTotalJuz(sF,aF,sT,aT);
-      $(`#mur${idx}-totalJuz`).textContent=total.toFixed(2);
-
-      const jrF=getJuzRange(jF), jrT=getJuzRange(jT);
-      if(jrF && jrT && jrF.sFrom===sF && jrF.aFrom===aF && jrT.sTo===sT && jrT.aTo===aT){
-        const jfEl=$(`#mur${idx}-juzFrom`), jtEl=$(`#mur${idx}-juzTo`);
-        if(jfEl && jtEl){ jfEl.value=String(jF); jtEl.value=String(jT); }
-      }
-
-      setPredikatUI(idx);
-
-      murState[idx]={...murState[idx], sF,aF,sT,aT,
-        pFrom:pageFromEl.value||'', pTo:pageToEl.value||'',
-        jFrom:jF, jTo:jT, total};
-    } else {
-      // input belum lengkap → jangan hitung
+    if (isPristine){
       $(`#mur${idx}-pagesHint`).textContent='';
       $(`#mur${idx}-totalJuz`).textContent='0.00';
       setPredikatUI(idx);
-      murState[idx]={...murState[idx], total:0};
+      murState[idx]={...murState[idx], sF:null,aF:null,sT:null,aT:null,pFrom:'',pTo:'',jFrom:null,jTo:null,total:0};
+    } else {
+      // hitung hanya jika input lengkap
+      if (sFv && aFv && sTv && aTv){
+        const sF=+sFv, aF=+aFv, sT=+sTv, aT=+aTv;
+        const pages=ayahRangeToPages(sF,aF,sT,aT);
+        if(pages){
+          if ((pageFromEl.value==='' && pageToEl.value==='') || hasDataset || juzFromVal || juzToVal){
+            pageFromEl.value=String(pages.pFrom);
+            pageToEl.value  =String(pages.pTo);
+          }
+          $(`#mur${idx}-pagesHint`).textContent=`Halaman: ${pages.pFrom}—${pages.pTo}`;
+        } else {
+          $(`#mur${idx}-pagesHint`).textContent='';
+        }
+
+        const jF=juzOfAyah(sF,aF), jT=juzOfAyah(sT,aT);
+        const total=computeTotalJuz(sF,aF,sT,aT);
+        $(`#mur${idx}-totalJuz`).textContent=total.toFixed(2);
+
+        const jrF=getJuzRange(jF), jrT=getJuzRange(jT);
+        if(jrF && jrT && jrF.sFrom===sF && jrF.aFrom===aF && jrT.sTo===sT && jrT.aTo===aT){
+          const jfEl=$(`#mur${idx}-juzFrom`), jtEl=$(`#mur${idx}-juzTo`);
+          if(jfEl && jtEl){ jfEl.value=String(jF); jtEl.value=String(jT); }
+        }
+
+        setPredikatUI(idx);
+
+        murState[idx]={...murState[idx], sF,aF,sT,aT,
+          pFrom:pageFromEl.value||'', pTo:pageToEl.value||'',
+          jFrom:jF, jTo:jT, total};
+      } else {
+        // input belum lengkap → jangan hitung
+        $(`#mur${idx}-pagesHint`).textContent='';
+        $(`#mur${idx}-totalJuz`).textContent='0.00';
+        setPredikatUI(idx);
+        murState[idx]={...murState[idx], total:0};
+      }
+    }
+
+    // rekap & sinkron dataset
+    $('#mur-t1').textContent=(murState[1]?.total||0).toFixed(2);
+    $('#mur-t2').textContent=(murState[2]?.total||0).toFixed(2);
+    $('#mur-t3').textContent=(murState[3]?.total||0).toFixed(2);
+    const grand=(murState[1]?.total||0)+(murState[2]?.total||0)+(murState[3]?.total||0);
+    $('#mur-totalJuzAll').textContent=grand.toFixed(2);
+
+    if(currentRowEl){
+      const cell=currentRowEl.querySelector('.murajaah-cell'); if(cell){
+        cell.dataset.murtotal=String(grand.toFixed(2));
+        [1,2,3].forEach(i=>{
+          const st=murState[i]||{};
+          cell.dataset[`sf${i}`]=st.sF||''; cell.dataset[`af${i}`]=st.aF||'';
+          cell.dataset[`st${i}`]=st.sT||''; cell.dataset[`at${i}`]=st.aT||'';
+          cell.dataset[`pf${i}`]=st.pFrom||''; cell.dataset[`pt${i}`]=st.pTo||'';
+          cell.dataset[`jfrom${i}`]=st.jFrom||''; cell.dataset[`jto${i}`]=st.jTo||'';
+          cell.dataset[`juz${i}`]=(st.total||0).toFixed(2);
+          if(st.score!=null){ cell.dataset[`score${i}`]=String(st.score); cell.dataset[`ptext${i}`]=st.pText||''; cell.dataset[`phuruf${i}`]=st.pHuruf||''; }
+        });
+        const valEl=cell.querySelector('.mur-val'); if(valEl) valEl.textContent = grand.toFixed(2)+' juz';
+      }
     }
   }
 
-  // rekap & sinkron dataset
-  $('#mur-t1').textContent=(murState[1]?.total||0).toFixed(2);
-  $('#mur-t2').textContent=(murState[2]?.total||0).toFixed(2);
-  $('#mur-t3').textContent=(murState[3]?.total||0).toFixed(2);
-  const grand=(murState[1]?.total||0)+(murState[2]?.total||0)+(murState[3]?.total||0);
-  $('#mur-totalJuzAll').textContent=grand.toFixed(2);
+  function applyJuzRange(idx){
+    const jf = +($(`#mur${idx}-juzFrom`).value)||0;
+    let jt = +($(`#mur${idx}-juzTo`).value)||jf;
+    if(!jf){ return; }
+    if(jt<jf){ jt=jf; $(`#mur${idx}-juzTo`).value=String(jf); }
+    const rF=getJuzRange(jf), rT=getJuzRange(jt);
+    if(!rF||!rT) return;
+    $(`#mur${idx}-surahFrom`).value=String(rF.sFrom);
+    fillAyahForSurah($(`#mur${idx}-ayahFrom`), rF.sFrom,{preset:rF.aFrom});
+    $(`#mur${idx}-surahTo`).value=String(rT.sTo);
+    const aEnd = rT.aTo && rT.aTo>0 ? rT.aTo : surahMaxAyah[rT.sTo];
+    fillAyahForSurah($(`#mur${idx}-ayahTo`), rT.sTo,{preset:aEnd});
+    renderSession(idx);
+  }
 
-  if(currentRowEl){
-    const cell=currentRowEl.querySelector('.murajaah-cell'); if(cell){
-      cell.dataset.murtotal=String(grand.toFixed(2));
-      [1,2,3].forEach(i=>{
-        const st=murState[i]||{};
-        cell.dataset[`sf${i}`]=st.sF||''; cell.dataset[`af${i}`]=st.aF||'';
-        cell.dataset[`st${i}`]=st.sT||''; cell.dataset[`at${i}`]=st.aT||'';
-        cell.dataset[`pf${i}`]=st.pFrom||''; cell.dataset[`pt${i}`]=st.pTo||'';
-        cell.dataset[`jfrom${i}`]=st.jFrom||''; cell.dataset[`jto${i}`]=st.jTo||'';
-        cell.dataset[`juz${i}`]=(st.total||0).toFixed(2);
-        if(st.score!=null){ cell.dataset[`score${i}`]=String(st.score); cell.dataset[`ptext${i}`]=st.pText||''; cell.dataset[`phuruf${i}`]=st.pHuruf||''; }
-      });
-      const valEl=cell.querySelector('.mur-val'); if(valEl) valEl.textContent = grand.toFixed(2)+' juz';
+  function onPagesChange(idx){
+    const pFv=$(`#mur${idx}-pageFrom`).value;
+    const pTv=$(`#mur${idx}-pageTo`).value;
+    if (!pFv || !pTv){ renderSession(idx); return; } // jangan paksa default
+
+    let pF=+pFv, pT=+pTv;
+    if(pT<pF){ pT=pF; $(`#mur${idx}-pageTo`).value=String(pF); }
+
+    const r=pagesToAyahRange(pF,pT);
+    if(r){
+      $(`#mur${idx}-surahFrom`).value=String(r.sFrom); fillAyahForSurah($(`#mur${idx}-ayahFrom`), r.sFrom,{preset:r.aFrom});
+      $(`#mur${idx}-surahTo`).value  =String(r.sTo);   fillAyahForSurah($(`#mur${idx}-ayahTo`),   r.sTo,  {preset:r.aTo});
     }
+    renderSession(idx);
   }
-}
 
-function applyJuzRange(idx){
-  const jf = +($(`#mur${idx}-juzFrom`).value)||0;
-  let jt = +($(`#mur${idx}-juzTo`).value)||jf;
-  if(!jf){ return; }
-  if(jt<jf){ jt=jf; $(`#mur${idx}-juzTo`).value=String(jf); }
-  const rF=getJuzRange(jf), rT=getJuzRange(jt);
-  if(!rF||!rT) return;
-  // set ke awal juzFrom dan akhir juzTo
-  $(`#mur${idx}-surahFrom`).value=String(rF.sFrom);
-  fillAyahForSurah($(`#mur${idx}-ayahFrom`), rF.sFrom,{preset:rF.aFrom});
-  $(`#mur${idx}-surahTo`).value=String(rT.sTo);
-  const aEnd = rT.aTo && rT.aTo>0 ? rT.aTo : surahMaxAyah[rT.sTo];
-  fillAyahForSurah($(`#mur${idx}-ayahTo`), rT.sTo,{preset:aEnd});
-  renderSession(idx);
-}
+  function onSurahChange(idx,which){
+    const sFv=$(`#mur${idx}-surahFrom`).value;
+    const sTv=$(`#mur${idx}-surahTo`).value;
 
-function onPagesChange(idx){
-  const pFv=$(`#mur${idx}-pageFrom`).value;
-  const pTv=$(`#mur${idx}-pageTo`).value;
+    if(which==='from') fillAyahForSurah($(`#mur${idx}-ayahFrom`), sFv||'', {keep:true});
+    else               fillAyahForSurah($(`#mur${idx}-ayahTo`),   sTv||'', {keep:true});
 
-  // kalau salah satu kosong → jangan paksa nilai
-  if (!pFv || !pTv){ renderSession(idx); return; }
+    const aFv=$(`#mur${idx}-ayahFrom`).value;
+    const aTv=$(`#mur${idx}-ayahTo`).value;
 
-  let pF=+pFv, pT=+pTv;
-  if(pT<pF){ pT=pF; $(`#mur${idx}-pageTo`).value=String(pF); }
-
-  const r=pagesToAyahRange(pF,pT);
-  if(r){
-    $(`#mur${idx}-surahFrom`).value=String(r.sFrom); fillAyahForSurah($(`#mur${idx}-ayahFrom`), r.sFrom,{preset:r.aFrom});
-    $(`#mur${idx}-surahTo`).value  =String(r.sTo);   fillAyahForSurah($(`#mur${idx}-ayahTo`),   r.sTo,  {preset:r.aTo});
-  }
-  renderSession(idx);
-}
-
-function onSurahChange(idx,which){
-  const sFv=$(`#mur${idx}-surahFrom`).value;
-  const sTv=$(`#mur${idx}-surahTo`).value;
-
-  if(which==='from') fillAyahForSurah($(`#mur${idx}-ayahFrom`), sFv||'', {keep:true});
-  else               fillAyahForSurah($(`#mur${idx}-ayahTo`),   sTv||'', {keep:true});
-
-  const aFv=$(`#mur${idx}-ayahFrom`).value;
-  const aTv=$(`#mur${idx}-ayahTo`).value;
-
-  if (sFv && sTv && aFv && aTv){
-    const sF=+sFv, sT=+sTv, aF=+aFv, aT=+aTv;
-    if(sT<sF || (sT===sF && aT<aF)){
-      $(`#mur${idx}-surahTo`).value=String(sF);
-      fillAyahForSurah($(`#mur${idx}-ayahTo`), sF, {keep:true});
-      if((+$(`#mur${idx}-ayahTo`).value||0) < (+aF||0))
-        $(`#mur${idx}-ayahTo`).value=String(aF);
+    if (sFv && sTv && aFv && aTv){
+      const sF=+sFv, sT=+sTv, aF=+aFv, aT=+aTv;
+      if(sT<sF || (sT===sF && aT<aF)){
+        $(`#mur${idx}-surahTo`).value=String(sF);
+        fillAyahForSurah($(`#mur${idx}-ayahTo`), sF, {keep:true});
+        if((+$(`#mur${idx}-ayahTo`).value||0) < (+aF||0))
+          $(`#mur${idx}-ayahTo`).value=String(aF);
+      }
     }
+    murState[idx].touched = true;
+    renderSession(idx);
   }
-  murState[idx].touched = true;
-  renderSession(idx);
-}
 
-function onAyahChange(idx){
-  const sFv=$(`#mur${idx}-surahFrom`).value, aFv=$(`#mur${idx}-ayahFrom`).value;
-  const sTv=$(`#mur${idx}-surahTo`).value,   aTv=$(`#mur${idx}-ayahTo`).value;
+  function onAyahChange(idx){
+    const sFv=$(`#mur${idx}-surahFrom`).value, aFv=$(`#mur${idx}-ayahFrom`).value;
+    const sTv=$(`#mur${idx}-surahTo`).value,   aTv=$(`#mur${idx}-ayahTo`).value;
 
-  if (sFv && aFv && sTv && aTv){
-    const sF=+sFv, aF=+aFv, sT=+sTv, aT=+aTv;
-    if(sT<sF || (sT===sF && aT<aF)){
-      $(`#mur${idx}-surahTo`).value=String(sF);
-      fillAyahForSurah($(`#mur${idx}-ayahTo`), sF,{keep:true});
-      if((+$(`#mur${idx}-ayahTo`).value||0) < (+aF||0))
-        $(`#mur${idx}-ayahTo`).value=String(aF);
+    if (sFv && aFv && sTv && aTv){
+      const sF=+sFv, aF=+aFv, sT=+sTv, aT=+aTv;
+      if(sT<sF || (sT===sF && aT<aF)){
+        $(`#mur${idx}-surahTo`).value=String(sF);
+        fillAyahForSurah($(`#mur${idx}-ayahTo`), sF,{keep:true});
+        if((+$(`#mur${idx}-ayahTo`).value||0) < (+aF||0))
+          $(`#mur${idx}-ayahTo`).value=String(aF);
+      }
     }
+    murState[idx].touched = true;
+    renderSession(idx);
   }
-  murState[idx].touched = true;
-  renderSession(idx);
-}
-
 
   // ---------- Helper: resolve kelas & tanggal ----------
   function resolveKelas(){
@@ -6968,207 +6955,188 @@ function onAyahChange(idx){
   }
 
   // === GANTI SELURUH FUNGSI INI ===
-async function openModalForRow(row){
-  currentRowEl = row;
-  $('#murModal').style.display = 'flex';
+  async function openModalForRow(row){
+    currentRowEl = row;
+    $('#murModal').style.display = 'flex';
 
-  if (!dataReady){
-    await ensureMap();
-    [1,2,3].forEach(bindSession);
-  }
-
-  // (opsional tapi bagus) segarkan dataset dulu
-  try { if (typeof window.murajaah?.refreshServer === 'function') {
-    await window.murajaah.refreshServer();
-  }} catch(_){}
-
-  const cell = row.querySelector('.murajaah-cell');
-
-  // --- RESET PRISTINE per sesi: buang “nyangkut” dari baris sebelumnya ---
-  function resetOne(i){
-  // Juz & Page kosong
-  $(`#mur${i}-juzFrom`).value = '';
-  $(`#mur${i}-juzTo`).value   = '';
-  $(`#mur${i}-pageFrom`).value = '';
-  $(`#mur${i}-pageTo`).value   = '';
-
-  // Surah/Ayat kosong (bukan 1:1)
-  $(`#mur${i}-surahFrom`).value = '';
-  fillAyahForSurah($(`#mur${i}-ayahFrom`), '', {});
-  $(`#mur${i}-surahTo`).value   = '';
-  fillAyahForSurah($(`#mur${i}-ayahTo`),   '', {});
-
-  $(`#mur${i}-score`).value = '';
-  $(`#mur${i}-predikatBadge`).textContent = '–';
-
-  $(`#mur${i}-pagesHint`).textContent = '';
-  $(`#mur${i}-totalJuz`).textContent  = '0.00';
-
-  murState[i] = {
-    touched:false, sF:null,aF:null,sT:null,aT:null,
-    pFrom:'',pTo:'', jFrom:null,jTo:null, total:0,
-    score:null, pText:'', pHuruf:''
-  };
-}
-
-  // --- helper2 dari versi kamu (dipakai loadOne) ---
-  function pickNonEmpty(...vals){
-    for (const v of vals){
-      if (v !== undefined && v !== null && String(v) !== '') return v;
+    if (!dataReady){
+      await ensureMap();
+      [1,2,3].forEach(bindSession);
     }
-    return undefined;
-  }
-  function getDS(ds, i, perKey, legacyKey){
-    const v = ds[perKey];
-    if (v !== undefined && String(v) !== '') return v;
-    if (i === 1){ const L = ds[legacyKey]; if (L !== undefined && String(L) !== '') return L; }
-    return undefined;
-  }
 
-  // --- Prefill dari dataset/record seperti versi yang sudah jalan ---
-  async function fetchRowRecord(){
-    const kelas = (typeof resolveKelas==='function' ? resolveKelas() : '') ||
-                  String(row.closest('table')?.dataset?.kelas || document.body?.dataset?.kelas || '');
-    const tanggal = String(row.dataset?.tanggal || '') ||
-                    (typeof resolveTanggalGlobal==='function' ? resolveTanggalGlobal() : '');
-    if (!kelas || !tanggal) return null;
-    try{
-      const res = await fetch(`/api/getAbsensi?kelas=${encodeURIComponent(kelas)}&tanggal=${encodeURIComponent(tanggal)}&t=${Date.now()}`);
-      if (!res.ok) return null;
-      const arr = await res.json().catch(()=>[]) || [];
-      const id  = String(row.dataset?.id  || row.children?.[0]?.textContent || '').trim();
-      const nis = String(row.dataset?.nis || '').trim();
-      const nm  = (row.children?.[1]?.childNodes?.[0]?.textContent || row.children?.[1]?.textContent || '').trim().toLowerCase();
-      return arr.find(r=>{
-        const rid  = String(r?.id||'').trim();
-        const rnis = String(r?.nis||'').trim();
-        const rnm  = String(r?.nama||'').trim().toLowerCase();
-        return (nis && rnis===nis) || (id && rid===id) || (nm && rnm===nm);
-      }) || null;
-    }catch{ return null; }
-  }
-  const ds = cell?.dataset || {};
-  const rec = await fetchRowRecord();
+    try { if (typeof window.murajaah?.refreshServer === 'function') {
+      await window.murajaah.refreshServer();
+    }} catch(_){}
 
-  const fromRec = (i, kind)=>{
-    if (!rec) return undefined;
-    if (kind==='from')   return pickNonEmpty(rec[`murFrom${i}`],   rec.murSessions?.[i-1]?.from,   i===1?rec.murFrom:undefined);
-    if (kind==='to')     return pickNonEmpty(rec[`murTo${i}`],     rec.murSessions?.[i-1]?.to,     i===1?rec.murTo:undefined);
-    if (kind==='pages')  return pickNonEmpty(rec[`murPages${i}`],  rec.murSessions?.[i-1]?.pages,  i===1?rec.murPages:undefined);
-    if (kind==='juz')    return pickNonEmpty(rec[`juzmur${i}`],    rec[`juzSesi${i}`],             rec.murSessions?.[i-1]?.juz);
-    if (kind==='jFrom')  return pickNonEmpty(rec[`jFrom${i}`],     rec.murSessions?.[i-1]?.jFrom);
-    if (kind==='jTo')    return pickNonEmpty(rec[`jTo${i}`],       rec.murSessions?.[i-1]?.jTo);
-    if (kind==='score')  return pickNonEmpty(rec[`murScore${i}`],  rec.murSessions?.[i-1]?.score);
-    if (kind==='pText')  return pickNonEmpty(rec[`murPredText${i}`],  rec.murSessions?.[i-1]?.predikatText);
-    if (kind==='pHuruf') return pickNonEmpty(rec[`murPredHuruf${i}`], rec.murSessions?.[i-1]?.predikatHuruf);
-  };
-  const splitSA = (s)=>{ if(!s) return []; const a=String(s).split(':'); return [Number(a[0])||1, Number(a[1])||1]; };
-  const applyPages = (i, str)=>{ if(!str) return; const [pf,pt]=String(str).split('-'); $(`#mur${i}-pageFrom`).value=pf||''; $(`#mur${i}-pageTo`).value=pt||''; };
+    const cell = row.querySelector('.murajaah-cell');
 
-  const loadOne = (i) => {
-    const fromStr  = pickNonEmpty(
-      (()=>{
-        const sf=getDS(ds,i,`sf${i}`,'sf'), af=getDS(ds,i,`af${i}`,'af');
-        return (sf||af) ? `${sf||''}:${af||''}` : undefined;
-      })(),
-      fromRec(i,'from')
-    );
-    const toStr    = pickNonEmpty(
-      (()=>{
-        const st=getDS(ds,i,`st${i}`,'st'), at=getDS(ds,i,`at${i}`,'at');
-        return (st||at) ? `${st||''}:${at||''}` : undefined;
-      })(),
-      fromRec(i,'to')
-    );
-    const pagesStr = pickNonEmpty(
-      (()=>{
-        const pf=getDS(ds,i,`pf${i}`,'pf'), pt=getDS(ds,i,`pt${i}`,'pt');
-        return (pf||pt) ? `${pf||''}-${pt||''}` : undefined;
-      })(),
-      fromRec(i,'pages')
-    );
+    // --- RESET PRISTINE per sesi: benar2 kosong ---
+    function resetOne(i){
+      // kosongkan Juz & Page
+      $(`#mur${i}-juzFrom`).value = '';
+      $(`#mur${i}-juzTo`).value   = '';
+      $(`#mur${i}-pageFrom`).value = '';
+      $(`#mur${i}-pageTo`).value   = '';
 
-    const hasAny = !!(fromStr || toStr || pagesStr || ds[`juz${i}`] || fromRec(i,'juz'));
+      // Surah/Ayat KOSONG (bukan 1:1)
+      $(`#mur${i}-surahFrom`).value = '';
+      fillAyahForSurah($(`#mur${i}-ayahFrom`), '', {});
+      $(`#mur${i}-surahTo`).value   = '';
+      fillAyahForSurah($(`#mur${i}-ayahTo`),   '', {});
 
-    // isi UI kalau ada data; kalau tidak ada, tetap pristine dari reset
-    if (hasAny){
-      let [sF,aF] = splitSA(fromStr); if(!sF) sF=1; if(!aF) aF=1;
-      let [sT,aT] = splitSA(toStr);   if(!sT) sT=sF; if(!aT) aT=aF;
+      // Nilai & badge
+      $(`#mur${i}-score`).value = '';
+      $(`#mur${i}-predikatBadge`).textContent = '–';
 
-      $(`#mur${i}-surahFrom`).value = String(sF);
-      fillAyahForSurah($(`#mur${i}-ayahFrom`), sF, { preset: aF });
-      $(`#mur${i}-surahTo`).value   = String(sT);
-      fillAyahForSurah($(`#mur${i}-ayahTo`),   sT, { preset: aT });
+      // Hint & total
+      $(`#mur${i}-pagesHint`).textContent = '';
+      $(`#mur${i}-totalJuz`).textContent = '0.00';
 
-      if (pagesStr) applyPages(i, pagesStr);
-
-      const jf = pickNonEmpty(ds[`jfrom${i}`], fromRec(i,'jFrom'));
-      const jt = pickNonEmpty(ds[`jto${i}`],   fromRec(i,'jTo'));
-      $(`#mur${i}-juzFrom`).value = jf!==undefined ? String(jf) : '';
-      $(`#mur${i}-juzTo`).value   = jt!==undefined ? String(jt) : '';
-
-      const sc = pickNonEmpty(ds[`score${i}`], fromRec(i,'score'));
-      $(`#mur${i}-score`).value = sc!==undefined ? String(sc) : '';
-
-      murState[i].touched = true;           // supaya renderSession tidak mereset lagi
-      setPredikatUI(i);
-      renderSession(i);
-
-      const juzVal = pickNonEmpty(ds[`juz${i}`], fromRec(i,'juz'));
-      if (juzVal !== undefined){
-        const v = Number(juzVal)||0;
-        $(`#mur${i}-totalJuz`).textContent = v.toFixed(2);
-        murState[i].total = v;
-      }
-
-      const pText  = pickNonEmpty(ds[`ptext${i}`],  fromRec(i,'pText'));
-      const pHuruf = pickNonEmpty(ds[`phuruf${i}`], fromRec(i,'pHuruf'));
-      if (pText !== undefined || pHuruf !== undefined){
-        $(`#mur${i}-predikatBadge`).textContent =
-          (pText && pHuruf) ? `${pText} (${pHuruf})` : (pText || pHuruf || '–');
-      }
+      murState[i] = {
+        touched:false, sF:null,aF:null,sT:null,aT:null,
+        pFrom:'', pTo:'', jFrom:null, jTo:null,
+        total:0, score:null, pText:'', pHuruf:''
+      };
     }
-  };
 
-  // >>> RESET DULU, baru PREFILL <<<
-  [1,2,3].forEach(resetOne);
-  [1,2,3].forEach(loadOne);
-}
+    function pickNonEmpty(...vals){ for(const v of vals){ if(v!==undefined && v!==null && String(v)!=='') return v; } return undefined; }
+    function getDS(ds, i, perKey, legacyKey){
+      const v = ds[perKey];
+      if (v !== undefined && String(v) !== '') return v;
+      if (i === 1){ const L = ds[legacyKey]; if (L !== undefined && String(L) !== '') return L; }
+      return undefined;
+    }
 
+    async function fetchRowRecord(){
+      const kelas = (typeof resolveKelas==='function' ? resolveKelas() : '') ||
+                    String(row.closest('table')?.dataset?.kelas || document.body?.dataset?.kelas || '');
+      const tanggal = String(row.dataset?.tanggal || '') ||
+                      (typeof resolveTanggalGlobal==='function' ? resolveTanggalGlobal() : '');
+      if (!kelas || !tanggal) return null;
+      try{
+        const res = await fetch(`/api/getAbsensi?kelas=${encodeURIComponent(kelas)}&tanggal=${encodeURIComponent(tanggal)}&t=${Date.now()}`);
+        if (!res.ok) return null;
+        const arr = await res.json().catch(()=>[]) || [];
+        const id  = String(row.dataset?.id  || row.children?.[0]?.textContent || '').trim();
+        const nis = String(row.dataset?.nis || '').trim();
+        const nm  = (row.children?.[1]?.childNodes?.[0]?.textContent || row.children?.[1]?.textContent || '').trim().toLowerCase();
+        return arr.find(r=>{
+          const rid  = String(r?.id||'').trim();
+          const rnis = String(r?.nis||'').trim();
+          const rnm  = String(r?.nama||'').trim().toLowerCase();
+          return (nis && rnis===nis) || (id && rid===id) || (nm && rnm===nm);
+        }) || null;
+      }catch{ return null; }
+    }
 
+    const ds = cell?.dataset || {};
+    const rec = await fetchRowRecord();
 
+    const fromRec = (i, kind)=>{
+      if (!rec) return undefined;
+      if (kind==='from')   return pickNonEmpty(rec[`murFrom${i}`],   rec.murSessions?.[i-1]?.from,   i===1?rec.murFrom:undefined);
+      if (kind==='to')     return pickNonEmpty(rec[`murTo${i}`],     rec.murSessions?.[i-1]?.to,     i===1?rec.murTo:undefined);
+      if (kind==='pages')  return pickNonEmpty(rec[`murPages${i}`],  rec.murSessions?.[i-1]?.pages,  i===1?rec.murPages:undefined);
+      if (kind==='juz')    return pickNonEmpty(rec[`juzmur${i}`],    rec[`juzSesi${i}`],             rec.murSessions?.[i-1]?.juz);
+      if (kind==='jFrom')  return pickNonEmpty(rec[`jFrom${i}`],     rec.murSessions?.[i-1]?.jFrom);
+      if (kind==='jTo')    return pickNonEmpty(rec[`jTo${i}`],       rec.murSessions?.[i-1]?.jTo);
+      if (kind==='score')  return pickNonEmpty(rec[`murScore${i}`],  rec.murSessions?.[i-1]?.score);
+      if (kind==='pText')  return pickNonEmpty(rec[`murPredText${i}`],  rec.murSessions?.[i-1]?.predikatText);
+      if (kind==='pHuruf') return pickNonEmpty(rec[`murPredHuruf${i}`], rec.murSessions?.[i-1]?.predikatHuruf);
+    };
+    const splitSA = (s)=>{ if(!s) return []; const a=String(s).split(':'); return [Number(a[0])||null, Number(a[1])||null]; };
+    const applyPages = (i, str)=>{ if(!str) return; const [pf,pt]=String(str).split('-'); $(`#mur${i}-pageFrom`).value=pf||''; $(`#mur${i}-pageTo`).value=pt||''; };
+
+    const loadOne = (i) => {
+      const fromStr  = pickNonEmpty(
+        (()=>{
+          const sf=getDS(ds,i,`sf${i}`,'sf'), af=getDS(ds,i,`af${i}`,'af');
+          return (sf||af) ? `${sf||''}:${af||''}` : undefined;
+        })(),
+        fromRec(i,'from')
+      );
+      const toStr    = pickNonEmpty(
+        (()=>{
+          const st=getDS(ds,i,`st${i}`,'st'), at=getDS(ds,i,`at${i}`,'at');
+          return (st||at) ? `${st||''}:${at||''}` : undefined;
+        })(),
+        fromRec(i,'to')
+      );
+      const pagesStr = pickNonEmpty(
+        (()=>{
+          const pf=getDS(ds,i,`pf${i}`,'pf'), pt=getDS(ds,i,`pt${i}`,'pt');
+          return (pf||pt) ? `${pf||''}-${pt||''}` : undefined;
+        })(),
+        fromRec(i,'pages')
+      );
+
+      const hasAny = !!(fromStr || toStr || pagesStr || ds[`juz${i}`] || fromRec(i,'juz'));
+
+      if (hasAny){
+        let [sF,aF] = splitSA(fromStr);
+        let [sT,aT] = splitSA(toStr);
+
+        if (sF!=null){ $(`#mur${i}-surahFrom`).value = String(sF); fillAyahForSurah($(`#mur${i}-ayahFrom`), sF, { preset: aF??undefined }); }
+        if (sT!=null){ $(`#mur${i}-surahTo`).value   = String(sT); fillAyahForSurah($(`#mur${i}-ayahTo`),   sT, { preset: aT??undefined }); }
+
+        if (pagesStr) applyPages(i, pagesStr);
+
+        const jf = pickNonEmpty(ds[`jfrom${i}`], fromRec(i,'jFrom'));
+        const jt = pickNonEmpty(ds[`jto${i}`],   fromRec(i,'jTo'));
+        $(`#mur${i}-juzFrom`).value = jf!==undefined ? String(jf) : '';
+        $(`#mur${i}-juzTo`).value   = jt!==undefined ? String(jt) : '';
+
+        const sc = pickNonEmpty(ds[`score${i}`], fromRec(i,'score'));
+        $(`#mur${i}-score`).value = sc!==undefined ? String(sc) : '';
+
+        murState[i].touched = true;
+        setPredikatUI(i);
+        renderSession(i);
+
+        const juzVal = pickNonEmpty(ds[`juz${i}`], fromRec(i,'juz'));
+        if (juzVal !== undefined){
+          const v = Number(juzVal)||0;
+          $(`#mur${i}-totalJuz`).textContent = v.toFixed(2);
+          murState[i].total = v;
+        }
+
+        const pText  = pickNonEmpty(ds[`ptext${i}`],  fromRec(i,'pText'));
+        const pHuruf = pickNonEmpty(ds[`phuruf${i}`], fromRec(i,'pHuruf'));
+        if (pText !== undefined || pHuruf !== undefined){
+          $(`#mur${i}-predikatBadge`).textContent =
+            (pText && pHuruf) ? `${pText} (${pHuruf})` : (pText || pHuruf || '–');
+        }
+      } else {
+        // tetap kosong (hasil resetOne)
+      }
+    };
+
+    [1,2,3].forEach(resetOne);
+    [1,2,3].forEach(loadOne);
+  }
 
   function fillAllBases(idx){
-  fillJuzSelect(`#mur${idx}-juzFrom`);
-  fillJuzSelect(`#mur${idx}-juzTo`);
-  fillPageSelects(`#mur${idx}-pageFrom`, `#mur${idx}-pageTo`);
-  fillSurahSelect(`#mur${idx}-surahFrom`);
-  fillSurahSelect(`#mur${idx}-surahTo`);
-  // ayat kosong (karena surah belum dipilih)
-  fillAyahForSurah($(`#mur${idx}-ayahFrom`), '', {});
-  fillAyahForSurah($(`#mur${idx}-ayahTo`),   '', {});
+    fillJuzSelect(`#mur${idx}-juzFrom`);
+    fillJuzSelect(`#mur${idx}-juzTo`);
+    fillPageSelects(`#mur${idx}-pageFrom`, `#mur${idx}-pageTo`);
+    fillSurahSelect(`#mur${idx}-surahFrom`);
+    fillSurahSelect(`#mur${idx}-surahTo`);
+    // ayat kosong karena surah belum dipilih
+    fillAyahForSurah($(`#mur${idx}-ayahFrom`), '', {});
+    fillAyahForSurah($(`#mur${idx}-ayahTo`),   '', {});
 
-  $(`#mur${idx}-juzFrom`) ?.addEventListener('change', ()=>applyJuzRange(idx));
-  $(`#mur${idx}-juzTo`)   ?.addEventListener('change', ()=>applyJuzRange(idx));
-  $(`#mur${idx}-pageFrom`)?.addEventListener('change', ()=>onPagesChange(idx));
-  $(`#mur${idx}-pageTo`)  ?.addEventListener('change', ()=>onPagesChange(idx));
+    $(`#mur${idx}-juzFrom`) ?.addEventListener('change', ()=>applyJuzRange(idx));
+    $(`#mur${idx}-juzTo`)   ?.addEventListener('change', ()=>applyJuzRange(idx));
+    $(`#mur${idx}-pageFrom`)?.addEventListener('change', ()=>onPagesChange(idx));
+    $(`#mur${idx}-pageTo`)  ?.addEventListener('change', ()=>onPagesChange(idx));
 
-  $(`#mur${idx}-surahFrom`)?.addEventListener('change', ()=>{
-    murState[idx].touched = true; onSurahChange(idx,'from');
-  });
-  $(`#mur${idx}-surahTo`)  ?.addEventListener('change', ()=>{
-    murState[idx].touched = true; onSurahChange(idx,'to');
-  });
-  $(`#mur${idx}-ayahFrom`) ?.addEventListener('change', ()=>{
-    murState[idx].touched = true; onAyahChange(idx);
-  });
-  $(`#mur${idx}-ayahTo`)   ?.addEventListener('change', ()=>{
-    murState[idx].touched = true; onAyahChange(idx);
-  });
+    $(`#mur${idx}-surahFrom`)?.addEventListener('change', ()=>{ murState[idx].touched = true; onSurahChange(idx,'from'); });
+    $(`#mur${idx}-surahTo`)  ?.addEventListener('change', ()=>{ murState[idx].touched = true; onSurahChange(idx,'to');   });
+    $(`#mur${idx}-ayahFrom`) ?.addEventListener('change', ()=>{ murState[idx].touched = true; onAyahChange(idx);         });
+    $(`#mur${idx}-ayahTo`)   ?.addEventListener('change', ()=>{ murState[idx].touched = true; onAyahChange(idx);         });
 
-  $(`#mur${idx}-score`)    ?.addEventListener('input',  ()=>{ setPredikatUI(idx); renderSession(idx); });
-}
-
+    $(`#mur${idx}-score`)    ?.addEventListener('input',  ()=>{ setPredikatUI(idx); renderSession(idx); });
+  }
   function bindSession(idx){ fillAllBases(idx); }
 
   function ensureMurColumn(){
@@ -7181,12 +7149,11 @@ async function openModalForRow(row){
     [...rows].forEach(tr=>{
       if(tr.querySelector('.murajaah-cell')) return;
       const td=document.createElement('td'); td.className='murajaah-cell';
-      td.dataset.murtotal = "";          // sumber kebenaran awal: kosong
-		td.dataset.murlabel = "";
-		td.innerHTML = `
-  		<div class="mur-val" style="font-weight:600;min-height:1em">—</div>
-  		<div class="mur-label" style="font-size:11px; color:#6b7280;"></div>
-  		<button type="button" class="btn-mur" style="margin-top:6px; padding:4px 8px;">Input</button>`;
+      td.dataset.murtotal = ""; td.dataset.murlabel = "";
+      td.innerHTML = `
+        <div class="mur-val" style="font-weight:600;min-height:1em">—</div>
+        <div class="mur-label" style="font-size:11px; color:#6b7280;"></div>
+        <button type="button" class="btn-mur" style="margin-top:6px; padding:4px 8px;">Input</button>`;
       tr.appendChild(td);
       td.querySelector('.btn-mur').addEventListener('click',()=>openModalForRow(tr));
     });
@@ -7194,137 +7161,103 @@ async function openModalForRow(row){
 
   // ---------- Refresh dari server (muat juga skor/predikat jika ada) ----------
   async function refreshMurFromServer(){
-  const $ = (s,r=document)=>r.querySelector(s);
-  const table = $('#santri-table');
-  const kelas = (function(){
-    return String(
-      window.kelasSelect?.value ||
-      $('#kelasSelect')?.value || $('#kelas')?.value ||
-      document.querySelector('select[name="kelas"]')?.value ||
-      table?.dataset?.kelas || document.body?.dataset?.kelas || ''
-    ).trim();
-  })();
-  if(!kelas || !table) return;
+    const $ = (s,r=document)=>r.querySelector(s);
+    const table = $('#santri-table');
+    const kelas = (function(){
+      return String(
+        window.kelasSelect?.value ||
+        $('#kelasSelect')?.value || $('#kelas')?.value ||
+        document.querySelector('select[name="kelas"]')?.value ||
+        table?.dataset?.kelas || document.body?.dataset?.kelas || ''
+      ).trim();
+    })();
+    if(!kelas || !table) return;
 
-  const rows = [...(table.tBodies?.[0]?.rows||[])];
-  const tglSet = new Set(rows.map(r=>String(r.dataset?.tanggal||'').trim()).filter(Boolean));
-  if(!tglSet.size){
-    const g = String(
-      window.tanggalInput?.value ||
-      $('#tanggalInput')?.value || $('#tanggal')?.value || $('#date')?.value ||
-      document.querySelector('input[name="tanggal"]')?.value ||
-      document.querySelector('input[name="date"]')?.value || ''
-    ).trim();
-    if(g) tglSet.add(g);
-  }
-  if(!tglSet.size) return;
-
-  // helper tulis dataset
-  const setSA=(cell,src,dsS,dsA)=>{ if(!src){cell.dataset[dsS]='';cell.dataset[dsA]='';return;}
-    const [s,a]=String(src).split(':'); cell.dataset[dsS]=s||''; cell.dataset[dsA]=a||'';
-  };
-  const setPages=(cell,src,pfKey,ptKey)=>{ if(!src){cell.dataset[pfKey]='';cell.dataset[ptKey]='';return;}
-    const [pf,pt]=String(src).split('-'); cell.dataset[pfKey]=pf||''; cell.dataset[ptKey]=pt||'';
-  };
-  const num=(v)=>{ if(typeof v==='number') return Number.isFinite(v)?v:0;
-    const n=parseFloat(String(v??'').replace(/[^0-9.,-]/g,'').replace(',', '.')); return Number.isFinite(n)?n:0; };
-
-  for (const tgl of tglSet){
-    let list=[];
-    try{
-      const res=await fetch(`/api/getAbsensi?kelas=${encodeURIComponent(kelas)}&tanggal=${encodeURIComponent(tgl)}`);
-      if(!res.ok) continue;
-      list=await res.json().catch(()=>[])||[];
-    }catch{continue;}
-
-    // indeks by id/nis
-    const byId=new Map(), byNis=new Map();
-    for(const r of list){
-      const id = String(r?.id??'').trim();
-      const nis= String(r?.nis??'').trim();
-      if(id)  byId.set(id, r);
-      if(nis) byNis.set(nis,r);
+    const rows = [...(table.tBodies?.[0]?.rows||[])];
+    const tglSet = new Set(rows.map(r=>String(r.dataset?.tanggal||'').trim()).filter(Boolean));
+    if(!tglSet.size){
+      const g = String(
+        window.tanggalInput?.value ||
+        $('#tanggalInput')?.value || $('#tanggal')?.value || $('#date')?.value ||
+        document.querySelector('input[name="tanggal"]')?.value ||
+        document.querySelector('input[name="date"]')?.value || ''
+      ).trim();
+      if(g) tglSet.add(g);
     }
+    if(!tglSet.size) return;
 
-    rows.forEach(tr=>{
-      const cell=tr.querySelector('.murajaah-cell'); if(!cell) return;
-      const nis = String(tr.dataset?.nis||'').trim();
-      const id  = String(tr.children?.[0]?.textContent||'').trim();
-      const rec = (nis && byNis.get(nis)) || (id && byId.get(id)) || null;
+    const setSA=(cell,src,dsS,dsA)=>{ if(!src){cell.dataset[dsS]='';cell.dataset[dsA]='';return;}
+      const [s,a]=String(src).split(':'); cell.dataset[dsS]=s||''; cell.dataset[dsA]=a||''; };
+    const setPages=(cell,src,pfKey,ptKey)=>{ if(!src){cell.dataset[pfKey]='';cell.dataset[ptKey]='';return;}
+      const [pf,pt]=String(src).split('-'); cell.dataset[pfKey]=pf||''; cell.dataset[ptKey]=pt||''; };
+    const num=(v)=>{ if(typeof v==='number') return Number.isFinite(v)?v:0;
+      const n=parseFloat(String(v??'').replace(/[^0-9.,-]/g,'').replace(',', '.')); return Number.isFinite(n)?n:0; };
 
-      // total (ambil total murajaah saja)
-      const total = num(rec?.juzmurajaah ?? rec?.totalJuz ?? 0);
-      const valEl = cell.querySelector('.mur-val');
-      if(valEl) valEl.textContent = `${total.toFixed(2)} juz`;
-      cell.dataset.murtotal = total.toFixed(2);
+    for (const tgl of tglSet){
+      let list=[];
+      try{
+        const res=await fetch(`/api/getAbsensi?kelas=${encodeURIComponent(kelas)}&tanggal=${encodeURIComponent(tgl)}`);
+        if(!res.ok) continue;
+        list=await res.json().catch(()=>[])||[];
+      }catch{continue;}
 
-      // legacy sesi-1 (tetap diisi agar kompatibel)
-      const legacyFrom = rec?.murFrom || '';
-      const legacyTo   = rec?.murTo   || '';
-      const legacyPg   = rec?.murPages|| '';
-      setSA(cell, legacyFrom, 'sf', 'af');
-      setSA(cell, legacyTo,   'st', 'at');
-      setPages(cell, legacyPg, 'pf', 'pt');
+      const byId=new Map(), byNis=new Map();
+      for(const r of list){
+        const id = String(r?.id??'').trim();
+        const nis= String(r?.nis??'').trim();
+        if(id)  byId.set(id, r);
+        if(nis) byNis.set(nis,r);
+      }
 
-		
-      // --- helper: ambil nilai pertama yang benar-benar TIDAK kosong
-const takeNonEmpty = (...xs) => {
-  for (const x of xs) {
-    if (x !== undefined && x !== null && String(x) !== '') return x;
+      rows.forEach(tr=>{
+        const cell=tr.querySelector('.murajaah-cell'); if(!cell) return;
+        const nis = String(tr.dataset?.nis||'').trim();
+        const id  = String(tr.children?.[0]?.textContent||'').trim();
+        const rec = (nis && byNis.get(nis)) || (id && byId.get(id)) || null;
+
+        const total = num(rec?.juzmurajaah ?? rec?.totalJuz ?? 0);
+        const valEl = cell.querySelector('.mur-val');
+        if(valEl) valEl.textContent = `${total.toFixed(2)} juz`;
+        cell.dataset.murtotal = total.toFixed(2);
+
+        const legacyFrom = rec?.murFrom || '';
+        const legacyTo   = rec?.murTo   || '';
+        const legacyPg   = rec?.murPages|| '';
+        setSA(cell, legacyFrom, 'sf', 'af');
+        setSA(cell, legacyTo,   'st', 'at');
+        setPages(cell, legacyPg, 'pf', 'pt');
+
+        const takeNonEmpty = (...xs) => { for (const x of xs){ if(x!==undefined && x!==null && String(x)!=='') return x; } return ''; };
+        function getSessionFrom(rec, i){
+          const arr = Array.isArray(rec?.murSessions) ? rec.murSessions : null;
+          const ses = arr && arr[i-1] ? arr[i-1] : null;
+          const fromStr  = takeNonEmpty(rec?.[`murFrom${i}`],  ses?.from,  rec?.murFrom);
+          const toStr    = takeNonEmpty(rec?.[`murTo${i}`],    ses?.to,    rec?.murTo);
+          const pagesStr = takeNonEmpty(rec?.[`murPages${i}`], ses?.pages, rec?.murPages);
+          const juzVal   = takeNonEmpty(rec?.[`juzmur${i}`], rec?.[`juzSesi${i}`], ses?.juz);
+          const jFrom    = (rec?.[`jFrom${i}`] ?? ses?.jFrom);
+          const jTo      = (rec?.[`jTo${i}`]   ?? ses?.jTo);
+          const score    = (rec?.[`murScore${i}`]     ?? ses?.score);
+          const pText    = (rec?.[`murPredText${i}`]  ?? ses?.predikatText);
+          const pHuruf   = (rec?.[`murPredHuruf${i}`] ?? ses?.predikatHuruf);
+          return { fromStr, toStr, pagesStr, juzVal, jFrom, jTo, score, pText, pHuruf };
+        }
+
+        for (let i = 1; i <= 3; i++) {
+          const ses = getSessionFrom(rec, i);
+          setSA(cell, ses.fromStr, `sf${i}`, `af${i}`);
+          setSA(cell, ses.toStr,   `st${i}`, `at${i}`);
+          setPages(cell, ses.pagesStr, `pf${i}`, `pt${i}`);
+          if (ses.jFrom != null && ses.jFrom !== '') cell.dataset[`jfrom${i}`] = String(ses.jFrom); else delete cell.dataset[`jfrom${i}`];
+          if (ses.jTo   != null && ses.jTo   !== '') cell.dataset[`jto${i}`]   = String(ses.jTo);   else delete cell.dataset[`jto${i}`];
+          cell.dataset[`juz${i}`] = num(ses.juzVal || 0).toFixed(2);
+          if (ses.score  != null) cell.dataset[`score${i}`] = String(ses.score); else delete cell.dataset[`score${i}`];
+          if (ses.pText  != null) cell.dataset[`ptext${i}`] = String(ses.pText); else delete cell.dataset[`ptext${i}`];
+          if (ses.pHuruf != null) cell.dataset[`phuruf${i}`]= String(ses.pHuruf); else delete cell.dataset[`phuruf${i}`];
+        }
+      });
+    }
   }
-  return '';
-};
-
-// --- helper: susun sumber data per sesi dengan fallback ke murSessions[i-1] dan legacy
-function getSessionFrom(rec, i){
-  const arr = Array.isArray(rec?.murSessions) ? rec.murSessions : null;
-  const ses = arr && arr[i-1] ? arr[i-1] : null;
-
-  const fromStr  = takeNonEmpty(rec?.[`murFrom${i}`],  ses?.from,  rec?.murFrom);
-  const toStr    = takeNonEmpty(rec?.[`murTo${i}`],    ses?.to,    rec?.murTo);
-  const pagesStr = takeNonEmpty(rec?.[`murPages${i}`], ses?.pages, rec?.murPages);
-
-  const juzVal   = takeNonEmpty(rec?.[`juzmur${i}`], rec?.[`juzSesi${i}`], ses?.juz);
-
-  const jFrom    = (rec?.[`jFrom${i}`] ?? ses?.jFrom);
-  const jTo      = (rec?.[`jTo${i}`]   ?? ses?.jTo);
-
-  const score    = (rec?.[`murScore${i}`]     ?? ses?.score);
-  const pText    = (rec?.[`murPredText${i}`]  ?? ses?.predikatText);
-  const pHuruf   = (rec?.[`murPredHuruf${i}`] ?? ses?.predikatHuruf);
-
-  return { fromStr, toStr, pagesStr, juzVal, jFrom, jTo, score, pText, pHuruf };
-}
-
-// --- REVISI: tulis dataset per sesi dengan fallback yang benar
-for (let i = 1; i <= 3; i++) {
-  const ses = getSessionFrom(rec, i);
-
-  // Surah:Ayah → dataset sf/af & st/at
-  setSA(cell, ses.fromStr, `sf${i}`, `af${i}`);
-  setSA(cell, ses.toStr,   `st${i}`, `at${i}`);
-
-  // Pages "Pfrom-Pto" → dataset pf/pt
-  setPages(cell, ses.pagesStr, `pf${i}`, `pt${i}`);
-
-  // jFrom/jTo opsional
-  if (ses.jFrom != null && ses.jFrom !== '') cell.dataset[`jfrom${i}`] = String(ses.jFrom);
-  else delete cell.dataset[`jfrom${i}`];
-
-  if (ses.jTo != null && ses.jTo !== '') cell.dataset[`jto${i}`] = String(ses.jTo);
-  else delete cell.dataset[`jto${i}`];
-
-  // total juz per sesi (0.00 juga harus tertulis)
-  cell.dataset[`juz${i}`] = num(ses.juzVal || 0).toFixed(2);
-
-  // skor/predikat (boleh 0 / string kosong)
-  if (ses.score   != null) cell.dataset[`score${i}`] = String(ses.score); else delete cell.dataset[`score${i}`];
-  if (ses.pText   != null) cell.dataset[`ptext${i}`] = String(ses.pText); else delete cell.dataset[`ptext${i}`];
-  if (ses.pHuruf  != null) cell.dataset[`phuruf${i}`] = String(ses.pHuruf); else delete cell.dataset[`phuruf${i}`];
-}
-    });
-  }
-}
 
   function bindModalShell(){
     $('#mur-close')?.addEventListener('click',()=>{$('#murModal').style.display='none';});
@@ -7341,7 +7274,7 @@ for (let i = 1; i <= 3; i++) {
     });
     $('#mur-save')?.addEventListener('click', async()=>{
       try{
-        [1,2,3].forEach(renderSession); // pastikan state terakhir
+        [1,2,3].forEach(renderSession);
         if(typeof window.simpanDataMutabaah==='function'){
           await window.simpanDataMutabaah($('#mur-save'));
           await refreshMurFromServer();
@@ -7372,7 +7305,6 @@ for (let i = 1; i <= 3; i++) {
   })();
 })();
 </script>
-
 <script>
 (function(){
   // ===== util & helpers Murajaah RANGE =====
@@ -7417,7 +7349,7 @@ for (let i = 1; i <= 3; i++) {
     return '';
   }
 
-  // ===== sisip header & kolom (1 persen total 3 sesi) =====
+  // ===== sisip header & kolom =====
   function ensureMurRangeColumn(){
     const table = getSantriTable(); if (!table) return;
     const thRow = table.tHead?.rows?.[0];
@@ -7437,7 +7369,6 @@ for (let i = 1; i <= 3; i++) {
       if (tr.querySelector('.total-mur-range')) return;
       const td = document.createElement('td');
       td.className = 'total-mur-range';
-      // placeholder awal; akan ditimpa oleh hitung()
       td.innerHTML = `0.00&nbsp;juz <span class="mur-range-badge" style="color:#999; font-size:12px">total 0%</span> <small class="mur-range-count" style="color:#6b7280">(0)</small>`;
       const murCell = tr.querySelector('.murajaah-cell');
       if (murCell && murCell.nextSibling) tr.insertBefore(td, murCell.nextSibling);
@@ -7488,7 +7419,7 @@ for (let i = 1; i <= 3; i++) {
     el.style.display = 'flex';
   }
 
-  // ===== hitung dari server → tampilkan (total % penjumlahan 3 sesi) =====
+  // ===== hitung dari server → tampilkan =====
   async function hitungTotalMurRangeFromTable(){
     const kelas  = kelasNow();
     const table  = getSantriTable();
@@ -7571,7 +7502,6 @@ for (let i = 1; i <= 3; i++) {
           <span class="mur-range-badge" style="color:#6b7280; font-size:12px">total ${pSum}%</span>
           <small class="mur-range-count" style="color:#6b7280">(${rec?.cAll||0})</small>`;
 
-        // simpan jejak di dataset agar tidak "mentul"
         cell.dataset.murRangeTotal = totalNum.toFixed(2);
         cell.dataset.murRangePsum  = String(pSum);
         const pAvg = Math.floor((p1+p2+p3)/3);
@@ -7593,7 +7523,7 @@ for (let i = 1; i <= 3; i++) {
   window.bukaOverlayTotalMurRange = bukaOverlayTotalMurRange;
   $('#btnHitungTotalMur')?.addEventListener('click', hitungTotalMurRangeFromTable);
 
-  // ===== SCHEDULER & OBSERVER TABEL (fix “muncul lalu mentul 0.00”) =====
+  // ===== Scheduler & Observer =====
   let autoRanForKelas = "";
   let autoApplyLock = false;
   let recalcTimer = null;
@@ -7608,7 +7538,6 @@ for (let i = 1; i <= 3; i++) {
   }
 
   async function scheduleRecalcMurRange(){
-    // only if range tersedia
     const kelas = kelasNow();
     if (!kelas) return;
     const dari = $('#murRangeDari')?.value;
@@ -7628,7 +7557,6 @@ for (let i = 1; i <= 3; i++) {
     if (!tbody) return;
     if (tbodyObserver) { try{tbodyObserver.disconnect();}catch{} }
     tbodyObserver = new MutationObserver((mut)=>{
-      // kalau baris berubah (render ulang), hitung lagi pakai rentang yang sudah diset
       if (mut.some(m=>m.type==='childList')) {
         scheduleRecalcMurRangeDebounced();
       }
@@ -7666,7 +7594,6 @@ for (let i = 1; i <= 3; i++) {
       const ok = await waitForRows(7000);
       if (!ok){ autoApplyLock=false; return; }
 
-      // mulai mengawasi tbody; jika render ulang -> recalc
       watchTableBody();
 
       const { fromDate, toDate } = await getRangeForKelas(kelas);
@@ -7695,7 +7622,6 @@ for (let i = 1; i <= 3; i++) {
     autoApplyMurRangeIfAvailable();
   }
 
-  // Hook ke loadSantriData
   const _origLoad = window.loadSantriData;
   window.loadSantriData = async function(...args){
     const kelasBefore = kelasNow();
@@ -7705,7 +7631,6 @@ for (let i = 1; i <= 3; i++) {
     if (kelasBefore !== kelasAfter){ autoRanForKelas = ""; }
   };
 
-  // Reset guard saat user mengganti kelas secara manual
   ['#kelasSelect','#kelas','select[name="kelas"]','.kelas','.kelasSelect','.kelas-select'].forEach(sel=>{
     const el = document.querySelector(sel);
     if (el) el.addEventListener('change', ()=>{
@@ -7720,7 +7645,6 @@ for (let i = 1; i <= 3; i++) {
     afterTableRenderedMurRange();
   }
 
-  // Ekspos fungsi hitung (dipakai tombol)
   window.hitungTotalMurRangeFromTable = hitungTotalMurRangeFromTable;
 })();
 </script>
