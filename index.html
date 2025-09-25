@@ -6989,26 +6989,61 @@ function fillJuzSelect(id){
 }
   function bindSession(idx){ fillAllBases(idx); }
 
-  function ensureMurColumn(){
-    const table=$('#santri-table'); if(!table) return;
-    const theadRow=table.tHead?.rows?.[0];
-    if(theadRow && !theadRow.querySelector('th.mur-header')){
-      const th=document.createElement('th'); th.className='mur-header'; th.textContent='Murajaah'; theadRow.appendChild(th);
-    }
-    const rows=table.tBodies?.[0]?.rows||[];
-    [...rows].forEach(tr=>{
-      if(tr.querySelector('.murajaah-cell')) return;
-      const td=document.createElement('td'); td.className='murajaah-cell';
-      td.dataset.murtotal = "";          // sumber kebenaran awal: kosong
-		td.dataset.murlabel = "";
-		td.innerHTML = `
-  		<div class="mur-val" style="font-weight:600;min-height:1em">—</div>
-  		<div class="mur-label" style="font-size:11px; color:#6b7280;"></div>
-  		<button type="button" class="btn-mur" style="margin-top:6px; padding:4px 8px;">Input</button>`;
-      tr.appendChild(td);
-      td.querySelector('.btn-mur').addEventListener('click',()=>openModalForRow(tr));
-    });
+  // === PATCH: pastikan kolom & tombol "Input" selalu ada ===
+function ensureMurColumn(){
+  const table = document.getElementById('santri-table');
+  if (!table) return;
+
+  // Header
+  const theadRow = table.tHead?.rows?.[0];
+  if (theadRow && !theadRow.querySelector('th.mur-header')) {
+    const th = document.createElement('th');
+    th.className = 'mur-header';
+    th.textContent = 'Murajaah';
+    theadRow.appendChild(th);
   }
+
+  // Per baris: pastikan TD + konten + tombol
+  const rows = [...(table.tBodies?.[0]?.rows || [])];
+  rows.forEach(tr => {
+    let td = tr.querySelector('.murajaah-cell');
+    if (!td) {
+      td = document.createElement('td');
+      td.className = 'murajaah-cell';
+      tr.appendChild(td);
+    }
+
+    // Jika kosong atau tidak punya .btn-mur → isi ulang kontennya
+    const hasButton = !!td.querySelector('.btn-mur');
+    const hasVal    = !!td.querySelector('.mur-val');
+    if (!hasButton || !hasVal || !td.innerHTML.trim()) {
+      td.dataset.murtotal = td.dataset.murtotal ?? "";
+      td.dataset.murlabel = td.dataset.murlabel ?? "";
+      td.innerHTML = `
+        <div class="mur-val" style="font-weight:600;min-height:1em">—</div>
+        <div class="mur-label" style="font-size:11px; color:#6b7280;"></div>
+        <button type="button" class="btn-mur"
+          style="margin-top:6px; padding:6px 10px; border:1px solid #e5e7eb; border-radius:8px; background:#fff; cursor:pointer;">
+          Input
+        </button>`;
+    }
+  });
+}
+
+// Event delegation sekali saja untuk tombol .btn-mur
+(function bindMurajaahCellClicksOnce(){
+  if (window.__murBtnBound) return;
+  window.__murBtnBound = true;
+
+  document.addEventListener('click', (ev)=>{
+    const btn = ev.target.closest('.btn-mur');
+    if (!btn) return;
+    const tr = btn.closest('tr');
+    if (tr && typeof window.openModalForRow === 'function') {
+      window.openModalForRow(tr);
+    }
+  }, {capture:false});
+})();
 
   // ---------- Refresh dari server (robust: sesi 1..3) ----------
 async function refreshMurFromServer(){
