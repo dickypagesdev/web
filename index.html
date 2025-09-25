@@ -6588,9 +6588,6 @@ kelasSelect?.addEventListener("change", () => loadSantriData());
 	 
 </script>
 
-
-
-
 <script>
 // ---------- Murajaah (3 sesi, Juz Range + Nilai per sesi) ----------
 (function(){
@@ -6610,10 +6607,7 @@ kelasSelect?.addEventListener("change", () => loadSantriData());
     { max: 89,  text: 'JAYYID JIDDAN', huruf: 'A'  },
     { max: 100, text:'MUMTAZ',         huruf: 'A+' },
   ];
-  function getPredikat(score){
-    const s = Math.max(0, Math.min(100, Number(score)||0));
-    return PREDIKATS.find(p=>s<=p.max) || PREDIKATS[PREDIKATS.length-1];
-  }
+  function getPredikat(score){ const s = Math.max(0, Math.min(100, Number(score)||0)); return PREDIKATS.find(p=>s<=p.max) || PREDIKATS[PREDIKATS.length-1]; }
 
   // ------ Peta awal Juz ------
   const JUZ_STARTS = [
@@ -6626,23 +6620,11 @@ kelasSelect?.addEventListener("change", () => loadSantriData());
   ];
   function getJuzRange(j){
     j=+j; if(!(j>=1&&j<=30)) return null;
-    const [sF,aF]=JUZ_STARTS[j-1];
-    let sT=114, aT=6;
-    if(j<30){
-      const [ns,na]=JUZ_STARTS[j];
-      sT=ns; aT=na-1;
-      if(aT<1){ sT=ns-1; aT=1; }
-    }
+    const [sF,aF]=JUZ_STARTS[j-1]; let sT=114, aT=6;
+    if(j<30){ const [ns,na]=JUZ_STARTS[j]; sT=ns; aT=na-1; if(aT<1){ sT=ns-1; aT=1; } }
     return {sFrom:sF,aFrom:aF,sTo:sT,aTo:aT};
   }
-  function juzOfAyah(s,a){
-    let j=1;
-    for(let i=0;i<JUZ_STARTS.length;i++){
-      const [ss,aa]=JUZ_STARTS[i];
-      if(s>ss || (s===ss && a>=aa)) j=i+1;
-    }
-    return j;
-  }
+  function juzOfAyah(s,a){ let j=1; for(let i=0;i<JUZ_STARTS.length;i++){ const [ss,aa]=JUZ_STARTS[i]; if(s>ss || (s===ss && a>=aa)) j=i+1; } return j; }
 
   // ---------- Data Mushaf ----------
   let ayahPageMap={}, pageAyahCount={}, surahMaxAyah={}, dataReady=false, currentRowEl=null;
@@ -6706,22 +6688,16 @@ kelasSelect?.addEventListener("change", () => loadSantriData());
     else if(keep && prev) el.value=String(Math.min(prev,max));
     else el.value="1";
   }
-
   function fillPageSelects(idFrom, idTo){
     const f = (typeof idFrom === 'string') ? $(idFrom) : idFrom;
     const t = (typeof idTo   === 'string') ? $(idTo)   : idTo;
     if (!f || !t) return;
     const opts = '<option value=""></option>' + makeOpts(LAST_PAGE);
-    f.innerHTML = opts;
-    t.innerHTML = opts;
-    f.value = ''; t.value = '';
+    f.innerHTML = opts; t.innerHTML = opts; f.value = ''; t.value = '';
   }
-
   function fillJuzSelect(id){
-    const el = (typeof id === 'string') ? $(id) : id;
-    if (!el) return;
-    let opts = '<option value=""></option>';
-    for (let i = 1; i <= 30; i++){ opts += `<option value="${i}">Juz ${i}</option>`; }
+    const el = (typeof id === 'string') ? $(id) : id; if (!el) return;
+    let opts = '<option value=""></option>'; for (let i = 1; i <= 30; i++){ opts += `<option value="${i}">Juz ${i}</option>`; }
     el.innerHTML = opts; el.value = '';
   }
 
@@ -6741,6 +6717,7 @@ kelasSelect?.addEventListener("change", () => loadSantriData());
   function renderSession(idx){
     const sF=+$(`#mur${idx}-surahFrom`).value||1, aF=+$(`#mur${idx}-ayahFrom`).value||1;
     const sT=+$(`#mur${idx}-surahTo`).value||sF, aT=+$(`#mur${idx}-ayahTo`).value||aF;
+
     const pageFromEl = $(`#mur${idx}-pageFrom`);
     const pageToEl   = $(`#mur${idx}-pageTo`);
     const juzFromVal = $(`#mur${idx}-juzFrom`).value;
@@ -6751,22 +6728,16 @@ kelasSelect?.addEventListener("change", () => loadSantriData());
       !!(cell?.dataset?.[`pf${idx}`] || cell?.dataset?.[`pt${idx}`] ||
          cell?.dataset?.[`sf${idx}`] || cell?.dataset?.[`st${idx}`]);
 
-    const isPristine = !hasDataset &&
-                       !juzFromVal && !juzToVal &&
-                       !pageFromEl.value && !pageToEl.value &&
-                       !murState[idx]?.touched;
+    const isPristine = !hasDataset && !juzFromVal && !juzToVal && !pageFromEl.value && !pageToEl.value && !murState[idx]?.touched;
 
     if (!isPristine){
       const pages=ayahRangeToPages(sF,aF,sT,aT);
       if(pages){
-        if ( (pageFromEl.value==='' && pageToEl.value==='') || hasDataset || juzFromVal || juzToVal ){
-          pageFromEl.value=String(pages.pFrom);
-          pageToEl.value  =String(pages.pTo);
+        if ((pageFromEl.value==='' && pageToEl.value==='') || hasDataset || juzFromVal || juzToVal){
+          pageFromEl.value=String(pages.pFrom); pageToEl.value=String(pages.pTo);
         }
         $(`#mur${idx}-pagesHint`).textContent=`Halaman: ${pages.pFrom}—${pages.pTo}`;
-      } else {
-        $(`#mur${idx}-pagesHint`).textContent='';
-      }
+      } else { $(`#mur${idx}-pagesHint`).textContent=''; }
 
       const jF=juzOfAyah(sF,aF), jT=juzOfAyah(sT,aT);
       const total=computeTotalJuz(sF,aF,sT,aT);
@@ -6774,9 +6745,8 @@ kelasSelect?.addEventListener("change", () => loadSantriData());
 
       const jrF=getJuzRange(jF), jrT=getJuzRange(jT);
       if(jrF && jrT && jrF.sFrom===sF && jrF.aFrom===aF && jrT.sTo===sT && jrT.aTo===aT){
-        const jfEl=$(`#mur${idx}-juzFrom`), jtEl=$(`#mur${idx}-juzTo`);
-        if(jfEl && jtEl){ jfEl.value=String(jF); jtEl.value=String(jT); }
-      }
+        $(`#mur${idx}-juzFrom`).value=String(jF); $(`#mur${idx}-juzTo`).value  =String(jT);
+      } else { $(`#mur${idx}-juzFrom`).value=''; $(`#mur${idx}-juzTo`).value=''; }
 
       setPredikatUI(idx);
 
@@ -6784,8 +6754,7 @@ kelasSelect?.addEventListener("change", () => loadSantriData());
         pFrom:pageFromEl.value||'', pTo:pageToEl.value||'',
         jFrom:jF, jTo:jT, total};
     } else {
-      $(`#mur${idx}-pagesHint`).textContent='';
-      $(`#mur${idx}-totalJuz`).textContent='0.00';
+      $(`#mur${idx}-pagesHint`).textContent=''; $(`#mur${idx}-totalJuz`).textContent='0.00';
       setPredikatUI(idx);
       murState[idx]={...murState[idx], sF:null,aF:null,sT:null,aT:null, pFrom:'',pTo:'', jFrom:null,jTo:null, total:0};
     }
@@ -6865,12 +6834,8 @@ kelasSelect?.addEventListener("change", () => loadSantriData());
   function resolveKelas(){
     const byWin = (window.kelasSelect && window.kelasSelect.value) ? window.kelasSelect.value : "";
     const byId  = $('#kelasSelect')?.value || $('#kelas')?.value || '';
-    const byName= (document.querySelector('select[name="kelas"]')?.value
-                || document.querySelector('input[name="kelas"]')?.value
-                || '');
-    const byData= $('#santri-table')?.dataset?.kelas
-               || document.body?.dataset?.kelas
-               || '';
+    const byName= (document.querySelector('select[name="kelas"]')?.value || document.querySelector('input[name="kelas"]')?.value || '');
+    const byData= $('#santri-table')?.dataset?.kelas || document.body?.dataset?.kelas || '';
     if (String(byWin).trim())  return String(byWin).trim();
     if (String(byId).trim())   return String(byId).trim();
     if (String(byName).trim()) return String(byName).trim();
@@ -6878,28 +6843,19 @@ kelasSelect?.addEventListener("change", () => loadSantriData());
     const row = $('#santri-table tbody tr');
     return String(row?.dataset?.kelas || '').trim();
   }
+  function todayStr(){ const d=new Date(); const m=String(d.getMonth()+1).padStart(2,'0'); const day=String(d.getDate()).padStart(2,'0'); return `${d.getFullYear()}-${m}-${day}`; }
   function resolveTanggalGlobal(){
     const byWin = (window.tanggalInput && window.tanggalInput.value) ? window.tanggalInput.value : '';
-    const byId  = $('#tanggalInput')?.value
-               || $('#tanggal')?.value
-               || $('#date')?.value
-               || '';
-    const byName= (document.querySelector('input[name="tanggal"]')?.value
-                || document.querySelector('input[name="date"]')?.value
-                || '');
-    if (String(byWin).trim())  return String(byWin).trim();
-    if (String(byId).trim())   return String(byId).trim();
-    if (String(byName).trim()) return String(byName).trim();
-    return '';
+    const byId  = $('#tanggalInput')?.value || $('#tanggal')?.value || $('#date')?.value || '';
+    const byName= (document.querySelector('input[name="tanggal"]')?.value || document.querySelector('input[name="date"]')?.value || '');
+    return String(byWin || byId || byName || '').trim();
   }
 
+  // ========= MODAL =========
   async function openModalForRow(row){
     currentRowEl=row;
     $('#murModal').style.display='flex';
-    if(!dataReady){
-      await ensureMap();
-      [1,2,3].forEach(bindSession);
-    }
+    if(!dataReady){ await ensureMap(); [1,2,3].forEach(bindSession); }
     const cell=row.querySelector('.murajaah-cell');
     const loadOne=(i)=>{
       let sF=+(cell?.dataset?.[`sf${i}`] ?? cell?.dataset?.sf ?? 1);
@@ -6911,39 +6867,27 @@ kelasSelect?.addEventListener("change", () => loadSantriData());
       $(`#mur${i}-surahTo`).value  =String(sT); fillAyahForSurah($(`#mur${i}-ayahTo`),   sT,{preset:aT});
 
       const sc = cell?.dataset?.[`score${i}`] ? Number(cell.dataset[`score${i}`]) : 0;
-      $(`#mur${i}-score`).value = String(sc||'');
-      setPredikatUI(i);
-      renderSession(i);
+      $(`#mur${i}-score`).value = String(sc||''); setPredikatUI(i); renderSession(i);
 
       const jF=juzOfAyah(sF,aF), jT=juzOfAyah(sT,aT);
       const jrF=getJuzRange(jF), jrT=getJuzRange(jT);
       if(jrF && jrT && jrF.sFrom===sF && jrF.aFrom===aF && jrT.sTo===sT && jrT.aTo===aT){
-        $(`#mur${i}-juzFrom`).value=String(jF);
-        $(`#mur${i}-juzTo`).value  =String(jT);
-      } else {
-        $(`#mur${i}-juzFrom`).value='';
-        $(`#mur${i}-juzTo`).value='';
-      }
+        $(`#mur${i}-juzFrom`).value=String(jF); $(`#mur${i}-juzTo`).value  =String(jT);
+      } else { $(`#mur${i}-juzFrom`).value=''; $(`#mur${i}-juzTo`).value=''; }
     };
     [1,2,3].forEach(loadOne);
   }
-  // expose agar delegasi klik bisa memanggil
   window.openModalForRow = openModalForRow;
 
   function fillAllBases(idx){
-    fillJuzSelect(`#mur${idx}-juzFrom`);
-    fillJuzSelect(`#mur${idx}-juzTo`);
+    fillJuzSelect(`#mur${idx}-juzFrom`); fillJuzSelect(`#mur${idx}-juzTo`);
     fillPageSelects(`#mur${idx}-pageFrom`, `#mur${idx}-pageTo`);
-    fillSurahSelect(`#mur${idx}-surahFrom`);
-    fillSurahSelect(`#mur${idx}-surahTo`);
-    fillAyahForSurah($(`#mur${idx}-ayahFrom`), 1, {preset:1});
-    fillAyahForSurah($(`#mur${idx}-ayahTo`),   1, {preset:1});
-
+    fillSurahSelect(`#mur${idx}-surahFrom`); fillSurahSelect(`#mur${idx}-surahTo`);
+    fillAyahForSurah($(`#mur${idx}-ayahFrom`), 1, {preset:1}); fillAyahForSurah($(`#mur${idx}-ayahTo`), 1, {preset:1});
     $(`#mur${idx}-juzFrom`) ?.addEventListener('change', ()=>applyJuzRange(idx));
     $(`#mur${idx}-juzTo`)   ?.addEventListener('change', ()=>applyJuzRange(idx));
     $(`#mur${idx}-pageFrom`)?.addEventListener('change', ()=>onPagesChange(idx));
     $(`#mur${idx}-pageTo`)  ?.addEventListener('change', ()=>onPagesChange(idx));
-
     $(`#mur${idx}-surahFrom`)?.addEventListener('change', ()=>{ murState[idx].touched = true; onSurahChange(idx,'from'); });
     $(`#mur${idx}-surahTo`)  ?.addEventListener('change', ()=>{ murState[idx].touched = true; onSurahChange(idx,'to');   });
     $(`#mur${idx}-ayahFrom`) ?.addEventListener('change', ()=>{ murState[idx].touched = true; onAyahChange(idx);        });
@@ -6952,96 +6896,55 @@ kelasSelect?.addEventListener("change", () => loadSantriData());
   }
   function bindSession(idx){ fillAllBases(idx); }
 
-  // === PATCH: pastikan kolom & tombol "Input" selalu ada ===
+  // === PASTIKAN KOLUM & TOMBOL SELALU ADA ( + watcher ) ===
   function ensureMurColumn(){
-    const table = document.getElementById('santri-table');
-    if (!table) return;
+    const table = document.getElementById('santri-table'); if (!table) return;
 
-    // Header
     const theadRow = table.tHead?.rows?.[0];
     if (theadRow && !theadRow.querySelector('th.mur-header')) {
-      const th = document.createElement('th');
-      th.className = 'mur-header';
-      th.textContent = 'Murajaah';
-      theadRow.appendChild(th);
+      const th = document.createElement('th'); th.className = 'mur-header'; th.textContent = 'Murajaah'; theadRow.appendChild(th);
     }
 
-    // Per baris: pastikan TD + konten + tombol
     const rows = [...(table.tBodies?.[0]?.rows || [])];
     rows.forEach(tr => {
       let td = tr.querySelector('.murajaah-cell');
-      if (!td) {
-        td = document.createElement('td');
-        td.className = 'murajaah-cell';
-        tr.appendChild(td);
-      }
-      const hasButton = !!td.querySelector('.btn-mur');
-      const hasVal    = !!td.querySelector('.mur-val');
+      if (!td) { td = document.createElement('td'); td.className = 'murajaah-cell'; tr.appendChild(td); }
+      const hasButton = !!td.querySelector('.btn-mur'); const hasVal = !!td.querySelector('.mur-val');
       if (!hasButton || !hasVal || !td.innerHTML.trim()) {
-        td.dataset.murtotal = td.dataset.murtotal ?? "";
-        td.dataset.murlabel = td.dataset.murlabel ?? "";
+        td.dataset.murtotal = td.dataset.murtotal ?? ""; td.dataset.murlabel = td.dataset.murlabel ?? "";
         td.innerHTML = `
           <div class="mur-val" style="font-weight:600;min-height:1em">—</div>
           <div class="mur-label" style="font-size:11px; color:#6b7280;"></div>
           <button type="button" class="btn-mur"
-            style="margin-top:6px; padding:6px 10px; border:1px solid #e5e7eb; border-radius:8px; background:#fff; cursor:pointer;">
-            Input
-          </button>`;
+            style="margin-top:6px; padding:6px 10px; border:1px solid #e5e7eb; border-radius:8px; background:#fff; cursor:pointer;">Input</button>`;
       }
     });
   }
 
-  // Delegasi klik tombol .btn-mur sekali saja
   (function bindMurajaahCellClicksOnce(){
-    if (window.__murBtnBound) return;
-    window.__murBtnBound = true;
+    if (window.__murBtnBound) return; window.__murBtnBound = true;
     document.addEventListener('click', (ev)=>{
-      const btn = ev.target.closest('.btn-mur');
-      if (!btn) return;
-      const tr = btn.closest('tr');
-      if (tr && typeof window.openModalForRow === 'function') {
-        window.openModalForRow(tr);
-      }
-    }, {capture:false});
+      const btn = ev.target.closest('.btn-mur'); if (!btn) return;
+      const tr = btn.closest('tr'); if (tr && typeof window.openModalForRow === 'function') window.openModalForRow(tr);
+    });
   })();
 
   // ---------- Refresh dari server (robust: sesi 1..3) ----------
   async function refreshMurFromServer(){
-    const k = resolveKelas();
-    const table = $('#santri-table');
+    const k = resolveKelas(); const table = $('#santri-table');
     if (!k || !table) { console.warn('murajaah: kelas kosong atau table tidak ada'); return; }
 
     const rows = [...(table.tBodies?.[0]?.rows||[])];
 
     const tanggalSet = new Set(rows.map(r=>String(r.dataset?.tanggal||'').trim()).filter(Boolean));
-    if (!tanggalSet.size) {
-      const tg = resolveTanggalGlobal();
-      if (tg) tanggalSet.add(tg);
-    }
+    if (!tanggalSet.size) { const tg = resolveTanggalGlobal() || todayStr(); if (tg) tanggalSet.add(tg); }
     if (!tanggalSet.size) { console.warn('murajaah: tidak ada tanggal (global/baris)'); return; }
 
     const isBlank = (v) => v==null || v==='' || v==='undefined' || v==='null' || (typeof v==='string' && !v.trim());
-    const setSA = (cell, src, dsS, dsA) => {
-      if (isBlank(src)) return;
-      const [s,a] = String(src).split(':');
-      if (!isBlank(s)) cell.dataset[dsS] = s;
-      if (!isBlank(a)) cell.dataset[dsA] = a;
-    };
-    const setPages = (cell, src, pfKey='pf', ptKey='pt') => {
-      if (isBlank(src)) return;
-      const [pf,pt] = String(src).split('-');
-      if (!isBlank(pf)) cell.dataset[pfKey] = pf;
-      if (!isBlank(pt)) cell.dataset[ptKey] = pt;
-    };
-    const setIfNum = (cell, key, v) => {
-      const n = Number(v);
-      if (Number.isFinite(n)) cell.dataset[key] = String(n);
-    };
-    const num = (x) => {
-      const s = String(x ?? '').replace(/[^0-9.,-]/g,'').replace(',', '.');
-      const n = parseFloat(s);
-      return Number.isFinite(n) ? n : 0;
-    };
+    const setSA = (cell, src, dsS, dsA) => { if (isBlank(src)) return; const [s,a] = String(src).split(':'); if (!isBlank(s)) cell.dataset[dsS] = s; if (!isBlank(a)) cell.dataset[dsA] = a; };
+    const setPages = (cell, src, pfKey='pf', ptKey='pt') => { if (isBlank(src)) return; const [pf,pt] = String(src).split('-'); if (!isBlank(pf)) cell.dataset[pfKey] = pf; if (!isBlank(pt)) cell.dataset[ptKey] = pt; };
+    const setIfNum = (cell, key, v) => { const n = Number(v); if (Number.isFinite(n)) cell.dataset[key] = String(n); };
+    const num = (x) => { const s = String(x ?? '').replace(/[^0-9.,-]/g,'').replace(',', '.'); const n = parseFloat(s); return Number.isFinite(n) ? n : 0; };
 
     for (const tgl of tanggalSet){
       try{
@@ -7049,25 +6952,15 @@ kelasSelect?.addEventListener("change", () => loadSantriData());
         if (!res.ok) continue;
         const arr = await res.json().catch(()=>[]) || [];
 
-        const byNis = new Map();
-        const byId  = new Map();
-        const byKey = new Map();
-        const byName= new Map();
+        const byNis = new Map(), byId  = new Map(), byKey = new Map(), byName= new Map();
         for (const rec of arr){
-          const nis = String(rec?.nis ?? '').trim();
-          const id  = String(rec?.id  ?? '').trim();
-          const key = nis || id || '';
-          const nm  = String(rec?.nama ?? '').trim().toLowerCase();
-          if (nis) byNis.set(nis, rec);
-          if (id)  byId.set(id, rec);
-          if (key) byKey.set(key, rec);
-          if (nm)  byName.set(nm, rec);
+          const nis = String(rec?.nis ?? '').trim(); const id  = String(rec?.id  ?? '').trim();
+          const key = nis || id || ''; const nm  = String(rec?.nama ?? '').trim().toLowerCase();
+          if (nis) byNis.set(nis, rec); if (id) byId.set(id, rec); if (key) byKey.set(key, rec); if (nm) byName.set(nm, rec);
         }
 
         rows.forEach(tr=>{
-          const rowTgl = String(tr.dataset?.tanggal||'').trim();
-          if (tanggalSet.size>1 && rowTgl && rowTgl!==tgl) return;
-
+          const rowTgl = String(tr.dataset?.tanggal||'').trim(); if (tanggalSet.size>1 && rowTgl && rowTgl!==tgl) return;
           const cell = tr.querySelector('.murajaah-cell'); if (!cell) return;
 
           const nis   = String(tr.dataset?.nis||'').trim();
@@ -7084,42 +6977,23 @@ kelasSelect?.addEventListener("change", () => loadSantriData());
           if (!rec) return;
 
           const tot = num(rec?.juzmurajaah ?? rec?.totalJuz ?? 0);
-          if (tot > 0) {
-            const valEl = cell.querySelector('.mur-val');
-            if (valEl) valEl.textContent = `${tot.toFixed(2)} juz`;
-            cell.dataset.murtotal = String(tot.toFixed(2));
-          }
+          if (tot > 0) { const valEl = cell.querySelector('.mur-val'); if (valEl) valEl.textContent = `${tot.toFixed(2)} juz`; cell.dataset.murtotal = String(tot.toFixed(2)); }
 
-          // Legacy (sesi 1 “tanpa index”)
-          setSA(cell, rec?.murFrom, 'sf', 'af');
-          setSA(cell, rec?.murTo,   'st', 'at');
-          setPages(cell, rec?.murPages, 'pf', 'pt');
+          setSA(cell, rec?.murFrom, 'sf', 'af'); setSA(cell, rec?.murTo, 'st', 'at'); setPages(cell, rec?.murPages, 'pf', 'pt');
 
-          // Per-sesi 1..3
           for (let i=1;i<=3;i++){
-            setSA(cell, rec?.[`murFrom${i}`], `sf${i}`, `af${i}`);
-            setSA(cell, rec?.[`murTo${i}`],   `st${i}`, `at${i}`);
+            setSA(cell, rec?.[`murFrom${i}`], `sf${i}`, `af${i}`); setSA(cell, rec?.[`murTo${i}`], `st${i}`, `at${i}`);
             setPages(cell, rec?.[`murPages${i}`], `pf${i}`, `pt${i}`);
-
-            const jv = num(
-              rec?.[`juzmur${i}`] ??
-              rec?.[`juzSesi${i}`] ??
-              rec?.[`juzmurajaah${i}`] ?? 0
-            );
-            if (jv>0) cell.dataset[`juz${i}`] = jv.toFixed(2);
-
+            const jv = num(rec?.[`juzmur${i}`] ?? rec?.[`juzSesi${i}`] ?? rec?.[`juzmurajaah${i}`] ?? 0); if (jv>0) cell.dataset[`juz${i}`] = jv.toFixed(2);
             if (!isBlank(rec?.[`jFrom${i}`])) setIfNum(cell, `jfrom${i}`, rec[`jFrom${i}`]);
             if (!isBlank(rec?.[`jTo${i}`]))   setIfNum(cell, `jto${i}`,   rec[`jTo${i}`]);
-
             if (!isBlank(rec?.[`murScore${i}`]))    setIfNum(cell, `score${i}`, rec[`murScore${i}`]);
             if (!isBlank(rec?.[`murPredText${i}`])) cell.dataset[`ptext${i}`] = String(rec[`murPredText${i}`]);
             if (!isBlank(rec?.[`murPredHuruf${i}`]))cell.dataset[`phuruf${i}`]= String(rec[`murPredHuruf${i}`]);
           }
         });
 
-      }catch(e){
-        console.warn('murajaah refresh fail', e);
-      }
+      }catch(e){ console.warn('murajaah refresh fail', e); }
     }
   }
 
@@ -7127,8 +7001,7 @@ kelasSelect?.addEventListener("change", () => loadSantriData());
     $('#mur-close')?.addEventListener('click',()=>{$('#murModal').style.display='none';});
     $('#mur-preview')?.addEventListener('click', ()=>{
       const lines=[1,2,3].map(i=>{
-        const st=murState[i]||{};
-        if(!st.sF) return `<li>Sesi ${i}: -</li>`;
+        const st=murState[i]||{}; if(!st.sF) return `<li>Sesi ${i}: -</li>`;
         const pv = (st.pText && st.pHuruf!=null) ? ` • Nilai ${st.score} → <b>${st.pText} (${st.pHuruf})</b>` : '';
         return `<li><b>Sesi ${i}</b>: Surah ${st.sF}:${st.aF} → ${st.sT}:${st.aT} • Juz ${st.jFrom} → ${st.jTo} • <b>${(st.total||0).toFixed(2)} juz</b>${pv}</li>`;
       }).join('');
@@ -7141,7 +7014,7 @@ kelasSelect?.addEventListener("change", () => loadSantriData());
         [1,2,3].forEach(renderSession);
         if(typeof window.simpanDataMutabaah==='function'){
           await window.simpanDataMutabaah($('#mur-save'));
-          await refreshMurFromServer();
+          setTimeout(()=>{ ensureMurColumn(); refreshMurFromServer(); }, 50);
           $('#mur-save-status').textContent='✅ Tersimpan';
           setTimeout(()=>$('#mur-save-status').textContent='',1500);
         }
@@ -7149,7 +7022,18 @@ kelasSelect?.addEventListener("change", () => loadSantriData());
     });
   }
 
-  function afterTableRendered(){ ensureMurColumn(); refreshMurFromServer(); }
+  // ===== WATCHER: kalau tbody diganti/dirender ulang, pasang kolom & rehydrate =====
+  let murTbodyObserver=null;
+  function watchMurTable(){
+    const table = document.getElementById('santri-table'); const tbody = table?.tBodies?.[0]; if (!tbody) return;
+    if (murTbodyObserver) try{murTbodyObserver.disconnect();}catch{}
+    murTbodyObserver = new MutationObserver((muts)=>{
+      if (muts.some(m=>m.type==='childList')){ ensureMurColumn(); setTimeout(()=>refreshMurFromServer(), 60); }
+    });
+    murTbodyObserver.observe(tbody,{childList:true,subtree:false});
+  }
+
+  function afterTableRendered(){ ensureMurColumn(); watchMurTable(); refreshMurFromServer(); }
 
   // ekspor
   window.murajaah = { afterTableRendered, refreshServer: refreshMurFromServer };
@@ -7160,16 +7044,12 @@ kelasSelect?.addEventListener("change", () => loadSantriData());
     if (document.readyState==='loading') document.addEventListener('DOMContentLoaded', afterTableRendered);
     else afterTableRendered();
     const _origLoad=window.loadSantriData;
-    window.loadSantriData=async function(...args){
-      if(typeof _origLoad==='function') await _origLoad.apply(this,args);
-      setTimeout(afterTableRendered,0);
-    };
-    await ensureMap();
-    [1,2,3].forEach(bindSession);
+    window.loadSantriData=async function(...args){ if(typeof _origLoad==='function') await _origLoad.apply(this,args); setTimeout(afterTableRendered,0); };
+    window.addEventListener('pageshow', afterTableRendered);
+    await ensureMap(); [1,2,3].forEach(bindSession);
   })();
 })();
 </script>
-
 <script>
 (function(){
   // ===== util & helpers Murajaah RANGE =====
@@ -7178,8 +7058,7 @@ kelasSelect?.addEventListener("change", () => loadSantriData());
   const normKey = v => String(v ?? "").trim();
   const parseNum = v => {
     if (typeof window.parseNum === "function") return window.parseNum(v);
-    let s = String(v ?? "").trim();
-    if (!s) return 0;
+    let s = String(v ?? "").trim(); if (!s) return 0;
     s = s.replace(/[^0-9.,-]/g,"");
     const c = s.lastIndexOf(","), d = s.lastIndexOf(".");
     if (c>-1 && d>-1){ if (c>d){ s=s.replace(/\./g,"").replace(",","."); } else { s=s.replace(/,/g,""); } }
@@ -7197,15 +7076,9 @@ kelasSelect?.addEventListener("change", () => loadSantriData());
         || document.querySelector('table.santri-table')
         || null;
   }
-
   function kelasNow(){
-    if (window.kelasSelect && window.kelasSelect.value) {
-      const v = normKey(window.kelasSelect.value); try{ localStorage.setItem('lastKelas', v);}catch{}; return v;
-    }
-    const sel = document.querySelector(
-      'select#kelasSelect, select[name="kelas"], select[name="kelasSelect"], '+
-      'select.kelas-select, select.kelas, #kelas, .kelasSelect, .kelas'
-    );
+    if (window.kelasSelect && window.kelasSelect.value) { const v = normKey(window.kelasSelect.value); try{ localStorage.setItem('lastKelas', v);}catch{}; return v; }
+    const sel = document.querySelector('select#kelasSelect, select[name="kelas"], select[name="kelasSelect"], select.kelas-select, select.kelas, #kelas, .kelasSelect, .kelas');
     if (sel && sel.value){ const v=normKey(sel.value); try{localStorage.setItem('lastKelas', v);}catch{}; return v; }
     const ref = document.querySelector('[data-kelas]'); if (ref?.dataset?.kelas){ const v=normKey(ref.dataset.kelas); try{localStorage.setItem('lastKelas', v);}catch{}; return v; }
     const qs = new URLSearchParams(location.search); const vq = qs.get('kelas') || qs.get('class') || qs.get('kls');
@@ -7335,14 +7208,12 @@ kelasSelect?.addEventListener("change", () => loadSantriData());
         const [v1,v2,v3] = extract3(item);
         if (!rekap[key]) rekap[key] = { s1:0,s2:0,s3:0, cAll:0, semester:item?.semester ?? null };
         rekap[key].s1 += v1; rekap[key].s2 += v2; rekap[key].s3 += v3;
-        const sum = v1+v2+v3;
-        if (sum>0) rekap[key].cAll += 1;
+        const sum = v1+v2+v3; if (sum>0) rekap[key].cAll += 1;
       });
 
       rows.forEach(row=>{
         const key  = normKey(row.dataset?.key || row.dataset?.nis || row.dataset?.id);
-        const cell = row.querySelector('.total-mur-range');
-        if (!cell) return;
+        const cell = row.querySelector('.total-mur-range'); if (!cell) return;
 
         const rec = key ? rekap[key] : null;
         const s1 = rec ? Number(rec.s1||0) : 0;
@@ -7389,75 +7260,45 @@ kelasSelect?.addEventListener("change", () => loadSantriData());
   $('#btnHitungTotalMur')?.addEventListener('click', hitungTotalMurRangeFromTable);
 
   // ===== SCHEDULER & OBSERVER TABEL =====
-  let autoRanForKelas = "";
-  let autoApplyLock = false;
-  let recalcTimer = null;
-  let runningCalc = false;
-  let tbodyObserver = null;
+  let autoRanForKelas = ""; let autoApplyLock = false; let recalcTimer = null; let runningCalc = false; let tbodyObserver = null;
 
-  function debounce(fn, ms){
-    return function(...args){
-      clearTimeout(recalcTimer);
-      recalcTimer = setTimeout(()=>fn.apply(this,args), ms);
-    };
-  }
+  function debounce(fn, ms){ return function(...args){ clearTimeout(recalcTimer); recalcTimer = setTimeout(()=>fn.apply(this,args), ms); }; }
 
   async function scheduleRecalcMurRange(){
-    const kelas = kelasNow();
-    if (!kelas) return;
-    const dari = $('#murRangeDari')?.value;
-    const sampai = $('#murRangeSampai')?.value;
+    const kelas = kelasNow(); if (!kelas) return;
+    const dari = $('#murRangeDari')?.value; const sampai = $('#murRangeSampai')?.value;
     if (!dari || !sampai) return;
-
-    if (runningCalc) return;
-    runningCalc = true;
-    try { await hitungTotalMurRangeFromTable(); }
-    finally { runningCalc = false; }
+    if (runningCalc) return; runningCalc = true; try { await hitungTotalMurRangeFromTable(); } finally { runningCalc = false; }
   }
   const scheduleRecalcMurRangeDebounced = debounce(scheduleRecalcMurRange, 100);
 
   function watchTableBody(){
-    const table = getSantriTable();
-    const tbody = table?.tBodies?.[0];
-    if (!tbody) return;
+    const table = getSantriTable(); const tbody = table?.tBodies?.[0]; if (!tbody) return;
     if (tbodyObserver) { try{tbodyObserver.disconnect();}catch{} }
-    tbodyObserver = new MutationObserver((mut)=>{
-      if (mut.some(m=>m.type==='childList')) {
-        scheduleRecalcMurRangeDebounced();
-      }
-    });
+    tbodyObserver = new MutationObserver((mut)=>{ if (mut.some(m=>m.type==='childList')) { scheduleRecalcMurRangeDebounced(); } });
     tbodyObserver.observe(tbody, { childList:true, subtree:false });
   }
 
   function waitForRows(timeoutMs=7000){
     return new Promise(resolve=>{
-      const table = getSantriTable();
-      const tbody = table?.tBodies?.[0];
-      if (!tbody){ return resolve(false); }
+      const table = getSantriTable(); const tbody = table?.tBodies?.[0]; if (!tbody){ return resolve(false); }
       if (tbody.rows.length){ return resolve(true); }
-      const obs = new MutationObserver(()=>{
-        if (tbody.rows.length){
-          obs.disconnect(); resolve(true);
-        }
-      });
+      const obs = new MutationObserver(()=>{ if (tbody.rows.length){ obs.disconnect(); resolve(true); } });
       obs.observe(tbody, {childList:true, subtree:false});
       setTimeout(()=>{ try{obs.disconnect();}catch{} resolve(tbody.rows.length>0); }, timeoutMs);
     });
   }
 
   async function autoApplyMurRangeIfAvailable(){
-    if (autoApplyLock) return;
-    autoApplyLock = true;
+    if (autoApplyLock) return; autoApplyLock = true;
     try{
-      const kelas = kelasNow();
-      const table = getSantriTable();
+      const kelas = kelasNow(); const table = getSantriTable();
       if (!kelas || !table){ setTimeout(()=>{ autoApplyLock=false; autoApplyMurRangeIfAvailable(); }, 150); return; }
       if (autoRanForKelas === kelas){ autoApplyLock=false; return; }
 
       ensureMurRangeColumn();
 
-      const ok = await waitForRows(7000);
-      if (!ok){ autoApplyLock=false; return; }
+      const ok = await waitForRows(7000); if (!ok){ autoApplyLock=false; return; }
 
       watchTableBody();
 
@@ -7466,27 +7307,16 @@ kelasSelect?.addEventListener("change", () => loadSantriData());
         if ($('#murRangeDari'))   $('#murRangeDari').value   = fromDate;
         if ($('#murRangeSampai')) $('#murRangeSampai').value = toDate;
 
-        requestAnimationFrame(()=> setTimeout(async ()=>{
-          try{
-            await hitungTotalMurRangeFromTable();
-            autoRanForKelas = kelas;
-          } finally {
-            autoApplyLock = false;
-          }
-        }, 0));
+        requestAnimationFrame(()=> setTimeout(async ()=>{ try{ await hitungTotalMurRangeFromTable(); autoRanForKelas = kelas; } finally { autoApplyLock = false; } }, 0));
         return;
       }
-    } catch(e){
-      console.warn('autoApplyMurRangeIfAvailable:', e);
-    }
+    } catch(e){ console.warn('autoApplyMurRangeIfAvailable:', e); }
     autoApplyLock = false;
   }
 
-  function afterTableRenderedMurRange(){
-    ensureMurRangeColumn();
-    autoApplyMurRangeIfAvailable();
-  }
+  function afterTableRenderedMurRange(){ ensureMurRangeColumn(); autoApplyMurRangeIfAvailable(); }
 
+  // Hook ke loadSantriData
   const _origLoad = window.loadSantriData;
   window.loadSantriData = async function(...args){
     const kelasBefore = kelasNow();
@@ -7496,24 +7326,18 @@ kelasSelect?.addEventListener("change", () => loadSantriData());
     if (kelasBefore !== kelasAfter){ autoRanForKelas = ""; }
   };
 
+  // Reset guard saat user mengganti kelas secara manual
   ['#kelasSelect','#kelas','select[name="kelas"]','.kelas','.kelasSelect','.kelas-select'].forEach(sel=>{
     const el = document.querySelector(sel);
-    if (el) el.addEventListener('change', ()=>{
-      autoRanForKelas = "";
-      setTimeout(()=>{ autoApplyMurRangeIfAvailable(); }, 200);
-    });
+    if (el) el.addEventListener('change', ()=>{ autoRanForKelas = ""; setTimeout(()=>{ autoApplyMurRangeIfAvailable(); }, 200); });
   });
 
-  if (document.readyState === 'loading'){
-    document.addEventListener('DOMContentLoaded', afterTableRenderedMurRange);
-  } else {
-    afterTableRenderedMurRange();
-  }
+  if (document.readyState === 'loading'){ document.addEventListener('DOMContentLoaded', afterTableRenderedMurRange); }
+  else { afterTableRenderedMurRange(); }
 
   window.hitungTotalMurRangeFromTable = hitungTotalMurRangeFromTable;
 })();
 </script>
-
 
 <script>
   // ====== KONFIG (opsional dari window.*) ======
