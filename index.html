@@ -6929,115 +6929,122 @@ function fillJuzSelect(id){
   }
 
   // GANTI seluruh fungsi ini
+// === GANTI SELURUH FUNGSI INI ===
 async function openModalForRow(row){
   currentRowEl = row;
   $('#murModal').style.display = 'flex';
 
+  // 1) Pastikan peta mushaf & event dasar sudah ada
   if (!dataReady){
     await ensureMap();
     [1,2,3].forEach(bindSession);
   }
 
+  // 2) PENTING: segarkan dataset baris dari server dulu,
+  //    agar cell.dataset terisi benar sebelum prefill modal.
+  try { if (typeof window.murajaah?.refreshServer === 'function') {
+    await window.murajaah.refreshServer();
+  }} catch (_) {}
+
+  const cell = row.querySelector('.murajaah-cell');
+
   // helper: ambil nilai pertama yang benar-benar TIDAK kosong
-function pickNonEmpty(...vals){
-  for (const v of vals){
-    if (v !== undefined && v !== null && String(v) !== '') return v;
-  }
-  return undefined;
-}
-
-// helper: baca dataset; legacy hanya untuk sesi-1
-function getDS(ds, i, perKey, legacyKey){
-  const v = ds[perKey];
-  if (v !== undefined && String(v) !== '') return v;
-  if (i === 1){ // legacy hanya sesi-1
-    const L = ds[legacyKey];
-    if (L !== undefined && String(L) !== '') return L;
-  }
-  return undefined;
-}
-
-// === REVISI: hindari copy sesi-1 ke sesi-2/3 ===
-const loadOne = (i) => {
-  const ds = (cell && cell.dataset) ? cell.dataset : {};
-
-  // Surah/Ayat from–to (legacy hanya sesi-1)
-  const sfRaw = getDS(ds, i, `sf${i}`, 'sf');
-  const afRaw = getDS(ds, i, `af${i}`, 'af');
-  const stRaw = getDS(ds, i, `st${i}`, 'st');
-  const atRaw = getDS(ds, i, `at${i}`, 'at');
-
-  const hasSA = sfRaw !== undefined || afRaw !== undefined || stRaw !== undefined || atRaw !== undefined;
-
-  const sF = Number(pickNonEmpty(sfRaw, 1)) || 1;
-  const aF = Number(pickNonEmpty(afRaw, 1)) || 1;
-  const sT = Number(pickNonEmpty(stRaw, sF)) || sF;
-  const aT = Number(pickNonEmpty(atRaw, aF)) || aF;
-
-  // set UI surah/ayah (kalau tidak ada data untuk sesi>1, kita tetap set default aman)
-  $(`#mur${i}-surahFrom`).value = String(sF);
-  fillAyahForSurah($(`#mur${i}-ayahFrom`), sF, { preset: aF });
-  $(`#mur${i}-surahTo`).value   = String(sT);
-  fillAyahForSurah($(`#mur${i}-ayahTo`),   sT, { preset: aT });
-
-  // Pages (legacy hanya sesi-1)
-  const pfRaw = getDS(ds, i, `pf${i}`, 'pf');
-  const ptRaw = getDS(ds, i, `pt${i}`, 'pt');
-  if (pfRaw !== undefined) $(`#mur${i}-pageFrom`).value = String(pfRaw);
-  if (ptRaw !== undefined) $(`#mur${i}-pageTo`).value   = String(ptRaw);
-
-  // Juz from–to (hanya jika per-sesi ada; jangan copy legacy ke sesi-2/3)
-  const jfDs = ds[`jfrom${i}`];
-  const jtDs = ds[`jto${i}`];
-  $(`#mur${i}-juzFrom`).value = (jfDs !== undefined && String(jfDs) !== '') ? String(jfDs) : '';
-  $(`#mur${i}-juzTo`).value   = (jtDs !== undefined && String(jtDs) !== '') ? String(jtDs) : '';
-
-  // Nilai/predikat (per-sesi saja)
-  const scDs = ds[`score${i}`];
-  $(`#mur${i}-score`).value = (scDs !== undefined && String(scDs) !== '') ? String(scDs) : '';
-  const pText  = ds[`ptext${i}`];
-  const pHuruf = ds[`phuruf${i}`];
-
-  // Total juz per sesi (per-sesi saja)
-  const juzDs = ds[`juz${i}`];
-  const hadJuz = (juzDs !== undefined && String(juzDs) !== '');
-
-  // Tandai touched hanya jika memang ada data per-sesi untuk i ini
-  const hasPerSessionData =
-    (sfRaw!==undefined || afRaw!==undefined || stRaw!==undefined || atRaw!==undefined ||
-     pfRaw!==undefined || ptRaw!==undefined || jfDs!==undefined || jtDs!==undefined ||
-     scDs!==undefined || pText!==undefined || pHuruf!==undefined || hadJuz);
-
-  murState[i] = { ...(murState[i]||{}), touched: !!hasPerSessionData };
-
-  // Hitung & sinkron UI
-  setPredikatUI(i);
-  renderSession(i); // akan hormati 'pristine' bila touched=false
-
-  if (hadJuz){
-    const val = Number(juzDs) || 0;
-    $(`#mur${i}-totalJuz`).textContent = val.toFixed(2);
-    murState[i] = { ...(murState[i]||{}), total: val };
-  }
-
-  if (pText !== undefined || pHuruf !== undefined){
-    $(`#mur${i}-predikatBadge`).textContent =
-      (pText && pHuruf) ? `${pText} (${pHuruf})` : (pText || pHuruf || '–');
-  }
-
-  // Jika per-sesi tidak punya jFrom/jTo, isi otomatis HANYA jika range pas batas juz
-  if ((jfDs === undefined || jtDs === undefined) && hasSA){
-    const jF = juzOfAyah(sF, aF), jT = juzOfAyah(sT, aT);
-    const jrF = getJuzRange(jF), jrT = getJuzRange(jT);
-    if (jrF && jrT && jrF.sFrom===sF && jrF.aFrom===aF && jrT.sTo===sT && jrT.aTo===aT){
-      $(`#mur${i}-juzFrom`).value = String(jF);
-      $(`#mur${i}-juzTo`).value   = String(jT);
+  function pickNonEmpty(...vals){
+    for (const v of vals){
+      if (v !== undefined && v !== null && String(v) !== '') return v;
     }
+    return undefined;
   }
-};
+  // helper: baca dataset; legacy hanya untuk sesi-1
+  function getDS(ds, i, perKey, legacyKey){
+    const v = ds[perKey];
+    if (v !== undefined && String(v) !== '') return v;
+    if (i === 1){ // legacy hanya sesi-1
+      const L = ds[legacyKey];
+      if (L !== undefined && String(L) !== '') return L;
+    }
+    return undefined;
+  }
+
+  const loadOne = (i) => {
+    const ds = (cell && cell.dataset) ? cell.dataset : {};
+
+    // --- Surah/Ayat (legacy hanya sesi-1)
+    const sfRaw = getDS(ds, i, `sf${i}`, 'sf');
+    const afRaw = getDS(ds, i, `af${i}`, 'af');
+    const stRaw = getDS(ds, i, `st${i}`, 'st');
+    const atRaw = getDS(ds, i, `at${i}`, 'at');
+
+    const haveSA = (sfRaw!==undefined || afRaw!==undefined || stRaw!==undefined || atRaw!==undefined);
+
+    // kalau ada data → isi; kalau tidak ada data (mis. sesi-2/3 kosong) biarkan default UI
+    const sF = Number(pickNonEmpty(sfRaw)) || 1;
+    const aF = Number(pickNonEmpty(afRaw)) || 1;
+    const sT = Number(pickNonEmpty(stRaw, sfRaw)) || sF;
+    const aT = Number(pickNonEmpty(atRaw, afRaw)) || aF;
+
+    // set UI (select Surah/Ayat memang defaultnya mulai dari 1; itu normal)
+    $(`#mur${i}-surahFrom`).value = String(sF);
+    fillAyahForSurah($(`#mur${i}-ayahFrom`), sF, { preset: aF });
+    $(`#mur${i}-surahTo`).value   = String(sT);
+    fillAyahForSurah($(`#mur${i}-ayahTo`),   sT, { preset: aT });
+
+    // --- Page (legacy hanya sesi-1)
+    const pfRaw = getDS(ds, i, `pf${i}`, 'pf');
+    const ptRaw = getDS(ds, i, `pt${i}`, 'pt');
+    if (pfRaw !== undefined) $(`#mur${i}-pageFrom`).value = String(pfRaw);
+    if (ptRaw !== undefined) $(`#mur${i}-pageTo`).value   = String(ptRaw);
+
+    // --- Juz From/To dan nilai/predikat (per-sesi saja)
+    const jf = ds[`jfrom${i}`], jt = ds[`jto${i}`];
+    $(`#mur${i}-juzFrom`).value = (jf !== undefined && String(jf) !== '') ? String(jf) : '';
+    $(`#mur${i}-juzTo`).value   = (jt !== undefined && String(jt) !== '') ? String(jt) : '';
+
+    const sc = ds[`score${i}`];
+    $(`#mur${i}-score`).value   = (sc !== undefined && String(sc) !== '') ? String(sc) : '';
+
+    // tandai touched hanya jika memang ada data nyata utk sesi i
+    const hasPerSessionData =
+      haveSA || pfRaw!==undefined || ptRaw!==undefined ||
+      jf!==undefined || jt!==undefined ||
+      sc!==undefined || ds[`ptext${i}`]!==undefined ||
+      ds[`phuruf${i}`]!==undefined || ds[`juz${i}`]!==undefined;
+
+    murState[i] = { ...(murState[i]||{}), touched: !!hasPerSessionData };
+
+    // hitung UI & total (hormati pristine bila touched=false)
+    setPredikatUI(i);
+    renderSession(i);
+
+    // tampilkan total per sesi jika sudah ada
+    if (ds[`juz${i}`] !== undefined){
+      const val = Number(ds[`juz${i}`]) || 0;
+      $(`#mur${i}-totalJuz`).textContent = val.toFixed(2);
+      murState[i] = { ...(murState[i]||{}), total: val };
+    }
+
+    // tampilkan label predikat bila ada
+    const pText  = ds[`ptext${i}`];
+    const pHuruf = ds[`phuruf${i}`];
+    if (pText !== undefined || pHuruf !== undefined){
+      $(`#mur${i}-predikatBadge`).textContent =
+        (pText && pHuruf) ? `${pText} (${pHuruf})` : (pText || pHuruf || '–');
+    }
+
+    // jika belum ada jFrom/jTo tapi range pas batas juz → isi otomatis
+    if ((jf === undefined || jt === undefined) && haveSA){
+      const jF = juzOfAyah(sF, aF), jT = juzOfAyah(sT, aT);
+      const jrF = getJuzRange(jF),  jrT = getJuzRange(jT);
+      if (jrF && jrT && jrF.sFrom===sF && jrF.aFrom===aF && jrT.sTo===sT && jrT.aTo===aT){
+        $(`#mur${i}-juzFrom`).value = String(jF);
+        $(`#mur${i}-juzTo`).value   = String(jT);
+      }
+    }
+  };
 
   [1,2,3].forEach(loadOne);
 }
+
 
 
   function fillAllBases(idx){
