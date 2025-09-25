@@ -6703,14 +6703,15 @@ kelasSelect?.addEventListener("change", () => loadSantriData());
   }
 
   function fillSurahSelect(sel){
-    const N=["Al-Fatihah","Al-Baqarah","Ali 'Imran","An-Nisa'","Al-Ma'idah","Al-An'am","Al-A'raf","Al-Anfal","At-Taubah","Yunus","Hud","Yusuf","Ar-Ra'd","Ibrahim","Al-Hijr","An-Nahl","Al-Isra'","Al-Kahf","Maryam","Ta Ha","Al-Anbiya'","Al-Hajj","Al-Mu'minun","An-Nur","Al-Furqan","Ash-Shu'ara'","An-Naml","Al-Qasas","Al-'Ankabut","Ar-Rum","Luqman","As-Sajdah","Al-Ahzab","Saba'","Fatir","Ya-Sin","As-Saffat","Sad","Az-Zumar","Ghafir","Fussilat","Ash-Shura","Az-Zukhruf","Ad-Dukhan","Al-Jathiyah","Al-Ahqaf","Muhammad","Al-Fath","Al-Hujurat","Qaf","Adz-Dzariyat","At-Tur","An-Najm","Al-Qamar","Ar-Rahman","Al-Waqi'ah","Al-Hadid","Al-Mujadilah","Al-Hashr","Al-Mumtahanah","As-Saff","Al-Jumu'ah","Al-Munafiqun","At-Taghabun","At-Talaq","At-Tahrim","Al-Mulk","Al-Qalam","Al-Haqqah","Al-Ma'arij","Nuh","Al-Jinn","Al-Muzzammil","Al-Muddaththir","Al-Qiyamah","Al-Insan","Al-Mursalat","An-Naba'","An-Nazi'at","'Abasa","At-Takwir","Al-Infitar","Al-Mutaffifin","Al-Inshiqaq","Al-Buruj","At-Tariq","Al-A'la","Al-Ghashiyah","Al-Fajr","Al-Balad","Ash-Shams","Al-Layl","Ad-Duha","Ash-Sharh","At-Tin","Al-'Alaq","Al-Qadr","Al-Bayyinah","Az-Zalzalah","Al-'Adiyat","Al-Qari'ah","At-Takathur","Al-'Asr","Al-Humazah","Al-Fil","Quraysh","Al-Ma'un","Al-Kawthar","Al-Kafirun","An-Nasr","Al-Masad","Al-Ikhlas","Al-Falaq","An-Nas"];
-    const el = (typeof sel==='string')?$(sel):sel;
+  const N=["Al-Fatihah","Al-Baqarah","Ali 'Imran","An-Nisa'","Al-Ma'idah","Al-An'am","Al-A'raf","Al-Anfal","At-Taubah","Yunus","Hud","Yusuf","Ar-Ra'd","Ibrahim","Al-Hijr","An-Nahl","Al-Isra'","Al-Kahf","Maryam","Ta Ha","Al-Anbiya'","Al-Hajj","Al-Mu'minun","An-Nur","Al-Furqan","Ash-Shu'ara'","An-Naml","Al-Qasas","Al-'Ankabut","Ar-Rum","Luqman","As-Sajdah","Al-Ahzab","Saba'","Fatir","Ya-Sin","As-Saffat","Sad","Az-Zumar","Ghafir","Fussilat","Ash-Shura","Az-Zukhruf","Ad-Dukhan","Al-Jathiyah","Al-Ahqaf","Muhammad","Al-Fath","Al-Hujurat","Qaf","Adz-Dzariyat","At-Tur","An-Najm","Al-Qamar","Ar-Rahman","Al-Waqi'ah","Al-Hadid","Al-Mujadilah","Al-Hashr","Al-Mumtahanah","As-Saff","Al-Jumu'ah","Al-Munafiqun","At-Taghabun","At-Talaq","At-Tahrim","Al-Mulk","Al-Qalam","Al-Haqqah","Al-Ma'arij","Nuh","Al-Jinn","Al-Muzzammil","Al-Muddaththir","Al-Qiyamah","Al-Insan","Al-Mursalat","An-Naba'","An-Nazi'at","'Abasa","At-Takwir","Al-Infitar","Al-Mutaffifin","Al-Inshiqaq","Al-Buruj","At-Tariq","Al-A'la","Al-Ghashiyah","Al-Fajr","Al-Balad","Ash-Shams","Al-Layl","Ad-Duha","Ash-Sharh","At-Tin","Al-'Alaq","Al-Qadr","Al-Bayyinah","Az-Zalzalah","Al-'Adiyat","Al-Qari'ah","At-Takathur","Al-'Asr","Al-Humazah","Al-Fil","Quraysh","Al-Ma'un","Al-Kawthar","Al-Kafirun","An-Nasr","Al-Masad","Al-Ikhlas","Al-Falaq","An-Nas"];
+  const el = (typeof sel==='string')?$(sel):sel;
   if(!el) return;
   el.innerHTML = '<option value=""></option>' +
     Array.from({length:114},(_,i)=>`<option value="${i+1}">${i+1} — ${N[i]}</option>`).join('');
   el.value = ''; // default kosong
 }
-  function fillAyahForSurah(sel, surahId, {keep=false, preset=null}={}){
+
+function fillAyahForSurah(sel, surahId, {keep=false, preset=null}={}){
   const el=(typeof sel==='string')?$(sel):sel; if(!el) return;
 
   // kalau surah belum dipilih → ayat juga kosong
@@ -6748,33 +6749,29 @@ function fillJuzSelect(id){
     opts += `<option value="${i}">Juz ${i}</option>`;
   }
   el.innerHTML = opts;
-
-  // default kosong
-  el.value = '';
+  el.value = ''; // default kosong
 }
-	
-  const murState = {1:{},2:{},3:{}};
 
-  function setPredikatUI(idx){
-    const sc = Math.max(0, Math.min(100, parseInt($(`#mur${idx}-score`).value||'0',10)||0));
-    const p = getPredikat(sc);
-    $(`#mur${idx}-predikatBadge`).textContent = `${p.text} (${p.huruf})`;
-    // simpan ke state (dan nantinya dataset)
-    murState[idx].score = sc;
-    murState[idx].pText = p.text;
-    murState[idx].pHuruf = p.huruf;
-    // sinkron ke cell dataset jika ada currentRowEl
-    if(currentRowEl){
-      const cell=currentRowEl.querySelector('.murajaah-cell');
-      if(cell){
-        cell.dataset[`score${idx}`]=String(sc);
-        cell.dataset[`ptext${idx}`]=p.text;
-        cell.dataset[`phuruf${idx}`]=p.huruf;
-      }
+const murState = {1:{},2:{},3:{}};
+
+function setPredikatUI(idx){
+  const sc = Math.max(0, Math.min(100, parseInt($(`#mur${idx}-score`).value||'0',10)||0));
+  const p = getPredikat(sc);
+  $(`#mur${idx}-predikatBadge`).textContent = `${p.text} (${p.huruf})`;
+  murState[idx].score = sc;
+  murState[idx].pText = p.text;
+  murState[idx].pHuruf = p.huruf;
+  if(currentRowEl){
+    const cell=currentRowEl.querySelector('.murajaah-cell');
+    if(cell){
+      cell.dataset[`score${idx}`]=String(sc);
+      cell.dataset[`ptext${idx}`]=p.text;
+      cell.dataset[`phuruf${idx}`]=p.huruf;
     }
   }
+}
 
-  function renderSession(idx){
+function renderSession(idx){
   const sFv = $(`#mur${idx}-surahFrom`).value;
   const aFv = $(`#mur${idx}-ayahFrom`).value;
   const sTv = $(`#mur${idx}-surahTo`).value;
@@ -6789,7 +6786,6 @@ function fillJuzSelect(id){
   const hasDataset = !!(cell?.dataset?.[`pf${idx}`] || cell?.dataset?.[`pt${idx}`]
                      || cell?.dataset?.[`sf${idx}`] || cell?.dataset?.[`st${idx}`]);
 
-  // pristine jika belum ada input apapun
   const isPristine = (!sFv || !aFv || !sTv || !aTv) &&
                      !hasDataset &&
                      !juzFromVal && !juzToVal &&
@@ -6802,7 +6798,7 @@ function fillJuzSelect(id){
     setPredikatUI(idx);
     murState[idx]={...murState[idx], sF:null,aF:null,sT:null,aT:null,pFrom:'',pTo:'',jFrom:null,jTo:null,total:0};
   } else {
-    // jika semua terisi → baru hitung
+    // hitung hanya jika input lengkap
     if (sFv && aFv && sTv && aTv){
       const sF=+sFv, aF=+aFv, sT=+sTv, aT=+aTv;
       const pages=ayahRangeToPages(sF,aF,sT,aT);
@@ -6832,7 +6828,7 @@ function fillJuzSelect(id){
         pFrom:pageFromEl.value||'', pTo:pageToEl.value||'',
         jFrom:jF, jTo:jT, total};
     } else {
-      // ada input sebagian → jangan hitung
+      // input belum lengkap → jangan hitung
       $(`#mur${idx}-pagesHint`).textContent='';
       $(`#mur${idx}-totalJuz`).textContent='0.00';
       setPredikatUI(idx);
@@ -6840,7 +6836,7 @@ function fillJuzSelect(id){
     }
   }
 
-  // --- rekap & sinkron dataset (tetap) ---
+  // rekap & sinkron dataset
   $('#mur-t1').textContent=(murState[1]?.total||0).toFixed(2);
   $('#mur-t2').textContent=(murState[2]?.total||0).toFixed(2);
   $('#mur-t3').textContent=(murState[3]?.total||0).toFixed(2);
@@ -6850,7 +6846,6 @@ function fillJuzSelect(id){
   if(currentRowEl){
     const cell=currentRowEl.querySelector('.murajaah-cell'); if(cell){
       cell.dataset.murtotal=String(grand.toFixed(2));
-      // isi per sesi (tetap seperti sebelumnya) …
       [1,2,3].forEach(i=>{
         const st=murState[i]||{};
         cell.dataset[`sf${i}`]=st.sF||''; cell.dataset[`af${i}`]=st.aF||'';
@@ -6865,54 +6860,80 @@ function fillJuzSelect(id){
   }
 }
 
-  function applyJuzRange(idx){
-    const jf = +($(`#mur${idx}-juzFrom`).value)||0;
-    let jt = +($(`#mur${idx}-juzTo`).value)||jf;
-    if(!jf){ return; }
-    if(jt<jf){ jt=jf; $(`#mur${idx}-juzTo`).value=String(jf); }
-    const rF=getJuzRange(jf), rT=getJuzRange(jt);
-    if(!rF||!rT) return;
-    // set ke awal juzFrom dan akhir juzTo
-    $(`#mur${idx}-surahFrom`).value=String(rF.sFrom);
-    fillAyahForSurah($(`#mur${idx}-ayahFrom`), rF.sFrom,{preset:rF.aFrom});
-    $(`#mur${idx}-surahTo`).value=String(rT.sTo);
-    const aEnd = rT.aTo && rT.aTo>0 ? rT.aTo : surahMaxAyah[rT.sTo];
-    fillAyahForSurah($(`#mur${idx}-ayahTo`), rT.sTo,{preset:aEnd});
-    renderSession(idx);
-  }
+function applyJuzRange(idx){
+  const jf = +($(`#mur${idx}-juzFrom`).value)||0;
+  let jt = +($(`#mur${idx}-juzTo`).value)||jf;
+  if(!jf){ return; }
+  if(jt<jf){ jt=jf; $(`#mur${idx}-juzTo`).value=String(jf); }
+  const rF=getJuzRange(jf), rT=getJuzRange(jt);
+  if(!rF||!rT) return;
+  // set ke awal juzFrom dan akhir juzTo
+  $(`#mur${idx}-surahFrom`).value=String(rF.sFrom);
+  fillAyahForSurah($(`#mur${idx}-ayahFrom`), rF.sFrom,{preset:rF.aFrom});
+  $(`#mur${idx}-surahTo`).value=String(rT.sTo);
+  const aEnd = rT.aTo && rT.aTo>0 ? rT.aTo : surahMaxAyah[rT.sTo];
+  fillAyahForSurah($(`#mur${idx}-ayahTo`), rT.sTo,{preset:aEnd});
+  renderSession(idx);
+}
 
-  function onPagesChange(idx){
-    let pF=+($(`#mur${idx}-pageFrom`).value)||1, pT=+($(`#mur${idx}-pageTo`).value)||pF;
-    if(pT<pF){pT=pF; $(`#mur${idx}-pageTo`).value=String(pF);}
-    const r=pagesToAyahRange(pF,pT);
-    if(r){
-      $(`#mur${idx}-surahFrom`).value=String(r.sFrom); fillAyahForSurah($(`#mur${idx}-ayahFrom`), r.sFrom,{preset:r.aFrom});
-      $(`#mur${idx}-surahTo`).value  =String(r.sTo);   fillAyahForSurah($(`#mur${idx}-ayahTo`),   r.sTo,  {preset:r.aTo});
-    }
-    renderSession(idx);
+function onPagesChange(idx){
+  const pFv=$(`#mur${idx}-pageFrom`).value;
+  const pTv=$(`#mur${idx}-pageTo`).value;
+
+  // kalau salah satu kosong → jangan paksa nilai
+  if (!pFv || !pTv){ renderSession(idx); return; }
+
+  let pF=+pFv, pT=+pTv;
+  if(pT<pF){ pT=pF; $(`#mur${idx}-pageTo`).value=String(pF); }
+
+  const r=pagesToAyahRange(pF,pT);
+  if(r){
+    $(`#mur${idx}-surahFrom`).value=String(r.sFrom); fillAyahForSurah($(`#mur${idx}-ayahFrom`), r.sFrom,{preset:r.aFrom});
+    $(`#mur${idx}-surahTo`).value  =String(r.sTo);   fillAyahForSurah($(`#mur${idx}-ayahTo`),   r.sTo,  {preset:r.aTo});
   }
-  function onSurahChange(idx,which){
-    const sF=+($(`#mur${idx}-surahFrom`).value)||1, sT=+($(`#mur${idx}-surahTo`).value)||sF;
-    if(which==='from') fillAyahForSurah($(`#mur${idx}-ayahFrom`), sF,{keep:true});
-    else               fillAyahForSurah($(`#mur${idx}-ayahTo`),   sT,{keep:true});
-    const aF=+($(`#mur${idx}-ayahFrom`).value)||1; let aT=+($(`#mur${idx}-ayahTo`).value)||1;
+  renderSession(idx);
+}
+
+function onSurahChange(idx,which){
+  const sFv=$(`#mur${idx}-surahFrom`).value;
+  const sTv=$(`#mur${idx}-surahTo`).value;
+
+  if(which==='from') fillAyahForSurah($(`#mur${idx}-ayahFrom`), sFv||'', {keep:true});
+  else               fillAyahForSurah($(`#mur${idx}-ayahTo`),   sTv||'', {keep:true});
+
+  const aFv=$(`#mur${idx}-ayahFrom`).value;
+  const aTv=$(`#mur${idx}-ayahTo`).value;
+
+  if (sFv && sTv && aFv && aTv){
+    const sF=+sFv, sT=+sTv, aF=+aFv, aT=+aTv;
+    if(sT<sF || (sT===sF && aT<aF)){
+      $(`#mur${idx}-surahTo`).value=String(sF);
+      fillAyahForSurah($(`#mur${idx}-ayahTo`), sF, {keep:true});
+      if((+$(`#mur${idx}-ayahTo`).value||0) < (+aF||0))
+        $(`#mur${idx}-ayahTo`).value=String(aF);
+    }
+  }
+  murState[idx].touched = true;
+  renderSession(idx);
+}
+
+function onAyahChange(idx){
+  const sFv=$(`#mur${idx}-surahFrom`).value, aFv=$(`#mur${idx}-ayahFrom`).value;
+  const sTv=$(`#mur${idx}-surahTo`).value,   aTv=$(`#mur${idx}-ayahTo`).value;
+
+  if (sFv && aFv && sTv && aTv){
+    const sF=+sFv, aF=+aFv, sT=+sTv, aT=+aTv;
     if(sT<sF || (sT===sF && aT<aF)){
       $(`#mur${idx}-surahTo`).value=String(sF);
       fillAyahForSurah($(`#mur${idx}-ayahTo`), sF,{keep:true});
-      if(+($(`#mur${idx}-ayahTo`).value)<aF) $(`#mur${idx}-ayahTo`).value=String(aF);
+      if((+$(`#mur${idx}-ayahTo`).value||0) < (+aF||0))
+        $(`#mur${idx}-ayahTo`).value=String(aF);
     }
-    renderSession(idx);
   }
-  function onAyahChange(idx){
-    const sF=+($(`#mur${idx}-surahFrom`).value), aF=+($(`#mur${idx}-ayahFrom`).value);
-    let sT=+($(`#mur${idx}-surahTo`).value), aT=+($(`#mur${idx}-ayahTo`).value);
-    if(sT<sF || (sT===sF && aT<aF)){
-      $(`#mur${idx}-surahTo`).value=String(sF);
-      fillAyahForSurah($(`#mur${idx}-ayahTo`), sF,{keep:true});
-      if(+($(`#mur${idx}-ayahTo`).value)<aF) $(`#mur${idx}-ayahTo`).value=String(aF);
-    }
-    renderSession(idx);
-  }
+  murState[idx].touched = true;
+  renderSession(idx);
+}
+
 
   // ---------- Helper: resolve kelas & tanggal ----------
   function resolveKelas(){
