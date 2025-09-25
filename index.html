@@ -1401,7 +1401,7 @@ async function buatUserNIS() {
       <button id="download-pdf-rekap" class="rekap-btn">PDF Halaqoh</button>
 
       <!-- Row 2, Col 2: Excel Halaqoh -->
-      <button id="download-xls-allkelas" class="rekap-btn">Excel All Halaqoh</button>
+      <button id="download-xls-rekap" class="rekap-btn">Excel Halaqoh</button>
 
       <!-- Row 3, Col 1: PDF Individual -->
       <button id="download-pdf-santri" class="rekap-btn">PDF Individual</button>
@@ -5305,150 +5305,44 @@ if (typeof window.drawTableHeader !== 'function') {
   }
 
   // ================= Excel (.xlsx) =================
-  async function xlsRekapDownload(){
-    setBtnLoading(xlsBtn, true, 'Membuat Excel…');
-    try {
-      await ensureXLSX();
-      const { kelas, startDate, endDate, kelasLine, kbmDays, rows, totals } = await collectRekapData();
+  // === REPLACE ONLY THIS FUNCTION ===
+async function xlsRekapDownload(){
+  const btn = document.getElementById('download-xls-rekap');
+  const setBtnLoading = window.setBtnLoading || ((b,l,t='Mengerjakan…')=>{
+    if (!b) return;
+    if (l){ b.dataset._oldText=b.textContent; b.textContent=t; b.disabled=true; }
+    else { if (b.dataset._oldText) b.textContent=b.dataset._oldText; b.disabled=false; delete b.dataset._oldText; }
+  });
 
-      const header = [
-  "No","NIS","Nama","SM","KLS","H","A","S","I","Hadir %","SP",
-  "Setoran (Surah: Ayat s.d. Surah: Ayat)","Juz","Total Juz","Murajaah","THMS","Nilai Rata2","Predikat"
-];
-      const body = rows.map((r, idx) => {
-        const nilaiAvg  = r.nilaiCount ? (r.nilaiSum / r.nilaiCount) : 0;
-        const pred      = PDF_predikatFromScore(nilaiAvg);
-        const statusJuz = PDF_totalAllJuzStatus(r.totalJuz, r.semester);
-
-        const setoranText = PDF_joinSAsegmentsNama(r.saSegments);
-        const juzText     = PDF_joinRangeSegments(r.juzSegments, true);
-
-        const hadirSlots = Number(r.hadirSlots ?? r.hadir ?? 0);
-        const izinSlots  = Number(r.izinSlots  ?? r.izin  ?? 0);
-        const sakitSlots = Number(r.sakitSlots ?? r.sakit ?? 0);
-        const alphaSlots = Number(r.alphaSlots ?? r.alpha ?? 0);
-        const targetSlots= Number(r.targetSlots ?? 0);
-        const hadirPct   = targetSlots > 0 ? Math.round((hadirSlots / targetSlots) * 100) : 0;
-
-        return [
-          idx+1,
-          r.nis || r.id || '',
-          r.nama || '',
-          (r.semester ?? ''),
-          jenjangLabel(r.jenjang ?? ''),
-          hadirSlots, alphaSlots, sakitSlots, izinSlots,
-          hadirPct,
-          (r.keterangan ?? ''),
-          setoranText,
-          juzText,
-          Number(r.totalJuz.toFixed(2)),
-		  fmtMurRange(r.murTotalJuz || 0, r.murCount || 0),
-          statusJuz.label,
-          (nilaiAvg ? Number(nilaiAvg.toFixed(1)) : null),
-          pred.huruf
-        ];
-      });
-
-      const wb = XLSX.utils.book_new();
-      const ws = XLSX.utils.aoa_to_sheet([header, ...body]);
-      ws['!cols'] = autoFitColumns([header, ...body]);
-      XLSX.utils.book_append_sheet(wb, ws, 'Rekap');
-
-      const meta = [
-        ["Rekap Absensi & Setoran", ""],
-        ["Kelas / Kelompok", kelasLine],
-        ["Periode", `${fmtD_M_YYYY(startDate)} s.d. ${fmtD_M_YYYY(endDate)}`],
-        ["KBM (hari)", kbmDays],
-        ["Total Santri", rows.length],
-        [],
-        ["Ringkasan", ""],
-        ["Hadir (slot)", totals.totH],
-        ["Alpha (slot)", totals.totA],
-        ["Sakit (slot)", totals.totS],
-        ["Izin (slot)",  totals.totI],
-        ["Total Page", Math.round(totals.totPages)],
-        ["Total Juz", Number(totals.totJuz.toFixed(2))]
-      ];
-      const wsMeta = XLSX.utils.aoa_to_sheet(meta);
-      wsMeta['!cols'] = [{wch:24},{wch:40}];
-      XLSX.utils.book_append_sheet(wb, wsMeta, 'Meta');
-
-      const fileName = `Rekap_${kelas || 'kelas'}_${startDate}_sd_${endDate}.xlsx`;
-      XLSX.writeFile(wb, fileName);
-
-    } catch (err) {
-      console.error(err);
-      alert('Gagal mengunduh Excel: ' + (err.message || err));
-    } finally {
-      setBtnLoading(xlsBtn, false);
-    }
-  }
-
-
-
-(function(){
-  const $ = sel => document.querySelector(sel);
-
-  // ===== Download Excel All Kelas =====
-  (function ensureAllKelasXlsButton(){
-    const wrap = document.querySelector('.pdf-rekap-controls');
-    if (!wrap) return;
-    let btn = document.getElementById('download-xls-allkelas');
-    if (!btn){
-      btn = document.createElement('button');
-      btn.id = 'download-xls-allkelas';
-      btn.className = 'rekap-btn';
-      btn.style.background = '#16a34a';
-      btn.textContent = 'Download Excel All Kelas';
-      wrap.appendChild(btn);
-      const span = document.createElement('span');
-      span.id = 'status-xls-allkelas';
-      span.style.fontSize = '.95rem';
-      span.style.marginLeft = '8px';
-      wrap.appendChild(span);
-    }
-    if (!btn.dataset.listenerAttached){
-      btn.addEventListener('click', xlsAllKelasDownload);
-      btn.dataset.listenerAttached = '1';
-    }
-  })();
-
-  // ===== Util kecil: status dan sheet name aman =====
-  function setBtnLoading(btn, loading, txt='Mengerjakan…'){
-    if (!btn) return;
-    if (loading){
-      btn.dataset._oldText = btn.textContent;
-      btn.textContent = txt;
-      btn.disabled = true;
-    } else {
-      if (btn.dataset._oldText) btn.textContent = btn.dataset._oldText;
-      btn.disabled = false;
-      delete btn.dataset._oldText;
-    }
-  }
+  // helper lokal biar tidak mengganggu global
   function safeSheetName(name){
-    const bad = /[\\/?*\[\]:]/g;
-    let n = String(name || 'Sheet').replace(bad, ' ');
-    if (n.length > 31) n = n.slice(0,31);
-    if (!n.trim()) n = 'Sheet';
-    return n;
+    const bad=/[\\/?*\[\]:]/g; let n=String(name||'Sheet').replace(bad,' ');
+    if(n.length>31) n=n.slice(0,31); if(!n.trim()) n='Sheet'; return n;
   }
-
-  // ===== Batas concurrency sederhana =====
-  async function pMap(arr, mapper, { concurrency = 4 } = {}){
-    const ret = new Array(arr.length);
-    let i = 0;
-    const workers = Array.from({length: Math.min(concurrency, arr.length)}, async () => {
-      while (i < arr.length){
-        const idx = i++;
-        ret[idx] = await mapper(arr[idx], idx);
-      }
+  async function pMap(list, mapper, {concurrency=4}={}){
+    const out=new Array(list.length); let i=0;
+    const workers=Array.from({length:Math.min(concurrency,list.length)}, async()=>{
+      while(i<list.length){ const idx=i++; out[idx]=await mapper(list[idx], idx); }
     });
-    await Promise.all(workers);
-    return ret;
+    await Promise.all(workers); return out;
   }
+  async function getDaftarKelas(){
+    // 1) pakai yang sudah ada dulu
+    let keys = [];
+    try { keys = (typeof _getAllKelasKeys==='function') ? _getAllKelasKeys() : []; } catch(_){}
+    if (Array.isArray(keys) && keys.length) return keys;
 
-  // ===== Bentuk baris Excel agar konsisten dengan versi 1 kelas =====
+    // 2) fallback: coba API
+    try{
+      const r = await fetch('/api/ambil-kelas');
+      const data = await r.json();
+      if (Array.isArray(data) && data.length){
+        if (typeof data[0]==='string') return [...new Set(data.map(String))];
+        if (data[0]?.kelas) return [...new Set(data.map(it=>String(it.kelas)))];
+      }
+    }catch(_){}
+    return [];
+  }
   function buildHeader(){
     return [
       "No","NIS","Nama","SM","KLS","H","A","S","I","Hadir %","SP",
@@ -5456,26 +5350,26 @@ if (typeof window.drawTableHeader !== 'function') {
     ];
   }
   function buildRow(r, idx){
-    const nilaiAvg  = r.nilaiCount ? (r.nilaiSum / r.nilaiCount) : 0;
-    const pred      = window.PDF_predikatFromScore?.(nilaiAvg) || { huruf:'-' };
-    const statusJuz = window.PDF_totalAllJuzStatus?.(r.totalJuz, r.semester) || { label:'' };
+    const pred = (window.PDF_predikatFromScore?.(r.nilaiCount ? (r.nilaiSum/r.nilaiCount) : 0)) || {huruf:'-'};
+    const statusJuz = window.PDF_totalAllJuzStatus?.(r.totalJuz, r.semester) || {label:''};
     const setoranText = window.PDF_joinSAsegmentsNama?.(r.saSegments) || '-';
-    const juzText     = window.PDF_joinRangeSegments?.(r.juzSegments, true) || '-';
-
+    const juzText = window.PDF_joinRangeSegments?.(r.juzSegments, true) || '-';
     const hadirSlots = Number(r.hadirSlots ?? r.hadir ?? 0);
     const izinSlots  = Number(r.izinSlots  ?? r.izin  ?? 0);
     const sakitSlots = Number(r.sakitSlots ?? r.sakit ?? 0);
     const alphaSlots = Number(r.alphaSlots ?? r.alpha ?? 0);
     const targetSlots= Number(r.targetSlots ?? 0);
-    const hadirPct   = targetSlots > 0 ? Math.round((hadirSlots / targetSlots) * 100) : 0;
-
+    const hadirPct   = targetSlots>0 ? Math.round((hadirSlots/targetSlots)*100) : 0;
+    const jenjangLbl = window.jenjangLabel?.(r.jenjang ?? '') ?? (r.jenjang ?? '');
     const fmtMur = (window.fmtMurRange || ((t,c)=>`${Number(t||0).toFixed(2)} (${Number(c||0)})`));
+    const nilaiAvg = r.nilaiCount ? (r.nilaiSum/r.nilaiCount) : 0;
+
     return [
       idx+1,
       r.nis || r.id || '',
       r.nama || '',
       (r.semester ?? ''),
-      window.jenjangLabel?.(r.jenjang ?? '') ?? (r.jenjang ?? ''),
+      jenjangLbl,
       hadirSlots, alphaSlots, sakitSlots, izinSlots,
       hadirPct,
       (r.keterangan ?? ''),
@@ -5489,256 +5383,89 @@ if (typeof window.drawTableHeader !== 'function') {
     ];
   }
 
-  // ===== Auto-fit kolom (pakai util kamu yang sudah ada) =====
-  function autoFitColumns(aoa){
-    const colCount = Math.max(...aoa.map(r => r.length));
-    const cols = Array.from({length: colCount}, (_,i) => {
-      const maxLen = Math.max(...aoa.map(row => {
-        const v = row[i];
-        if (v == null) return 0;
-        const s = (typeof v === 'string') ? v : String(v);
-        return s.length;
-      }), 0);
-      return { wch: Math.min(60, Math.max(6, Math.ceil(maxLen * 1.1) + 2)) };
-    });
-    return cols;
-  }
+  try{
+    setBtnLoading(btn, true, 'Membuat Excel…');
 
-  // ===== Handler: Excel All Kelas =====
-  async function xlsAllKelasDownload(){
-    const btn = document.getElementById('download-xls-allkelas');
-    const statusEl = document.getElementById('status-xls-allkelas');
-    const setStatus = (t)=>{ if(statusEl) statusEl.textContent = t; };
-
-    try{
-      setBtnLoading(btn, true, 'Membuat Excel…');
-      await (window.ensureXLSX ? window.ensureXLSX() : (async()=>{})());
-
-      const startDate = document.querySelector('#pdf-start-date')?.value;
-      const endDate   = document.querySelector('#pdf-end-date')?.value;
-      if (!startDate || !endDate) throw new Error('Mohon pilih tanggal mulai & akhir.');
-
-      const kelasKeys = window._getAllKelasKeys ? window._getAllKelasKeys() : [];
-      if (!kelasKeys.length) throw new Error('Tidak menemukan daftar kelas.');
-
-      setStatus(`Memuat ${kelasKeys.length} kelas…`);
-
-      // Kumpulkan semua data kelas (batasi concurrency)
-      const results = await pMap(kelasKeys, async (kelasKey, i) => {
-        try{
-          setStatus(`Memuat: ${kelasKey} (${i+1}/${kelasKeys.length})…`);
-          const data = await window.collectRekapDataForClass?.(kelasKey, startDate, endDate);
-          return { kelasKey, data };
-        } catch(e){
-          console.warn('Gagal memuat', kelasKey, e);
-          return { kelasKey, data: null };
-        }
-      }, { concurrency: 4 });
-
-      // Bangun workbook
-      const wb = XLSX.utils.book_new();
-
-      // Sheet per kelas
-      let nonEmpty = 0;
-      for (const {kelasKey, data} of results){
-        const sheetName = safeSheetName(kelasKey);
-        if (!data || !Array.isArray(data.rows) || data.rows.length === 0){
-          const wsEmpty = XLSX.utils.aoa_to_sheet([["(kosong)"]]);
-          XLSX.utils.book_append_sheet(wb, wsEmpty, sheetName);
-          continue;
-        }
-        nonEmpty++;
-        const header = buildHeader();
-        const body = data.rows.map((r, idx) => buildRow(r, idx));
-        const aoa = [header, ...body];
-        const ws = XLSX.utils.aoa_to_sheet(aoa);
-        ws['!cols'] = autoFitColumns(aoa);
-        XLSX.utils.book_append_sheet(wb, ws, sheetName);
-      }
-
-      // Sheet ringkasan
-      const summary = [["Kelas","Total Santri (ber-NIS)","KBM (hari)"]];
-      for (const {kelasKey, data} of results){
-        if (!data) { summary.push([kelasKey, 0, 0]); continue; }
-        summary.push([kelasKey, (data.rows||[]).length, data.kbmDays||0]);
-      }
-      const wsSum = XLSX.utils.aoa_to_sheet(summary);
-      wsSum['!cols'] = [{wch:28},{wch:22},{wch:12}];
-      XLSX.utils.book_append_sheet(wb, wsSum, safeSheetName('RINGKASAN'));
-
-      const ymd = new Date().toISOString().slice(0,10);
-      const fileName = `Rekap_All_Kelas_${startDate}_sd_${endDate}_${ymd}.xlsx`;
-
-      setStatus(`Menyimpan workbook (${nonEmpty} kelas berisi)…`);
-      XLSX.writeFile(wb, fileName);
-      setStatus(`✅ Selesai: ${fileName}`);
-    }catch(err){
-      console.error(err);
-      alert('Gagal mengunduh Excel All Kelas: ' + (err.message || err));
-      if (statusEl) statusEl.textContent = '❌ ' + (err.message || err);
-    }finally{
-      setBtnLoading(document.getElementById('download-xls-allkelas'), false);
-    }
-  }
-})();
-
-	 // === Tambahan helper agar daftar kelas selalu ketemu ===
-(function(){
-  const $ = sel => document.querySelector(sel);
-
-  // 1) Wait helper: tunggu kondisi jadi true (maks 3 detik default)
-  async function waitFor(checkFn, timeoutMs=3000, intervalMs=100){
-    const t0 = Date.now();
-    while (Date.now() - t0 < timeoutMs){
-      try { if (await checkFn()) return true; } catch(_) {}
-      await new Promise(r => setTimeout(r, intervalMs));
-    }
-    return false;
-  }
-
-  // 2) Ambil dari API bila semua sumber DOM/global kosong
-  async function fetchDaftarKelasAPI(){
-    try{
-      const r = await fetch('/api/ambil-kelas');
-      const data = await r.json();
-      if (Array.isArray(data) && data.length){
-        if (typeof data[0] === 'string') return [...new Set(data.map(String))];
-        if (data[0]?.kelas) return [...new Set(data.map(it => String(it.kelas)))];
-      }
-    }catch(e){ /* ignore */ }
-    return [];
-  }
-
-  // 3) Getter pintar: coba global -> select (dengan menunggu) -> custom -> API
-  async function getAllKelasKeysSmart(){
-    // a) Global array kalau ada
-    if (Array.isArray(window.ALL_KELAS_KEYS) && window.ALL_KELAS_KEYS.length){
-      return dedupSort(window.ALL_KELAS_KEYS);
+    // pastikan SheetJS
+    if (window.ensureXLSX) { await window.ensureXLSX(); }
+    else if (!window.XLSX){
+      await new Promise((resolve, reject)=>{
+        const sc=document.createElement('script');
+        sc.src='https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js';
+        sc.onload=resolve; sc.onerror=()=>reject(new Error('Gagal memuat XLSX'));
+        document.head.appendChild(sc);
+      });
     }
 
-    // b) Dari <select id="kelasSelect"> — tunggu sampai opsi terisi
-    const sel = (typeof kelasSelect !== 'undefined' && kelasSelect) ? kelasSelect : document.getElementById('kelasSelect');
-    if (sel){
-      // tunggu opsi muncul (misal diisi async)
-      await waitFor(() => sel.options && sel.options.length > 0, 3000, 120);
-      const vals = [...sel.options].map(o=>o.value).filter(Boolean);
-      if (vals.length) return dedupSort(vals);
-    }
+    const startDate = document.querySelector('#pdf-start-date')?.value;
+    const endDate   = document.querySelector('#pdf-end-date')?.value;
+    if (!startDate || !endDate) throw new Error('Mohon pilih tanggal mulai & akhir.');
 
-    // c) Mapping custom (window.NAMA_KELAS_CUSTOM / window.namaKelasCustom)
-    const custom = window.namaKelasCustom || window.NAMA_KELAS_CUSTOM || {};
-    const keysFromCustom = Object.keys(custom||{});
-    if (keysFromCustom.length) return dedupSort(keysFromCustom);
+    const kelasKeys = await getDaftarKelas();
+    if (!kelasKeys.length) throw new Error('Tidak menemukan daftar kelas.');
 
-    // d) Fallback API
-    const apiKeys = await fetchDaftarKelasAPI();
-    if (apiKeys.length) return dedupSort(apiKeys);
-
-    // e) Tetap kosong
-    return [];
-  }
-
-  function dedupSort(arr){
-    const uniq = [...new Set(arr.map(String))];
-    // urutkan pakai nomor di nama kelas bila ada
-    uniq.sort((a,b)=>{
-      const na = +(String(a).match(/(\d+)/)?.[1]||1e9);
-      const nb = +(String(b).match(/(\d+)/)?.[1]||1e9);
-      return na-nb || String(a).localeCompare(String(b),'id');
-    });
-    return uniq;
-  }
-
-  // 4) Patch handler Excel All Kelas agar pakai getter baru
-  //    Cari fungsi yang kita buat sebelumnya; jika belum ada, abaikan
-  if (typeof window.xlsAllKelasDownload === 'function') {
-    // sudah ada versi sebelum ini—biarkan
-  } else {
-    // Jika kamu menaruh handler di tempat lain, lewati blok ini.
-  }
-
-  // Ganti isi fungsi xlsAllKelasDownload jika kamu menaruhnya di file ini:
-  // (Kalau handler-mu bernama sama, cukup ganti bagian pengambilan keys di dalamnya.)
-  const _btn = document.getElementById('download-xls-allkelas');
-  if (_btn && !_btn.dataset._xlsAllPatched){
-    // Capture handler lama jika ada
-    const oldHandler = _btn.onclick;
-    _btn.onclick = null;
-
-    _btn.addEventListener('click', async (ev) => {
-      const btn = _btn;
-      const statusEl = document.getElementById('status-xls-allkelas');
-      const setStatus = (t)=>{ if(statusEl) statusEl.textContent = t; };
-
-      // util mini
-      function setBtnLoading(b, loading, txt='Membuat Excel…'){
-        if (!b) return;
-        if (loading){ b.dataset._oldText = b.textContent; b.textContent = txt; b.disabled = true; }
-        else { if (b.dataset._oldText) b.textContent = b.dataset._oldText; b.disabled = false; delete b.dataset._oldText; }
-      }
-
+    // Ambil data tiap kelas (reuse fungsi kamu untuk PDF All Kelas)
+    const results = await pMap(kelasKeys, async (kelasKey, i) => {
       try{
-        setBtnLoading(btn, true);
-        setStatus('Menyiapkan…');
-
-        // PASTIKAN XLSX
-        if (window.ensureXLSX) { await window.ensureXLSX(); }
-        else if (!window.XLSX){
-          await new Promise((resolve, reject) => {
-            const sc = document.createElement('script');
-            sc.src = 'https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js';
-            sc.onload = resolve; sc.onerror = () => reject(new Error('Gagal memuat XLSX'));
-            document.head.appendChild(sc);
-          });
-        }
-
-        const startDate = document.querySelector('#pdf-start-date')?.value;
-        const endDate   = document.querySelector('#pdf-end-date')?.value;
-        if (!startDate || !endDate) throw new Error('Mohon pilih tanggal mulai & akhir.');
-
-        // <<< PERUBAHAN KUNCI: pakai getter pintar >>>
-        const kelasKeys = await getAllKelasKeysSmart();
-
-        if (!kelasKeys.length) {
-          throw new Error('Tidak menemukan daftar kelas (cek: ALL_KELAS_KEYS / <select id="kelasSelect"> / NAMA_KELAS_CUSTOM / API /api/ambil-kelas).');
-        }
-
-        // ==== lanjutkan ke handler kamu yang sebelumnya ====
-        // Jika kamu sudah menulis xlsAllKelasDownload versi panjang:
-        // Panggil fungsi itu di sini (lewat global) sambil melewatkan kelasKeys.
-        // Atau, kalau kodenya ada di sini, ganti baris "const kelasKeys = _getAllKelasKeys()" menjadi kelasKeys hasil di atas.
-        // Untuk contoh ringkas, kita trigger handler lama jika ada:
-        if (typeof oldHandler === 'function') {
-          // simpan daftar ke global supaya handler lama bisa pakai
-          window.__FORCED_KELAS_KEYS = kelasKeys;
-          oldHandler.call(btn, ev);
-          return;
-        }
-
-        // Jika kamu tidak punya handler lama, kamu bisa panggil fungsi yang sebelumnya kamu tempel:
-        // window._runXlsAllKelasWithKeys?.(kelasKeys)  // (opsional) jika kamu memecah jadi fungsi terpisah.
-        alert('Daftar kelas sudah ditemukan. Silakan sesuaikan handler utamamu untuk memakai variabel kelasKeys ini.');
-      }catch(err){
-        console.error(err);
-        alert('Gagal mengunduh Excel All Kelas: ' + (err.message || err));
-        if (statusEl) statusEl.textContent = '❌ ' + (err.message || err);
-      }finally{
-        setBtnLoading(btn, false);
+        const data = await (window.collectRekapDataForClass?.(kelasKey, startDate, endDate));
+        return { kelasKey, data };
+      }catch(e){
+        console.warn('Gagal kelas', kelasKey, e);
+        return { kelasKey, data: null };
       }
-    });
+    }, { concurrency: 4 });
 
-    _btn.dataset._xlsAllPatched = '1';
+    // Susun workbook
+    const wb = XLSX.utils.book_new();
+
+    // Sheet per kelas
+    let nonEmpty = 0;
+    for (const {kelasKey, data} of results){
+      const sheetName = safeSheetName(kelasKey);
+      if (!data || !Array.isArray(data.rows) || data.rows.length === 0){
+        const wsEmpty = XLSX.utils.aoa_to_sheet([["(kosong)"]]);
+        XLSX.utils.book_append_sheet(wb, wsEmpty, sheetName);
+        continue;
+      }
+      nonEmpty++;
+      const header = buildHeader();
+      const body   = data.rows.map((r, idx) => buildRow(r, idx));
+      const aoa = [header, ...body];
+      const ws  = XLSX.utils.aoa_to_sheet(aoa);
+      // pakai autoFitColumns kamu kalau ada, else fallback sederhana
+      if (typeof window.autoFitColumns === 'function') {
+        ws['!cols'] = window.autoFitColumns(aoa);
+      } else {
+        const cols = header.map((h,i)=>{
+          const maxLen = Math.max(...aoa.map(row => String(row[i]??'').length));
+          return { wch: Math.min(60, Math.max(6, Math.ceil(maxLen*1.1)+2)) };
+        });
+        ws['!cols'] = cols;
+      }
+      XLSX.utils.book_append_sheet(wb, ws, sheetName);
+    }
+
+    // Sheet RINGKASAN
+    const summary = [["Kelas","Total Santri (ber-NIS)","KBM (hari)"]];
+    for (const {kelasKey, data} of results){
+      if (!data) { summary.push([kelasKey, 0, 0]); continue; }
+      summary.push([kelasKey, (data.rows||[]).length, data.kbmDays||0]);
+    }
+    const wsSum = XLSX.utils.aoa_to_sheet(summary);
+    wsSum['!cols'] = [{wch:28},{wch:24},{wch:12}];
+    XLSX.utils.book_append_sheet(wb, wsSum, safeSheetName('RINGKASAN'));
+
+    const fileName = `Rekap_AllKelas_${startDate}_sd_${endDate}.xlsx`;
+    XLSX.writeFile(wb, fileName);
+  } catch (err){
+    console.error(err);
+    alert('Gagal mengunduh Excel All Kelas: ' + (err.message || err));
+  } finally {
+    setBtnLoading(btn, false);
   }
-
-  // 5) Jika di handler asli kamu ada baris:
-  //    const kelasKeys = _getAllKelasKeys();
-  //    GANTI menjadi:
-  //    const kelasKeys = window.__FORCED_KELAS_KEYS || await getAllKelasKeysSmart();
-  //    (tambahkan async pada fungsi handlermu)
-  window.getAllKelasKeysSmart = getAllKelasKeysSmart; // opsional: expose untuk dipakai di tempat lain
-})();
-	 
-
+}
+// === END REPLACEMENT ===
+	
   // ===== Util umum (widths) =====
   function fmtMurRange(total, count){
   const t = Number(total||0);
