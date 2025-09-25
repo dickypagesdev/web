@@ -6933,49 +6933,79 @@ async function openModalForRow(row){
   currentRowEl = row;
   $('#murModal').style.display = 'flex';
 
-  // 1) Map & binding dasar
   if (!dataReady){
     await ensureMap();
     [1,2,3].forEach(bindSession);
   }
 
-  // 2) Segarkan dataset di tabel (agar cell.dataset terisi terbaru)
+  // (opsional tapi bagus) segarkan dataset dulu
   try { if (typeof window.murajaah?.refreshServer === 'function') {
     await window.murajaah.refreshServer();
-  }} catch(_) {}
+  }} catch(_){}
 
-  const cell = row.querySelector('.murajaah-cell') || {};
-  const ds   = cell.dataset || {};
+  const cell = row.querySelector('.murajaah-cell');
 
-  // — util kecil —
-  const pickNonEmpty = (...vals)=>{ for (const v of vals){ if (v!==undefined && v!==null && String(v)!=='') return v; } };
-  const getDS = (i, perKey, legacyKey)=>{
+  // --- RESET PRISTINE per sesi: buang “nyangkut” dari baris sebelumnya ---
+  function resetOne(i){
+    // Juz & Page kosong
+    $(`#mur${i}-juzFrom`).value = '';
+    $(`#mur${i}-juzTo`).value   = '';
+    $(`#mur${i}-pageFrom`).value = '';
+    $(`#mur${i}-pageTo`).value   = '';
+
+    // Surah/Ayat kembali ke 1:1 (safe default) TANPA render
+    $(`#mur${i}-surahFrom`).value = '1';
+    fillAyahForSurah($(`#mur${i}-ayahFrom`), 1, { preset: 1 });
+    $(`#mur${i}-surahTo`).value   = '1';
+    fillAyahForSurah($(`#mur${i}-ayahTo`),   1, { preset: 1 });
+
+    // Nilai & badge
+    $(`#mur${i}-score`).value = '';
+    $(`#mur${i}-predikatBadge`).textContent = '–';
+
+    // Hint & total
+    $(`#mur${i}-pagesHint`).textContent = '';
+    $(`#mur${i}-totalJuz`).textContent = '0.00';
+
+    // State internal benar-benar pristine
+    murState[i] = {
+      touched:false,
+      sF:null,aF:null,sT:null,aT:null,
+      pFrom:'', pTo:'',
+      jFrom:null, jTo:null,
+      total:0,
+      score:null, pText:'', pHuruf:''
+    };
+  }
+
+  // --- helper2 dari versi kamu (dipakai loadOne) ---
+  function pickNonEmpty(...vals){
+    for (const v of vals){
+      if (v !== undefined && v !== null && String(v) !== '') return v;
+    }
+    return undefined;
+  }
+  function getDS(ds, i, perKey, legacyKey){
     const v = ds[perKey];
     if (v !== undefined && String(v) !== '') return v;
     if (i === 1){ const L = ds[legacyKey]; if (L !== undefined && String(L) !== '') return L; }
     return undefined;
-  };
+  }
 
-  // 3) Ambil 1 record mentah via API (fallback ekstra jika dataset i>1 kosong)
+  // --- Prefill dari dataset/record seperti versi yang sudah jalan ---
   async function fetchRowRecord(){
-    // ambil kelas & tanggal yang aktif
     const kelas = (typeof resolveKelas==='function' ? resolveKelas() : '') ||
                   String(row.closest('table')?.dataset?.kelas || document.body?.dataset?.kelas || '');
     const tanggal = String(row.dataset?.tanggal || '') ||
                     (typeof resolveTanggalGlobal==='function' ? resolveTanggalGlobal() : '');
-
     if (!kelas || !tanggal) return null;
-
     try{
       const res = await fetch(`/api/getAbsensi?kelas=${encodeURIComponent(kelas)}&tanggal=${encodeURIComponent(tanggal)}&t=${Date.now()}`);
       if (!res.ok) return null;
       const arr = await res.json().catch(()=>[]) || [];
-      if (!Array.isArray(arr) || !arr.length) return null;
-
       const id  = String(row.dataset?.id  || row.children?.[0]?.textContent || '').trim();
       const nis = String(row.dataset?.nis || '').trim();
       const nm  = (row.children?.[1]?.childNodes?.[0]?.textContent || row.children?.[1]?.textContent || '').trim().toLowerCase();
-
       return arr.find(r=>{
         const rid  = String(r?.id||'').trim();
         const rnis = String(r?.nis||'').trim();
@@ -6984,96 +7014,94 @@ async function openModalForRow(row){
       }) || null;
     }catch{ return null; }
   }
-
+  const ds = cell?.dataset || {};
   const rec = await fetchRowRecord();
 
-  // Ambil data per-sesi dari record (prioritas: field per-sesi → murSessions[i-1] → legacy (hanya sesi-1))
-  function fromRec(i, kind){
+  const fromRec = (i, kind)=>{
     if (!rec) return undefined;
-    if (kind==='from')   return pickNonEmpty(rec[`murFrom${i}`],   (rec.murSessions?.[i-1]?.from),   i===1?rec.murFrom:undefined);
-    if (kind==='to')     return pickNonEmpty(rec[`murTo${i}`],     (rec.murSessions?.[i-1]?.to),     i===1?rec.murTo:undefined);
-    if (kind==='pages')  return pickNonEmpty(rec[`murPages${i}`],  (rec.murSessions?.[i-1]?.pages),  i===1?rec.murPages:undefined);
-    if (kind==='juz')    return pickNonEmpty(rec[`juzmur${i}`],    rec[`juzSesi${i}`],               rec.murSessions?.[i-1]?.juz);
+    if (kind==='from')   return pickNonEmpty(rec[`murFrom${i}`],   rec.murSessions?.[i-1]?.from,   i===1?rec.murFrom:undefined);
+    if (kind==='to')     return pickNonEmpty(rec[`murTo${i}`],     rec.murSessions?.[i-1]?.to,     i===1?rec.murTo:undefined);
+    if (kind==='pages')  return pickNonEmpty(rec[`murPages${i}`],  rec.murSessions?.[i-1]?.pages,  i===1?rec.murPages:undefined);
+    if (kind==='juz')    return pickNonEmpty(rec[`juzmur${i}`],    rec[`juzSesi${i}`],             rec.murSessions?.[i-1]?.juz);
     if (kind==='jFrom')  return pickNonEmpty(rec[`jFrom${i}`],     rec.murSessions?.[i-1]?.jFrom);
     if (kind==='jTo')    return pickNonEmpty(rec[`jTo${i}`],       rec.murSessions?.[i-1]?.jTo);
     if (kind==='score')  return pickNonEmpty(rec[`murScore${i}`],  rec.murSessions?.[i-1]?.score);
     if (kind==='pText')  return pickNonEmpty(rec[`murPredText${i}`],  rec.murSessions?.[i-1]?.predikatText);
     if (kind==='pHuruf') return pickNonEmpty(rec[`murPredHuruf${i}`], rec.murSessions?.[i-1]?.predikatHuruf);
-  }
-
-  // konversi "S:A" → [S,A]
+  };
   const splitSA = (s)=>{ if(!s) return []; const a=String(s).split(':'); return [Number(a[0])||1, Number(a[1])||1]; };
-  // set "P-P"
   const applyPages = (i, str)=>{ if(!str) return; const [pf,pt]=String(str).split('-'); $(`#mur${i}-pageFrom`).value=pf||''; $(`#mur${i}-pageTo`).value=pt||''; };
 
   const loadOne = (i) => {
-    // 1) ambil sumber: dataset per-sesi → (kalau kosong) record → (sesi-1 saja) legacy dataset
-    const fromStr  = pickNonEmpty(getDS(i, `sf${i}`, 'sf') && getDS(i, `af${i}`, 'af') ? `${getDS(i,`sf${i}`,'sf')}:${getDS(i,`af${i}`,'af')}` : undefined,
-                                  fromRec(i,'from'));
-    const toStr    = pickNonEmpty(getDS(i, `st${i}`, 'st') && getDS(i, `at${i}`, 'at') ? `${getDS(i,`st${i}`,'st')}:${getDS(i,`at${i}`,'at')}` : undefined,
-                                  fromRec(i,'to'));
-    const pagesStr = pickNonEmpty((()=>{ const pf=getDS(i,`pf${i}`,'pf'); const pt=getDS(i,`pt${i}`,'pt'); return (pf||pt)?`${pf||''}-${pt||''}`:undefined; })(),
-                                  fromRec(i,'pages'));
+    const fromStr  = pickNonEmpty(
+      (()=>{
+        const sf=getDS(ds,i,`sf${i}`,'sf'), af=getDS(ds,i,`af${i}`,'af');
+        return (sf||af) ? `${sf||''}:${af||''}` : undefined;
+      })(),
+      fromRec(i,'from')
+    );
+    const toStr    = pickNonEmpty(
+      (()=>{
+        const st=getDS(ds,i,`st${i}`,'st'), at=getDS(ds,i,`at${i}`,'at');
+        return (st||at) ? `${st||''}:${at||''}` : undefined;
+      })(),
+      fromRec(i,'to')
+    );
+    const pagesStr = pickNonEmpty(
+      (()=>{
+        const pf=getDS(ds,i,`pf${i}`,'pf'), pt=getDS(ds,i,`pt${i}`,'pt');
+        return (pf||pt) ? `${pf||''}-${pt||''}` : undefined;
+      })(),
+      fromRec(i,'pages')
+    );
 
-    // jika benar-benar tidak ada data utk sesi ini → biarkan default (pristine)
     const hasAny = !!(fromStr || toStr || pagesStr || ds[`juz${i}`] || fromRec(i,'juz'));
 
-    // 2) set Surah/Ayat ke UI (default 1:1 bila tidak ada)
-    let [sF,aF] = splitSA(fromStr); if(!sF) sF=1; if(!aF) aF=1;
-    let [sT,aT] = splitSA(toStr);   if(!sT) sT=sF; if(!aT) aT=aF;
+    // isi UI kalau ada data; kalau tidak ada, tetap pristine dari reset
+    if (hasAny){
+      let [sF,aF] = splitSA(fromStr); if(!sF) sF=1; if(!aF) aF=1;
+      let [sT,aT] = splitSA(toStr);   if(!sT) sT=sF; if(!aT) aT=aF;
 
-    $(`#mur${i}-surahFrom`).value = String(sF);
-    fillAyahForSurah($(`#mur${i}-ayahFrom`), sF, { preset: aF });
-    $(`#mur${i}-surahTo`).value   = String(sT);
-    fillAyahForSurah($(`#mur${i}-ayahTo`),   sT, { preset: aT });
+      $(`#mur${i}-surahFrom`).value = String(sF);
+      fillAyahForSurah($(`#mur${i}-ayahFrom`), sF, { preset: aF });
+      $(`#mur${i}-surahTo`).value   = String(sT);
+      fillAyahForSurah($(`#mur${i}-ayahTo`),   sT, { preset: aT });
 
-    if (pagesStr) applyPages(i, pagesStr);
+      if (pagesStr) applyPages(i, pagesStr);
 
-    // 3) jFrom/jTo & nilai/predikat (prioritas per-sesi)
-    const jf = pickNonEmpty(ds[`jfrom${i}`], fromRec(i,'jFrom'));
-    const jt = pickNonEmpty(ds[`jto${i}`],   fromRec(i,'jTo'));
-    $(`#mur${i}-juzFrom`).value = jf!==undefined ? String(jf) : '';
-    $(`#mur${i}-juzTo`).value   = jt!==undefined ? String(jt) : '';
+      const jf = pickNonEmpty(ds[`jfrom${i}`], fromRec(i,'jFrom'));
+      const jt = pickNonEmpty(ds[`jto${i}`],   fromRec(i,'jTo'));
+      $(`#mur${i}-juzFrom`).value = jf!==undefined ? String(jf) : '';
+      $(`#mur${i}-juzTo`).value   = jt!==undefined ? String(jt) : '';
 
-    const sc = pickNonEmpty(ds[`score${i}`], fromRec(i,'score'));
-    $(`#mur${i}-score`).value = sc!==undefined ? String(sc) : '';
+      const sc = pickNonEmpty(ds[`score${i}`], fromRec(i,'score'));
+      $(`#mur${i}-score`).value = sc!==undefined ? String(sc) : '';
 
-    // tandai touched hanya jika memang ada data nyata
-    murState[i] = { ...(murState[i]||{}), touched: !!hasAny };
+      murState[i].touched = true;           // supaya renderSession tidak mereset lagi
+      setPredikatUI(i);
+      renderSession(i);
 
-    // 4) render & total
-    setPredikatUI(i);
-    renderSession(i);
+      const juzVal = pickNonEmpty(ds[`juz${i}`], fromRec(i,'juz'));
+      if (juzVal !== undefined){
+        const v = Number(juzVal)||0;
+        $(`#mur${i}-totalJuz`).textContent = v.toFixed(2);
+        murState[i].total = v;
+      }
 
-    // tampilkan total per-sesi bila sudah ada
-    const juzVal = pickNonEmpty(ds[`juz${i}`], fromRec(i,'juz'));
-    if (juzVal !== undefined){
-      const v = Number(juzVal)||0;
-      $(`#mur${i}-totalJuz`).textContent = v.toFixed(2);
-      murState[i].total = v;
-    }
-
-    // label predikat bila ada
-    const pText  = pickNonEmpty(ds[`ptext${i}`],  fromRec(i,'pText'));
-    const pHuruf = pickNonEmpty(ds[`phuruf${i}`], fromRec(i,'pHuruf'));
-    if (pText !== undefined || pHuruf !== undefined){
-      $(`#mur${i}-predikatBadge`).textContent =
-        (pText && pHuruf) ? `${pText} (${pHuruf})` : (pText || pHuruf || '–');
-    }
-
-    // 5) isi otomatis jFrom/jTo bila range pas batas juz dan belum ada
-    if ((jf===undefined || jt===undefined) && hasAny){
-      const jF = juzOfAyah(sF,aF), jT = juzOfAyah(sT,aT);
-      const jrF = getJuzRange(jF), jrT = getJuzRange(jT);
-      if (jrF && jrT && jrF.sFrom===sF && jrF.aFrom===aF && jrT.sTo===sT && jrT.aTo===aT){
-        $(`#mur${i}-juzFrom`).value = String(jF);
-        $(`#mur${i}-juzTo`).value   = String(jT);
+      const pText  = pickNonEmpty(ds[`ptext${i}`],  fromRec(i,'pText'));
+      const pHuruf = pickNonEmpty(ds[`phuruf${i}`], fromRec(i,'pHuruf'));
+      if (pText !== undefined || pHuruf !== undefined){
+        $(`#mur${i}-predikatBadge`).textContent =
+          (pText && pHuruf) ? `${pText} (${pHuruf})` : (pText || pHuruf || '–');
       }
     }
   };
 
+  // >>> RESET DULU, baru PREFILL <<<
+  [1,2,3].forEach(resetOne);
   [1,2,3].forEach(loadOne);
 }
+
 
 
 
