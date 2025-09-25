@@ -5581,6 +5581,162 @@ if (typeof window.drawTableHeader !== 'function') {
     }
   }
 })();
+
+	 // === Tambahan helper agar daftar kelas selalu ketemu ===
+(function(){
+  const $ = sel => document.querySelector(sel);
+
+  // 1) Wait helper: tunggu kondisi jadi true (maks 3 detik default)
+  async function waitFor(checkFn, timeoutMs=3000, intervalMs=100){
+    const t0 = Date.now();
+    while (Date.now() - t0 < timeoutMs){
+      try { if (await checkFn()) return true; } catch(_) {}
+      await new Promise(r => setTimeout(r, intervalMs));
+    }
+    return false;
+  }
+
+  // 2) Ambil dari API bila semua sumber DOM/global kosong
+  async function fetchDaftarKelasAPI(){
+    try{
+      const r = await fetch('/api/ambil-kelas');
+      const data = await r.json();
+      if (Array.isArray(data) && data.length){
+        if (typeof data[0] === 'string') return [...new Set(data.map(String))];
+        if (data[0]?.kelas) return [...new Set(data.map(it => String(it.kelas)))];
+      }
+    }catch(e){ /* ignore */ }
+    return [];
+  }
+
+  // 3) Getter pintar: coba global -> select (dengan menunggu) -> custom -> API
+  async function getAllKelasKeysSmart(){
+    // a) Global array kalau ada
+    if (Array.isArray(window.ALL_KELAS_KEYS) && window.ALL_KELAS_KEYS.length){
+      return dedupSort(window.ALL_KELAS_KEYS);
+    }
+
+    // b) Dari <select id="kelasSelect"> — tunggu sampai opsi terisi
+    const sel = (typeof kelasSelect !== 'undefined' && kelasSelect) ? kelasSelect : document.getElementById('kelasSelect');
+    if (sel){
+      // tunggu opsi muncul (misal diisi async)
+      await waitFor(() => sel.options && sel.options.length > 0, 3000, 120);
+      const vals = [...sel.options].map(o=>o.value).filter(Boolean);
+      if (vals.length) return dedupSort(vals);
+    }
+
+    // c) Mapping custom (window.NAMA_KELAS_CUSTOM / window.namaKelasCustom)
+    const custom = window.namaKelasCustom || window.NAMA_KELAS_CUSTOM || {};
+    const keysFromCustom = Object.keys(custom||{});
+    if (keysFromCustom.length) return dedupSort(keysFromCustom);
+
+    // d) Fallback API
+    const apiKeys = await fetchDaftarKelasAPI();
+    if (apiKeys.length) return dedupSort(apiKeys);
+
+    // e) Tetap kosong
+    return [];
+  }
+
+  function dedupSort(arr){
+    const uniq = [...new Set(arr.map(String))];
+    // urutkan pakai nomor di nama kelas bila ada
+    uniq.sort((a,b)=>{
+      const na = +(String(a).match(/(\d+)/)?.[1]||1e9);
+      const nb = +(String(b).match(/(\d+)/)?.[1]||1e9);
+      return na-nb || String(a).localeCompare(String(b),'id');
+    });
+    return uniq;
+  }
+
+  // 4) Patch handler Excel All Kelas agar pakai getter baru
+  //    Cari fungsi yang kita buat sebelumnya; jika belum ada, abaikan
+  if (typeof window.xlsAllKelasDownload === 'function') {
+    // sudah ada versi sebelum ini—biarkan
+  } else {
+    // Jika kamu menaruh handler di tempat lain, lewati blok ini.
+  }
+
+  // Ganti isi fungsi xlsAllKelasDownload jika kamu menaruhnya di file ini:
+  // (Kalau handler-mu bernama sama, cukup ganti bagian pengambilan keys di dalamnya.)
+  const _btn = document.getElementById('download-xls-allkelas');
+  if (_btn && !_btn.dataset._xlsAllPatched){
+    // Capture handler lama jika ada
+    const oldHandler = _btn.onclick;
+    _btn.onclick = null;
+
+    _btn.addEventListener('click', async (ev) => {
+      const btn = _btn;
+      const statusEl = document.getElementById('status-xls-allkelas');
+      const setStatus = (t)=>{ if(statusEl) statusEl.textContent = t; };
+
+      // util mini
+      function setBtnLoading(b, loading, txt='Membuat Excel…'){
+        if (!b) return;
+        if (loading){ b.dataset._oldText = b.textContent; b.textContent = txt; b.disabled = true; }
+        else { if (b.dataset._oldText) b.textContent = b.dataset._oldText; b.disabled = false; delete b.dataset._oldText; }
+      }
+
+      try{
+        setBtnLoading(btn, true);
+        setStatus('Menyiapkan…');
+
+        // PASTIKAN XLSX
+        if (window.ensureXLSX) { await window.ensureXLSX(); }
+        else if (!window.XLSX){
+          await new Promise((resolve, reject) => {
+            const sc = document.createElement('script');
+            sc.src = 'https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js';
+            sc.onload = resolve; sc.onerror = () => reject(new Error('Gagal memuat XLSX'));
+            document.head.appendChild(sc);
+          });
+        }
+
+        const startDate = document.querySelector('#pdf-start-date')?.value;
+        const endDate   = document.querySelector('#pdf-end-date')?.value;
+        if (!startDate || !endDate) throw new Error('Mohon pilih tanggal mulai & akhir.');
+
+        // <<< PERUBAHAN KUNCI: pakai getter pintar >>>
+        const kelasKeys = await getAllKelasKeysSmart();
+
+        if (!kelasKeys.length) {
+          throw new Error('Tidak menemukan daftar kelas (cek: ALL_KELAS_KEYS / <select id="kelasSelect"> / NAMA_KELAS_CUSTOM / API /api/ambil-kelas).');
+        }
+
+        // ==== lanjutkan ke handler kamu yang sebelumnya ====
+        // Jika kamu sudah menulis xlsAllKelasDownload versi panjang:
+        // Panggil fungsi itu di sini (lewat global) sambil melewatkan kelasKeys.
+        // Atau, kalau kodenya ada di sini, ganti baris "const kelasKeys = _getAllKelasKeys()" menjadi kelasKeys hasil di atas.
+        // Untuk contoh ringkas, kita trigger handler lama jika ada:
+        if (typeof oldHandler === 'function') {
+          // simpan daftar ke global supaya handler lama bisa pakai
+          window.__FORCED_KELAS_KEYS = kelasKeys;
+          oldHandler.call(btn, ev);
+          return;
+        }
+
+        // Jika kamu tidak punya handler lama, kamu bisa panggil fungsi yang sebelumnya kamu tempel:
+        // window._runXlsAllKelasWithKeys?.(kelasKeys)  // (opsional) jika kamu memecah jadi fungsi terpisah.
+        alert('Daftar kelas sudah ditemukan. Silakan sesuaikan handler utamamu untuk memakai variabel kelasKeys ini.');
+      }catch(err){
+        console.error(err);
+        alert('Gagal mengunduh Excel All Kelas: ' + (err.message || err));
+        if (statusEl) statusEl.textContent = '❌ ' + (err.message || err);
+      }finally{
+        setBtnLoading(btn, false);
+      }
+    });
+
+    _btn.dataset._xlsAllPatched = '1';
+  }
+
+  // 5) Jika di handler asli kamu ada baris:
+  //    const kelasKeys = _getAllKelasKeys();
+  //    GANTI menjadi:
+  //    const kelasKeys = window.__FORCED_KELAS_KEYS || await getAllKelasKeysSmart();
+  //    (tambahkan async pada fungsi handlermu)
+  window.getAllKelasKeysSmart = getAllKelasKeysSmart; // opsional: expose untuk dipakai di tempat lain
+})();
 	 
 
   // ===== Util umum (widths) =====
