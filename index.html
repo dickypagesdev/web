@@ -3962,6 +3962,10 @@ async function simpanDataMutabaah(saveBtn){
   const tanggalUtama = resolveTanggalGlobal();
   if (!kelas){ alert('Kelas belum terdeteksi.'); return; }
 
+  // === NEW: akses cache global utk badge
+  window.__savedIndex ??= { byNis: Object.create(null) };
+  const savedIndex = window.__savedIndex;
+
   // helpers kecil
   const parseNum=(v)=>{ if(typeof v==='number')return Number.isFinite(v)?v:0; const s=String(v??'').replace(/[^0-9.,-]/g,'').replace(',', '.'); const n=parseFloat(s); return Number.isFinite(n)?n:0; };
   function getNamaFromCell(cell){ if(!cell)return ""; const first=cell.childNodes&&cell.childNodes[0]; const txt=(first&&first.textContent)?first.textContent:cell.textContent; return String(txt).trim(); }
@@ -4067,10 +4071,10 @@ async function simpanDataMutabaah(saveBtn){
         const flex = getAbsensiFlexFromRow(row, existing||{});
         const { absensiItems, absensiTarget, absensiChecked, absensiPercent, absensi6, absensiExpanded, absensiExpandedStr } = flex;
 
-        const surahDari    = row.querySelector(".surah-dari")?.value ?? "";
-        const ayatDari     = row.querySelector(".ayat-dari")?.value ?? "";
-        const surahSampai  = row.querySelector(".surah-sampai")?.value ?? "";
-        const ayatSampai   = row.querySelector(".ayat-sampai")?.value ?? "";
+        const surahDari    = (row.querySelector(".surah-dari")?.value ?? "").trim();
+        const ayatDari     = (row.querySelector(".ayat-dari")?.value ?? "").trim();
+        const surahSampai  = (row.querySelector(".surah-sampai")?.value ?? "").trim();
+        const ayatSampai   = (row.querySelector(".ayat-sampai")?.value ?? "").trim();
         const totalJuz     = row.querySelector(".total-juz")?.textContent ?? existing?.totalJuz ?? "0";
         const halaman      = row.querySelector(".halaman-terbaca")?.textContent ?? existing?.halaman ?? "";
         const totalHalaman = row.querySelector(".total-halaman")?.textContent ?? existing?.totalHalaman ?? "";
@@ -4151,10 +4155,9 @@ async function simpanDataMutabaah(saveBtn){
         let juzMurAll = 0;
         if (murCell){
           const valTxt = (murCell.dataset.murtotal ?? "").trim();
-			const parsedTotal = parseNum(valTxt);
-			const sumSess = parseNum(s1.juz) + parseNum(s2.juz) + parseNum(s3.juz);
-			// pakai parsedTotal meskipun 0 (bukan truthy check)
-			juzMurAll = Number.isFinite(parsedTotal) ? parsedTotal : sumSess;
+          const parsedTotal = parseNum(valTxt);
+          const sumSess = parseNum(s1.juz) + parseNum(s2.juz) + parseNum(s3.juz);
+          juzMurAll = Number.isFinite(parsedTotal) ? parsedTotal : sumSess;
         } else {
           const sumSess = parseNum(s1.juz)+parseNum(s2.juz)+parseNum(s3.juz);
           juzMurAll = sumSess || parseNum(existing?.juzmurajaah || 0);
@@ -4183,6 +4186,8 @@ async function simpanDataMutabaah(saveBtn){
           : (existing?.marks || { audio: [] });
         if (!marks.audio) marks.audio = [];
 
+        // === SUSUN BASE DATA ===
+        // Kunci: dari/sampai hanya diisi jika surah & ayat lengkap
         const base = {
           ...existing,
           id, nis, nama, jenjang, semester,
@@ -4191,8 +4196,8 @@ async function simpanDataMutabaah(saveBtn){
           absensiItems, absensiTarget, absensiChecked, absensiPercent, absensi6,
           absensiExpanded, absensiExpandedStr,
 
-          dari:`${surahDari}:${ayatDari}`,
-          sampai:`${surahSampai}:${ayatSampai}`,
+          dari:   (surahDari && ayatDari)     ? `${surahDari}:${ayatDari}`       : "",
+          sampai: (surahSampai && ayatSampai) ? `${surahSampai}:${ayatSampai}`   : "",
           totalJuz, halaman, totalHalaman, juzTerbaca, keterangan,
 
           // Murajaah 3 sesi + skor/predikat
@@ -4229,6 +4234,13 @@ async function simpanDataMutabaah(saveBtn){
         const idx = dataMerged.findIndex(d=>String(d.id)===String(id));
         if (idx!==-1) dataMerged[idx]=newData;
         else dataMerged.push(newData);
+
+        // === NEW: update cache lokal juga (supaya tanpa refresh bisa nampak centang)
+        const hasPick = !!(base.dari || base.sampai);
+        if (nis && hasPick){
+          if (!savedIndex.byNis[nis]) savedIndex.byNis[nis] = Object.create(null);
+          savedIndex.byNis[nis][tanggal] = { dari: base.dari, sampai: base.sampai };
+        }
       });
 
       const res=await fetch('/api/saveData',{
@@ -4238,6 +4250,15 @@ async function simpanDataMutabaah(saveBtn){
       });
       const result=await res.json().catch(()=>({}));
       hasilKirim.push({tanggal, ok:!!result?.success, result});
+
+      // === NEW: jika sukses → broadcast event agar baris yg relevan update badge
+      if (result?.success){
+        rowsTanggal.forEach(row=>{
+          const nis  = String(row?.dataset?.nis||"").trim();
+          if (!nis) return;
+          window.dispatchEvent(new CustomEvent('absensi:saved:update',{ detail:{ nis, tanggal } }));
+        });
+      }
     }
 
     const gagal=hasilKirim.filter(h=>!h.ok);
