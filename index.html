@@ -3164,102 +3164,163 @@ async function loadSantriData() {
   // ===== Ayat Reservation (per-santri; hide opsi ayat di baris lain) =====
   // Dipakai untuk membuat ayat yang sudah dipilih di satu baris
   // tidak bisa dipilih di baris lain untuk santri yang sama.
-  window.AyatReservation = window.AyatReservation || (function(){
-    const rowsBySantri = new Map();     // keySantri -> Set<tr>
-    const selectedByRow = new WeakMap();// tr -> Set("S:A")
+  // ===== Ayat Reservation (per-santri; unique owner per ayat) =====
+window.AyatReservation = window.AyatReservation || (function(){
+  const rowsBySantri  = new Map();      // keySantri -> Set<tr>
+  const selectedByRow = new WeakMap();  // tr -> Set("S:A")
 
-    function normalizeKey(s, a){
-      const S = Number(s); const A = Number(a);
-      if (!Number.isFinite(S) || !Number.isFinite(A) || S<=0 || A<=0) return null;
-      return `${S}:${A}`;
+  function normalizeKey(s, a){
+    const S = Number(s), A = Number(a);
+    if (!Number.isFinite(S) || !Number.isFinite(A) || S<=0 || A<=0) return null;
+    return `${S}:${A}`;
+  }
+
+  function parseDateStr(s){
+    if (!s) return Number.POSITIVE_INFINITY;
+    const d = new Date(s);
+    if (!Number.isNaN(d.getTime())) return d.getTime();
+    // fallback dd/mm/yyyy atau dd-mm-yyyy
+    const m = /(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/.exec(String(s));
+    if (m){
+      const dd = Number(m[1]), mm = Number(m[2])-1, yy = Number(m[3]);
+      const d2 = new Date(yy, mm, dd);
+      if (!Number.isNaN(d2.getTime())) return d2.getTime();
     }
-    function expandRange(fromS, fromA, toS, toA){
-      const out = new Set();
-      const s1 = Number(fromS), a1 = Number(fromA), s2 = Number(toS), a2 = Number(toA);
-      if (![s1,a1,s2,a2].every(Number.isFinite)) return out;
-      const sStart = Math.min(s1, s2);
-      const sEnd   = Math.max(s1, s2);
-      for (let s = sStart; s <= sEnd; s++){
-        const surah = (window.surahList||[]).find(x => Number(x.id) === s);
-        if (!surah) continue;
-        const totalAyat = Number(surah.jumlah_ayat) || 0;
-        let startAyat = (s === s1) ? a1 : 1;
-        let endAyat   = (s === s2) ? a2 : totalAyat;
-        if (startAyat > endAyat) [startAyat, endAyat] = [endAyat, startAyat];
-        startAyat = Math.max(1, startAyat);
-        endAyat   = Math.min(totalAyat, endAyat);
-        for (let a = startAyat; a <= endAyat; a++){
-          const k = normalizeKey(s,a);
-          if (k) out.add(k);
-        }
+    return Number.POSITIVE_INFINITY;
+  }
+
+  function expandRange(fromS, fromA, toS, toA){
+    const out = new Set();
+    const s1 = Number(fromS), a1 = Number(fromA), s2 = Number(toS), a2 = Number(toA);
+    if (![s1,a1,s2,a2].every(Number.isFinite)) return out;
+    const sStart = Math.min(s1, s2);
+    const sEnd   = Math.max(s1, s2);
+    for (let s = sStart; s <= sEnd; s++){
+      const surah = (window.surahList||[]).find(x => Number(x.id) === s);
+      if (!surah) continue;
+      const totalAyat = Number(surah.jumlah_ayat) || 0;
+      let startAyat = (s === s1) ? a1 : 1;
+      let endAyat   = (s === s2) ? a2 : totalAyat;
+      if (startAyat > endAyat) [startAyat, endAyat] = [endAyat, startAyat];
+      startAyat = Math.max(1, startAyat);
+      endAyat   = Math.min(totalAyat, endAyat);
+      for (let a = startAyat; a <= endAyat; a++){
+        const k = normalizeKey(s,a);
+        if (k) out.add(k);
       }
-      return out;
     }
-    function collectRowSelection(row){
-      const sF = row.querySelector(".surah-dari")?.value?.trim() || "";
-      const aF = row.querySelector(".ayat-dari")?.value?.trim()  || "";
-      const sT = row.querySelector(".surah-sampai")?.value?.trim() || "";
-      const aT = row.querySelector(".ayat-sampai")?.value?.trim()  || "";
-      if (!sF || !aF || !sT || !aT) return new Set();
-      return expandRange(sF, aF, sT, aT);
-    }
-    function applyToOneAyatSelect(ayatSelect, surahSelect, excludedSet, ownSet){
-      if (!ayatSelect || !surahSelect) return;
-      const sVal = surahSelect.value?.trim() || "";
-      [...ayatSelect.options].forEach(opt=>{
-        if (opt.value === "") { opt.disabled=false; opt.hidden=false; opt.style.display=""; return; }
-        if (!sVal) { opt.disabled=false; opt.hidden=false; opt.style.display=""; return; }
-        const k = normalizeKey(sVal, opt.value);
-        if (!k){ opt.disabled=false; opt.hidden=false; opt.style.display=""; return; }
-        const shouldHide = excludedSet.has(k) && !ownSet.has(k);
-        // agar benar-benar tidak terlihat:
-        opt.disabled = !!shouldHide;
-        opt.hidden   = !!shouldHide;
-        opt.style.display = shouldHide ? "none" : "";
-      });
-      if (ayatSelect.value && ayatSelect.selectedOptions[0]?.hidden){
+    return out;
+  }
+
+  function collectRowSelection(row){
+    const sF = row.querySelector(".surah-dari")?.value?.trim() || "";
+    const aF = row.querySelector(".ayat-dari")?.value?.trim()  || "";
+    const sT = row.querySelector(".surah-sampai")?.value?.trim() || "";
+    const aT = row.querySelector(".ayat-sampai")?.value?.trim()  || "";
+    if (!sF || !aF || !sT || !aT) return new Set();
+    return expandRange(sF, aF, sT, aT);
+  }
+
+  // Terapkan hide/disable pada satu dropdown ayat sesuai owner map
+  function applyToOne(ayatSelect, surahSelect, ownerMap, row){
+    if (!ayatSelect || !surahSelect) return;
+    const sVal = surahSelect.value?.trim() || "";
+    [...ayatSelect.options].forEach(opt=>{
+      if (opt.value === "" || !sVal){
+        opt.disabled = false; opt.hidden=false; opt.style.display="";
+        return;
+      }
+      const k = normalizeKey(sVal, opt.value);
+      if (!k){ opt.disabled=false; opt.hidden=false; opt.style.display=""; return; }
+      const owner = ownerMap.get(k);
+      const shouldHide = owner && owner !== row;
+      // benar-benar hilang:
+      opt.disabled = !!shouldHide;
+      opt.hidden   = !!shouldHide;
+      opt.style.display = shouldHide ? "none" : "";
+    });
+    // Jika nilai yg terpilih bukan milik baris ini -> kosongkan
+    if (sVal && ayatSelect.value){
+      const k = normalizeKey(sVal, ayatSelect.value);
+      const owner = k ? ownerMap.get(k) : null;
+      if (owner && owner !== row){
         ayatSelect.value = "";
       }
     }
-    function recomputeForSantri(keySantri){
-      const setRows = rowsBySantri.get(keySantri);
-      if (!setRows || !setRows.size) return;
-      const unionAll = new Set();
-      setRows.forEach(r=>{
-        const sel = selectedByRow.get(r) || new Set();
-        sel.forEach(k=> unionAll.add(k));
-      });
-      setRows.forEach(row=>{
-        const ownSet = selectedByRow.get(row) || new Set();
-        const excluded = new Set(unionAll);
-        ownSet.forEach(k=> excluded.delete(k)); // boleh pakai milik sendiri
-        const ayF = row.querySelector(".ayat-dari");
-        const sF  = row.querySelector(".surah-dari");
-        const ayT = row.querySelector(".ayat-sampai");
-        const sT  = row.querySelector(".surah-sampai");
-        applyToOneAyatSelect(ayF, sF, excluded, ownSet);
-        applyToOneAyatSelect(ayT, sT, excluded, ownSet);
+  }
+
+  // Hitung owner per ayat: baris paling awal (tanggal ↑, lalu rowIndex ↑)
+  function computeOwnerMap(rows){
+    const sorted = [...rows].sort((a,b)=>{
+      const ta = parseDateStr(a.dataset?.tanggal);
+      const tb = parseDateStr(b.dataset?.tanggal);
+      if (ta !== tb) return ta - tb;
+      return (a.rowIndex||0) - (b.rowIndex||0);
+    });
+    const owner = new Map(); // "S:A" -> row
+    for (const r of sorted){
+      const sel = selectedByRow.get(r) || new Set();
+      sel.forEach(k=>{
+        if (!owner.has(k)) owner.set(k, r);
       });
     }
-    function onRowChange(row){
-      const keySantri = String(row?.dataset?.nis || row?.dataset?.id || "").trim();
-      if (!keySantri) return;
-      selectedByRow.set(row, collectRowSelection(row));
-      recomputeForSantri(keySantri);
-    }
-    function registerRow(row){
-      const keySantri = String(row?.dataset?.nis || row?.dataset?.id || "").trim();
-      if (!keySantri) return;
-      if (!rowsBySantri.has(keySantri)) rowsBySantri.set(keySantri, new Set());
-      rowsBySantri.get(keySantri).add(row);
-      selectedByRow.set(row, collectRowSelection(row));
-      recomputeForSantri(keySantri);
-    }
-    function reset(){
-      rowsBySantri.clear();
-    }
-    return { registerRow, onRowChange, recomputeForSantri, reset };
-  })();
+    return owner;
+  }
+
+  function recomputeForSantri(keySantri){
+    const setRows = rowsBySantri.get(keySantri);
+    if (!setRows || !setRows.size) return;
+
+    // 1) owner map
+    const owner = computeOwnerMap(setRows);
+
+    // 2) apply ke semua dropdown
+    setRows.forEach(r=>{
+      const ayF = r.querySelector(".ayat-dari");
+      const sF  = r.querySelector(".surah-dari");
+      const ayT = r.querySelector(".ayat-sampai");
+      const sT  = r.querySelector(".surah-sampai");
+      applyToOne(ayF, sF, owner, r);
+      applyToOne(ayT, sT, owner, r);
+    });
+
+    // 3) jika ada yang dikosongkan karena bukan owner, refresh hitungan
+    setRows.forEach(r=>{
+      // Bila salah satu ayat kosong (sudah dibatalkan), perbarui hitungan
+      const aF = r.querySelector(".ayat-dari")?.value;
+      const sF = r.querySelector(".surah-dari")?.value;
+      const aT = r.querySelector(".ayat-sampai")?.value;
+      const sT = r.querySelector(".surah-sampai")?.value;
+      const incomplete = !(sF && aF && sT && aT);
+      if (typeof updateTotalJuz === "function"){
+        if (incomplete) updateTotalJuz(r); // akan mengosongkan output
+      }
+    });
+  }
+
+  function onRowChange(row){
+    const keySantri = String(row?.dataset?.nis || row?.dataset?.id || "").trim();
+    if (!keySantri) return;
+    selectedByRow.set(row, collectRowSelection(row));
+    recomputeForSantri(keySantri);
+  }
+
+  function registerRow(row){
+    const keySantri = String(row?.dataset?.nis || row?.dataset?.id || "").trim();
+    if (!keySantri) return;
+    if (!rowsBySantri.has(keySantri)) rowsBySantri.set(keySantri, new Set());
+    rowsBySantri.get(keySantri).add(row);
+    // simpan pilihan awal lalu hitung owner
+    selectedByRow.set(row, collectRowSelection(row));
+    recomputeForSantri(keySantri);
+  }
+
+  function reset(){
+    rowsBySantri.clear();
+  }
+
+  return { registerRow, onRowChange, recomputeForSantri, reset };
+})();
   // ===== END Ayat Reservation =====
 
   // Helpers kecil
