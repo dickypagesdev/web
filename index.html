@@ -3161,99 +3161,7 @@ async function loadSantriData() {
   window.jenjangMap    ??= {};
   window.keteranganMap ??= {};
 
-  // ======= HIGHLIGHT (global state & helpers) — TANPA BATAS WAKTU =======
-  // Peta global: __usedAyat[keySantri][surahId] = Set(ayatNumber)
-  window.__usedAyat ??= Object.create(null);
-
-  // CSS untuk penanda
-  (function injectUsedStyles(){
-    if (document.getElementById('used-ayat-style')) return;
-    const s = document.createElement('style');
-    s.id = 'used-ayat-style';
-    s.textContent = `
-      select option.used-ayat  { background:#ffebee !important; color:#b71c1c !important; font-weight:600; }
-      select option.used-surah { background:#fff9c4 !important; color:#8d6e00 !important; font-weight:600; }
-    `;
-    document.head.appendChild(s);
-  })();
-
-  // Bangun peta ayat terpakai dari data absensi (list array)
-  function buildUsedAyatMapFromList(list){
-    const used = Object.create(null);
-    function keySantri(rec){
-      // prioritas: nis -> id -> (nama lower)
-      const nis = (rec?.nis ?? "").toString().trim();
-      if (nis) return nis;
-      const id  = (rec?.id  ?? "").toString().trim();
-      if (id) return id;
-      const nm  = (rec?.nama ?? "").toString().trim().toLowerCase();
-      return nm || "";
-    }
-    function markSpan(map, s1, a1, s2, a2){
-      const n1 = Number(s1), n2 = Number(s2);
-      if (!Number.isFinite(n1) || !Number.isFinite(n2)) return;
-      const fromS = Math.min(n1,n2), toS = Math.max(n1,n2);
-      for (let s = fromS; s <= toS; s++){
-        const surah = (surahList||[]).find(x=>Number(x.id)===s);
-        if (!surah) continue;
-        const totalAyat = surah.jumlah_ayat;
-        let startAy = 1, endAy = totalAyat;
-        if (s===n1) startAy = Math.max(1, Number(a1)||1);
-        if (s===n2) endAy   = Math.min(totalAyat, Number(a2)||totalAyat);
-        for (let a=startAy; a<=endAy; a++){
-          map[String(s)] ??= new Set();
-          map[String(s)].add(a);
-        }
-      }
-    }
-    for (const r of list||[]){
-      const k = keySantri(r);
-      if (!k) continue;
-      const dari   = String(r?.dari   || "").trim();
-      const sampai = String(r?.sampai || "").trim();
-      if (!dari || !sampai) continue;
-      const [s1,a1] = dari.split(":");
-      const [s2,a2] = sampai.split(":");
-      used[k] ??= Object.create(null);
-      markSpan(used[k], s1,a1,s2,a2);
-    }
-    return used;
-  }
-
-  // Ambil riwayat seluruh waktu (pakai rentang super lebar—tanpa batas waktu)
-  async function preloadUsedAyatMapAll(kelas){
-    try{
-      const RANGE_START = '0001-01-01';
-      const RANGE_END   = '9999-12-31';
-      const url = `/api/getAbsensiRange?kelas=${encodeURIComponent(kelas)}&start=${encodeURIComponent(RANGE_START)}&end=${encodeURIComponent(RANGE_END)}&t=${Date.now()}`;
-      const res = await fetch(url);
-      const payload = await res.json().catch(()=>({}));
-      const list = Array.isArray(payload) ? payload : (payload?.list || []);
-      if (Array.isArray(list)){
-        window.__usedAyat = buildUsedAyatMapFromList(list);
-      }
-    }catch(e){
-      console.warn('Gagal preload riwayat ayat:', e);
-      // biarkan __usedAyat tetap apa adanya
-    }
-  }
-
-  // Tandai opsi SURAH kuning jika surah pernah dipakai oleh santri (tanpa batas waktu)
-  function markUsedSurahOptions(selectEl, rowKey){
-    if (!selectEl) return;
-    const usedK = window.__usedAyat?.[rowKey];
-    if (!usedK) return;
-    [...selectEl.options].forEach(opt=>{
-      opt.classList.remove('used-surah');
-      const sid = String(opt.value||"").trim();
-      if (!sid) return;
-      if (usedK[sid] && usedK[sid] instanceof Set && usedK[sid].size>0){
-        opt.classList.add('used-surah');
-      }
-    });
-  }
-
-  // ===== Helpers kecil existing =====
+  // Helpers kecil
   const keyId   = v => (v === 0 || v) ? String(v).trim() : "";
   const keyNis  = v => (v === 0 || v) ? String(v).trim() : "";
   const keyName = v => String(v || "").trim().toLowerCase();
@@ -3319,9 +3227,6 @@ async function loadSantriData() {
   }
 
   try {
-    // ====== PRELOAD RIWAYAT (tanpa batas waktu) — sebelum render ======
-    await preloadUsedAyatMapAll(kelas);
-
     // Roster santri (MASTER)
     const resSantri = await fetch(`/api/getSantri?kelas=${encodeURIComponent(kelas)}&t=${Date.now()}`);
     let santriData = await resSantri.json().catch(() => []);
@@ -3593,17 +3498,8 @@ async function loadSantriData() {
         if (dariArr[0])   surahDari.value   = dariArr[0];
         if (sampaiArr[0]) surahSampai.value = sampaiArr[0];
 
-        // simpan konteks key santri ke select ayat (dipakai di TAHAP KEDUA)
-        ayatDari.dataset.rowKey    = row.dataset.key || "";
-        ayatSampai.dataset.rowKey  = row.dataset.key || "";
-
-        // isi ayat (default kosong aman), lalu tandai yang terpakai (TAHAP KEDUA akan handle)
         fillAyatOptions(ayatDari,   surahDari.value || "",   dariArr[1]   || "");
         fillAyatOptions(ayatSampai, surahSampai.value || "", sampaiArr[1] || "");
-
-        // tandai SURAH kuning (tanpa batas waktu)
-        markUsedSurahOptions(surahDari,   row.dataset.key || "");
-        markUsedSurahOptions(surahSampai, row.dataset.key || "");
 
         surahDari.addEventListener("change", () => {
           fillAyatOptions(ayatDari, surahDari.value || "", "");
@@ -3615,15 +3511,11 @@ async function loadSantriData() {
             surahSampai.value = "";
             fillAyatOptions(ayatSampai, "", "");
           }
-          // refresh tanda SURAH kuning saat berubah
-          markUsedSurahOptions(surahDari,   row.dataset.key || "");
-          markUsedSurahOptions(surahSampai, row.dataset.key || "");
           updateTotalJuz(row);
         });
 
         surahSampai.addEventListener("change", () => {
           fillAyatOptions(ayatSampai, surahSampai.value || "", "");
-          markUsedSurahOptions(surahSampai, row.dataset.key || "");
           updateTotalJuz(row);
         });
 
@@ -3807,9 +3699,6 @@ async function loadSantriData() {
     // ====== Dropdown Ayat: default kosong ======
 function fillAyatOptions(selectEl, surahId, selectedAyat = "") {
   if (!selectEl) return;
-
-  const rowKey = selectEl.dataset?.rowKey || ""; // diisi dari loadSantriData()
-
   if (!surahId) {
     selectEl.innerHTML = `<option value="">— Ayat —</option>`;
     selectEl.value = "";
@@ -3821,27 +3710,16 @@ function fillAyatOptions(selectEl, surahId, selectedAyat = "") {
     selectEl.value = "";
     return;
   }
-
   const frag = document.createDocumentFragment();
   const blank = document.createElement("option");
   blank.value = ""; blank.textContent = "— Ayat —";
   frag.appendChild(blank);
-
-  const usedMap = (window.__usedAyat?.[rowKey]?.[String(surahId)] instanceof Set)
-    ? window.__usedAyat[rowKey][String(surahId)]
-    : null;
-
   for (let i = 1; i <= surah.jumlah_ayat; i++) {
     const opt = document.createElement("option");
     opt.value = String(i);
     opt.textContent = String(i);
-    // pewarnaan merah jika ayat sudah pernah dipakai (tanpa batas waktu)
-    if (usedMap && usedMap.has(i)) {
-      opt.classList.add('used-ayat');
-    }
     frag.appendChild(opt);
   }
-
   selectEl.innerHTML = "";
   selectEl.appendChild(frag);
   selectEl.value = selectedAyat ? String(selectedAyat) : "";
@@ -3915,7 +3793,9 @@ function updateTotalJuz(row) {
 
   // Hitung juz tercakup
   const juzTercakup = [];
-  for (let i = 0; i = halamanAwalJuz.length - 1 ? 604 : (halamanAwalJuz[i + 1] - 1);
+  for (let i = 0; i < halamanAwalJuz.length; i++) {
+    const awalJuz = halamanAwalJuz[i];
+    const akhirJuz = i < halamanAwalJuz.length - 1 ? halamanAwalJuz[i + 1] - 1 : 604;
     if (akhirJuz >= 602 && awalJuz <= 604) continue;
     for (let h of halamanUnik) {
       if (h >= awalJuz && h <= akhirJuz) {
@@ -4344,7 +4224,6 @@ async function simpanDataMutabaah(saveBtn){
 document.getElementById('save-btn')?.addEventListener('click', function(){ simpanDataMutabaah(this); });
 document.getElementById('save-btn-modal')?.addEventListener('click', function(){ simpanDataMutabaah(this); });
 document.getElementById('mur-save')?.addEventListener('click', function(){ simpanDataMutabaah(this); });
-
 
 
 
