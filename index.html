@@ -3227,11 +3227,11 @@ window.AyatReservation = window.AyatReservation || (function(){
     const sVal = surahSelect.value?.trim() || "";
     [...ayatSelect.options].forEach(opt=>{
       if (opt.value === "" || !sVal){
-        opt.disabled = false; opt.hidden=false; opt.style.display="";
+        opt.disabled = true; opt.hidden=true; opt.style.display="";
         return;
       }
       const k = normalizeKey(sVal, opt.value);
-      if (!k){ opt.disabled=false; opt.hidden=false; opt.style.display=""; return; }
+      if (!k){ opt.disabled=true; opt.hidden=true; opt.style.display=""; return; }
       const owner = ownerMap.get(k);
       const shouldHide = owner && owner !== row;
       // benar-benar hilang:
