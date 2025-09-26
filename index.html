@@ -3114,38 +3114,33 @@ async function loadSantriData() {
   overlay.style.display = "flex";
 
   // ===== NEW: Konfigurasi & util jenjang (future-proof) =====
-  const JENJANG_MAX = Number(window.JENJANG_MAX ?? 9); // ubah ke 100 / 300 / 1000 sesuai kebutuhan
+  const JENJANG_MAX = Number(window.JENJANG_MAX ?? 9);
 
   const parseJenjang = (v) => {
     const m = /^A(\d+)$/.exec(String(v || "").trim());
     return m ? Number(m[1]) : null;
   };
-
   const isValidJenjang = (v, max = JENJANG_MAX) => {
-    if (!v) return true;                       // kosong = boleh
+    if (!v) return true;
     const n = parseJenjang(v);
-    if (!Number.isFinite(n) || n < 1) return false; // minimal A1
-    if (!max || max === 0) return true;        // 0 => tanpa batas atas
+    if (!Number.isFinite(n) || n < 1) return false;
+    if (!max || max === 0) return true;
     return n <= max;
   };
-
   const ensureJenjangOptions = (selectEl, max = JENJANG_MAX, currentValue = "") => {
     if (!selectEl) return;
     const existingVals = new Set([...selectEl.options].map(o => String(o.value || "")));
     const frag = document.createDocumentFragment();
-
     if (![...selectEl.options].some(o => o.value === "")) {
       const empty = document.createElement("option");
-      empty.value = "";
-      empty.textContent = "";
+      empty.value = ""; empty.textContent = "";
       frag.appendChild(empty);
     }
     for (let i = 1; i <= max; i++) {
       const v = `A${i}`;
       if (!existingVals.has(v)) {
         const opt = document.createElement("option");
-        opt.value = v;
-        opt.textContent = v;
+        opt.value = v; opt.textContent = v;
         frag.appendChild(opt);
       }
     }
@@ -3160,168 +3155,6 @@ async function loadSantriData() {
   window.semesterMap   ??= {};
   window.jenjangMap    ??= {};
   window.keteranganMap ??= {};
-
-  // ===== Ayat Reservation (per-santri; hide opsi ayat di baris lain) =====
-  // Dipakai untuk membuat ayat yang sudah dipilih di satu baris
-  // tidak bisa dipilih di baris lain untuk santri yang sama.
-  // ===== Ayat Reservation (per-santri; unique owner per ayat) =====
-window.AyatReservation = window.AyatReservation || (function(){
-  const rowsBySantri  = new Map();      // keySantri -> Set<tr>
-  const selectedByRow = new WeakMap();  // tr -> Set("S:A")
-
-  function normalizeKey(s, a){
-    const S = Number(s), A = Number(a);
-    if (!Number.isFinite(S) || !Number.isFinite(A) || S<=0 || A<=0) return null;
-    return `${S}:${A}`;
-  }
-
-  function parseDateStr(s){
-    if (!s) return Number.POSITIVE_INFINITY;
-    const d = new Date(s);
-    if (!Number.isNaN(d.getTime())) return d.getTime();
-    // fallback dd/mm/yyyy atau dd-mm-yyyy
-    const m = /(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/.exec(String(s));
-    if (m){
-      const dd = Number(m[1]), mm = Number(m[2])-1, yy = Number(m[3]);
-      const d2 = new Date(yy, mm, dd);
-      if (!Number.isNaN(d2.getTime())) return d2.getTime();
-    }
-    return Number.POSITIVE_INFINITY;
-  }
-
-  function expandRange(fromS, fromA, toS, toA){
-    const out = new Set();
-    const s1 = Number(fromS), a1 = Number(fromA), s2 = Number(toS), a2 = Number(toA);
-    if (![s1,a1,s2,a2].every(Number.isFinite)) return out;
-    const sStart = Math.min(s1, s2);
-    const sEnd   = Math.max(s1, s2);
-    for (let s = sStart; s <= sEnd; s++){
-      const surah = (window.surahList||[]).find(x => Number(x.id) === s);
-      if (!surah) continue;
-      const totalAyat = Number(surah.jumlah_ayat) || 0;
-      let startAyat = (s === s1) ? a1 : 1;
-      let endAyat   = (s === s2) ? a2 : totalAyat;
-      if (startAyat > endAyat) [startAyat, endAyat] = [endAyat, startAyat];
-      startAyat = Math.max(1, startAyat);
-      endAyat   = Math.min(totalAyat, endAyat);
-      for (let a = startAyat; a <= endAyat; a++){
-        const k = normalizeKey(s,a);
-        if (k) out.add(k);
-      }
-    }
-    return out;
-  }
-
-  function collectRowSelection(row){
-    const sF = row.querySelector(".surah-dari")?.value?.trim() || "";
-    const aF = row.querySelector(".ayat-dari")?.value?.trim()  || "";
-    const sT = row.querySelector(".surah-sampai")?.value?.trim() || "";
-    const aT = row.querySelector(".ayat-sampai")?.value?.trim()  || "";
-    if (!sF || !aF || !sT || !aT) return new Set();
-    return expandRange(sF, aF, sT, aT);
-  }
-
-  // Terapkan hide/disable pada satu dropdown ayat sesuai owner map
-  function applyToOne(ayatSelect, surahSelect, ownerMap, row){
-    if (!ayatSelect || !surahSelect) return;
-    const sVal = surahSelect.value?.trim() || "";
-    [...ayatSelect.options].forEach(opt=>{
-      if (opt.value === "" || !sVal){
-        opt.disabled = true; opt.hidden=true; opt.style.display="";
-        return;
-      }
-      const k = normalizeKey(sVal, opt.value);
-      if (!k){ opt.disabled=true; opt.hidden=true; opt.style.display=""; return; }
-      const owner = ownerMap.get(k);
-      const shouldHide = owner && owner !== row;
-      // benar-benar hilang:
-      opt.disabled = !!shouldHide;
-      opt.hidden   = !!shouldHide;
-      opt.style.display = shouldHide ? "none" : "";
-    });
-    // Jika nilai yg terpilih bukan milik baris ini -> kosongkan
-    if (sVal && ayatSelect.value){
-      const k = normalizeKey(sVal, ayatSelect.value);
-      const owner = k ? ownerMap.get(k) : null;
-      if (owner && owner !== row){
-        ayatSelect.value = "";
-      }
-    }
-  }
-
-  // Hitung owner per ayat: baris paling awal (tanggal ↑, lalu rowIndex ↑)
-  function computeOwnerMap(rows){
-    const sorted = [...rows].sort((a,b)=>{
-      const ta = parseDateStr(a.dataset?.tanggal);
-      const tb = parseDateStr(b.dataset?.tanggal);
-      if (ta !== tb) return ta - tb;
-      return (a.rowIndex||0) - (b.rowIndex||0);
-    });
-    const owner = new Map(); // "S:A" -> row
-    for (const r of sorted){
-      const sel = selectedByRow.get(r) || new Set();
-      sel.forEach(k=>{
-        if (!owner.has(k)) owner.set(k, r);
-      });
-    }
-    return owner;
-  }
-
-  function recomputeForSantri(keySantri){
-    const setRows = rowsBySantri.get(keySantri);
-    if (!setRows || !setRows.size) return;
-
-    // 1) owner map
-    const owner = computeOwnerMap(setRows);
-
-    // 2) apply ke semua dropdown
-    setRows.forEach(r=>{
-      const ayF = r.querySelector(".ayat-dari");
-      const sF  = r.querySelector(".surah-dari");
-      const ayT = r.querySelector(".ayat-sampai");
-      const sT  = r.querySelector(".surah-sampai");
-      applyToOne(ayF, sF, owner, r);
-      applyToOne(ayT, sT, owner, r);
-    });
-
-    // 3) jika ada yang dikosongkan karena bukan owner, refresh hitungan
-    setRows.forEach(r=>{
-      // Bila salah satu ayat kosong (sudah dibatalkan), perbarui hitungan
-      const aF = r.querySelector(".ayat-dari")?.value;
-      const sF = r.querySelector(".surah-dari")?.value;
-      const aT = r.querySelector(".ayat-sampai")?.value;
-      const sT = r.querySelector(".surah-sampai")?.value;
-      const incomplete = !(sF && aF && sT && aT);
-      if (typeof updateTotalJuz === "function"){
-        if (incomplete) updateTotalJuz(r); // akan mengosongkan output
-      }
-    });
-  }
-
-  function onRowChange(row){
-    const keySantri = String(row?.dataset?.nis || row?.dataset?.id || "").trim();
-    if (!keySantri) return;
-    selectedByRow.set(row, collectRowSelection(row));
-    recomputeForSantri(keySantri);
-  }
-
-  function registerRow(row){
-    const keySantri = String(row?.dataset?.nis || row?.dataset?.id || "").trim();
-    if (!keySantri) return;
-    if (!rowsBySantri.has(keySantri)) rowsBySantri.set(keySantri, new Set());
-    rowsBySantri.get(keySantri).add(row);
-    // simpan pilihan awal lalu hitung owner
-    selectedByRow.set(row, collectRowSelection(row));
-    recomputeForSantri(keySantri);
-  }
-
-  function reset(){
-    rowsBySantri.clear();
-  }
-
-  return { registerRow, onRowChange, recomputeForSantri, reset };
-})();
-  // ===== END Ayat Reservation =====
 
   // Helpers kecil
   const keyId   = v => (v === 0 || v) ? String(v).trim() : "";
@@ -3388,11 +3221,152 @@ window.AyatReservation = window.AyatReservation || (function(){
     });
   }
 
+  // ======== NEW: selected-ayah cache & utils (GLOBAL) ========
+  // Bentuk index:
+  // window.__SEL_AYAH = {
+  //   kelas, raw,        // data GET apa adanya
+  //   byNisDate: { [nis]: { [YYYY-MM-DD]: [ {surah,from,to} ] } },
+  //   getMerged(nis, exceptDate?) => { [surah]: [ {from,to} ] }  // sudah digabung overlap
+  // }
+  const mergeRanges = (ranges=[]) => {
+    const map = new Map();
+    for (const r of ranges) {
+      const s = Number(r?.surah); let a = Number(r?.from); let b = Number(r?.to);
+      if (!Number.isFinite(s)||!Number.isFinite(a)||!Number.isFinite(b)) continue;
+      if (a>b) [a,b] = [b,a];
+      if (!map.has(s)) map.set(s, []);
+      map.get(s).push({from:a,to:b});
+    }
+    const out = {};
+    for (const [s, arr] of map.entries()){
+      arr.sort((x,y)=>x.from-y.from || x.to-y.to);
+      const merged=[];
+      let cur=null;
+      for (const seg of arr){
+        if (!cur) { cur={...seg}; continue; }
+        if (seg.from<=cur.to+1) cur.to=Math.max(cur.to,seg.to);
+        else { merged.push(cur); cur={...seg}; }
+      }
+      if (cur) merged.push(cur);
+      out[s]=merged;
+    }
+    return out; // { surahId: [{from,to},...] }
+  };
+
+  const buildSelAyahIndex = (raw) => {
+    const byNisDate = {};
+    // raw bentuk { [nis]: { [tgl]: [ranges] } } kalau GET pakai kelas=...
+    for (const nis of Object.keys(raw || {})) {
+      byNisDate[nis] = {};
+      const per = raw[nis] || {};
+      for (const tgl of Object.keys(per)) {
+        const arr = Array.isArray(per[tgl]) ? per[tgl] : [];
+        byNisDate[nis][tgl] = arr.map(x=>({ surah:Number(x.surah), from:Number(x.from), to:Number(x.to) }));
+      }
+    }
+    return { byNisDate };
+  };
+
+  const getMergedExcept = (nis, exceptDate) => {
+    const perDate = window.__SEL_AYAH?.byNisDate?.[nis] || {};
+    const all = [];
+    for (const tgl of Object.keys(perDate)) {
+      if (exceptDate && tgl === exceptDate) continue;
+      all.push(...(perDate[tgl]||[]));
+    }
+    return mergeRanges(all); // {surah:[{from,to}]}
+  };
+
+  const isAyahTaken = (nis, surahId, ayat, exceptDate) => {
+    const merged = getMergedExcept(nis, exceptDate);
+    const list = merged[String(surahId)] || merged[Number(surahId)] || [];
+    for (const seg of list) {
+      if (ayat>=seg.from && ayat<=seg.to) return true;
+    }
+    return false;
+  };
+
+  const postSelectedAyah = async ({kelas, nis, tanggal, ranges, remove=false}) => {
+    try{
+      const res = await fetch("/api/selectedayah", {
+        method:"POST",
+        headers:{ "Content-Type":"application/json" },
+        body: JSON.stringify({ kelas, nis, tanggal, ranges, remove })
+      });
+      const data = await res.json().catch(()=>({}));
+      if (!res.ok || data?.error){
+        console.warn("POST selectedayah gagal:", data?.error || res.status);
+        return false;
+      }
+      // update cache lokal
+      window.__SEL_AYAH.byNisDate[nis] ||= {};
+      if (remove || !ranges?.length) delete window.__SEL_AYAH.byNisDate[nis][tanggal];
+      else window.__SEL_AYAH.byNisDate[nis][tanggal] = data.ranges || ranges;
+      return true;
+    }catch(e){
+      console.warn("POST selectedayah error:", e);
+      return false;
+    }
+  };
+
+  const splitRangesAcrossSurah = (sFrom, aFrom, sTo, aTo) => {
+    const out = [];
+    if (!sFrom || !sTo || !aFrom || !aTo) return out;
+    const startS = Number(sFrom), endS = Number(sTo);
+    if (!Number.isFinite(startS) || !Number.isFinite(endS)) return out;
+    const asc = startS <= endS;
+    const loS = asc ? startS : endS;
+    const hiS = asc ? endS : startS;
+    for (let s=loS; s<=hiS; s++){
+      const surahObj = surahList.find(x => Number(x.id)===Number(s));
+      const maxAyat  = surahObj ? Number(surahObj.jumlah_ayat) : 0;
+      let from = 1, to = maxAyat;
+      if (s===startS) from = Number(aFrom);
+      if (s===endS)   to   = Number(aTo);
+      if (from>to) [from,to] = [to,from];
+      if (Number.isFinite(from) && Number.isFinite(to) && from>=1 && to>=1) {
+        out.push({ surah: Number(s), from, to });
+      }
+    }
+    return out;
+  };
+
+  const applyAyatDisabling = (selectEl, surahId, nis, exceptDate) => {
+    if (!selectEl) return;
+    if (!surahId) {
+      // kosong → biarkan semua opsi (kecuali placeholder) enabled
+      [...selectEl.options].forEach(o=>{
+        if (o.value==="") { o.disabled=false; return; }
+        o.disabled = false;
+      });
+      return;
+    }
+    [...selectEl.options].forEach(o=>{
+      if (o.value==="" ) { o.disabled=false; return; }
+      const ay = Number(o.value);
+      o.disabled = isAyahTaken(nis, surahId, ay, exceptDate);
+    });
+  };
+
+  const refreshAllRowsForNis = (nis) => {
+    const rows = document.querySelectorAll(`#santri-table tbody tr[data-nis="${CSS.escape(nis)}"]`);
+    rows.forEach(r=>{
+      const sd = r.querySelector(".surah-dari")?.value || "";
+      const ss = r.querySelector(".surah-sampai")?.value || "";
+      const ad = r.querySelector(".ayat-dari");
+      const as = r.querySelector(".ayat-sampai");
+      const tgl = r.dataset?.tanggal || "";
+      applyAyatDisabling(ad, sd, nis, tgl);
+      applyAyatDisabling(as, ss, nis, tgl);
+    });
+  };
+  // ================= END NEW =================
+
   try {
     // Roster santri (MASTER)
     const resSantri = await fetch(`/api/getSantri?kelas=${encodeURIComponent(kelas)}&t=${Date.now()}`);
     let santriData = await resSantri.json().catch(() => []);
-    if (!Array.isArray(santriData)) santriData = [];   // <<< penting: kalau API balik {error:...}
+    if (!Array.isArray(santriData)) santriData = [];
 
     window.semesterMap   = {};
     window.jenjangMap    = {};
@@ -3421,9 +3395,7 @@ window.AyatReservation = window.AyatReservation || (function(){
       absensiRaw = Array.isArray(d) ? d : (d?.list || []);
       if (!Array.isArray(absensiRaw)) absensiRaw = [];
     } else {
-      const resAbsensi = await fetch(
-        `/api/getAbsensi?kelas=${encodeURIComponent(kelas)}&tanggal=${encodeURIComponent(tanggal)}&t=${Date.now()}`
-      );
+      const resAbsensi = await fetch(`/api/getAbsensi?kelas=${encodeURIComponent(kelas)}&tanggal=${encodeURIComponent(tanggal)}&t=${Date.now()}`);
       let d = await resAbsensi.json();
       absensiRaw = Array.isArray(d) ? d : (d?.list || []);
     }
@@ -3450,7 +3422,7 @@ window.AyatReservation = window.AyatReservation || (function(){
       return { ...r, id, nis, nama, semester: semesterFix, jenjang: jenjangFix, keterangan: ketFix };
     });
 
-    // Ambil user login & filter akses santri (tetap)
+    // Ambil user login & filter akses santri
     const username = localStorage.getItem("username");
     const users = await fetch(`/api/getUsers?t=${Date.now()}`).then(r => r.json());
     const user  = users.find(u => u.username === username);
@@ -3473,10 +3445,22 @@ window.AyatReservation = window.AyatReservation || (function(){
     setNISRecordDisabled(isModeNIS);
     setNISRekapDisabled(isModeNIS);
 
-    // Reset reservation (hindari bekas render sebelumnya)
-    if (window.AyatReservation && typeof window.AyatReservation.reset === "function") {
-      window.AyatReservation.reset();
+    // ====== NEW: GET selected-ayah utk rentang tanggal yang ditampilkan ======
+    const startDate = tanggal;
+    const endDate   = (endFilter && endFilter !== tanggal) ? endFilter : tanggal;
+    let selRaw = {};
+    try{
+      const q = new URLSearchParams({ kelas, from:startDate, to:endDate }).toString();
+      const r = await fetch(`/api/selectedayah?${q}`);
+      const data = await r.json().catch(()=>({}));
+      // data bentuk { [nis]: { [tgl]: [ranges] } }
+      const { byNisDate } = buildSelAyahIndex(data || {});
+      window.__SEL_AYAH = { kelas, raw:data||{}, byNisDate, getMerged: getMergedExcept };
+    }catch(e){
+      console.warn("GET selectedayah gagal", e);
+      window.__SEL_AYAH = { kelas, raw:{}, byNisDate:{}, getMerged: getMergedExcept };
     }
+    // ========================================================================
 
     // RENDER TABEL
     santriTableBody.innerHTML = "";
@@ -3551,12 +3535,11 @@ window.AyatReservation = window.AyatReservation || (function(){
       rowsForSantri.forEach((dataAbsensi) => {
         const row = document.createElement("tr");
 
-        // === SURAH OPTIONS: tambahkan opsi kosong paling atas
+        // SURAH OPTIONS
         const surahOptions =
           `<option value="">— Surah —</option>` +
           surahList.map(s => `<option value="${s.id}">${s.nama}</option>`).join("");
 
-        // === JANGAN paksa "1:1" saat kosong — biarkan kosong
         const dariRaw   = (dataAbsensi?.dari   || "").trim();
         const sampaiRaw = (dataAbsensi?.sampai || "").trim();
         const dari   = dariRaw   ? dariRaw.split(":")   : ["",""];
@@ -3597,12 +3580,11 @@ window.AyatReservation = window.AyatReservation || (function(){
             </select>
           </td>
 
-          <!-- ============ ABSENSI FLEX via MODAL BUTTON ============ -->
+          <!-- ABSENSI FLEX -->
           <td class="abs-flex-cell">
             <div class="abs-mini" style="font-size:12px;opacity:.8;margin-top:4px;"></div>
             <button type="button" class="btn-absensi-flex" style="margin-top:6px; padding:4px 8px;border:1px solid #e5e7eb;border-radius:8px;background:#1E88E5;">Input</button>
           </td>
-          <!-- ======================================================= -->
 
           <td>
             <select class="keterangan">
@@ -3659,6 +3641,12 @@ window.AyatReservation = window.AyatReservation || (function(){
         const surahSampai = row.querySelector(".surah-sampai");
         const ayatSampai  = row.querySelector(".ayat-sampai");
 
+        // simpan dataset nis/tanggal pada select Ayat (dipakai disable)
+        ayatDari.dataset.nis = dsNis;
+        ayatSampai.dataset.nis = dsNis;
+        ayatDari.dataset.tanggal = rowDate;
+        ayatSampai.dataset.tanggal = rowDate;
+
         const dariArr   = Array.isArray(dari)   ? dari   : String(dari).split(":");
         const sampaiArr = Array.isArray(sampai) ? sampai : String(sampai).split(":");
 
@@ -3668,7 +3656,28 @@ window.AyatReservation = window.AyatReservation || (function(){
         fillAyatOptions(ayatDari,   surahDari.value || "",   dariArr[1]   || "");
         fillAyatOptions(ayatSampai, surahSampai.value || "", sampaiArr[1] || "");
 
-        // ==== LISTENERS (tambahkan panggilan AyatReservation) ====
+        // ===== NEW: apply disable berdasar selected-ayah lain =====
+        applyAyatDisabling(ayatDari,   surahDari.value || "", dsNis, rowDate);
+        applyAyatDisabling(ayatSampai, surahSampai.value || "", dsNis, rowDate);
+        // ===========================================================
+
+        // ==== Handlers ====
+        const handlePostSelectedAyah = async () => {
+          const sD = surahDari.value?.trim() || "";
+          const aD = ayatDari.value?.trim() || "";
+          const sS = surahSampai.value?.trim() || "";
+          const aS = ayatSampai.value?.trim() || "";
+          if (sD && aD && sS && aS) {
+            const ranges = splitRangesAcrossSurah(sD, Number(aD), sS, Number(aS));
+            await postSelectedAyah({ kelas, nis: dsNis, tanggal: rowDate, ranges, remove:false });
+          } else {
+            // kosong/parsial -> hapus entri tanggal ini
+            await postSelectedAyah({ kelas, nis: dsNis, tanggal: rowDate, ranges:[], remove:true });
+          }
+          // setelah POST, refresh disable semua baris NIS tsb
+          refreshAllRowsForNis(dsNis);
+        };
+
         surahDari.addEventListener("change", () => {
           fillAyatOptions(ayatDari, surahDari.value || "", "");
           if (surahDari.value) {
@@ -3679,25 +3688,29 @@ window.AyatReservation = window.AyatReservation || (function(){
             surahSampai.value = "";
             fillAyatOptions(ayatSampai, "", "");
           }
+          // re-apply disable & kalkulasi
+          applyAyatDisabling(ayatDari, surahDari.value || "", dsNis, rowDate);
+          applyAyatDisabling(ayatSampai, surahSampai.value || "", dsNis, rowDate);
           updateTotalJuz(row);
-          window.AyatReservation.onRowChange(row);
+          handlePostSelectedAyah();
         });
 
         surahSampai.addEventListener("change", () => {
           fillAyatOptions(ayatSampai, surahSampai.value || "", "");
+          applyAyatDisabling(ayatSampai, surahSampai.value || "", dsNis, rowDate);
           updateTotalJuz(row);
-          window.AyatReservation.onRowChange(row);
+          handlePostSelectedAyah();
         });
 
         ayatDari.addEventListener("change", () => {
           ayatSampai.value = ayatDari.value || "";
           updateTotalJuz(row);
-          window.AyatReservation.onRowChange(row);
+          handlePostSelectedAyah();
         });
 
         ayatSampai.addEventListener("change", () => {
           updateTotalJuz(row);
-          window.AyatReservation.onRowChange(row);
+          handlePostSelectedAyah();
         });
 
         // === Jenjang ensure
@@ -3818,8 +3831,6 @@ window.AyatReservation = window.AyatReservation || (function(){
           const btn  = cell.querySelector(".btn-absensi-flex");
           const mini = cell.querySelector(".abs-mini");
           const { preset, target } = window.__makePresetAbsensiItems(dataAbsensi || {});
-
-          // state awal di cell (agar SAVE bisa baca)
           const itemsInit = Array.isArray(preset) ? preset : [];
           const comp = computeLocal(itemsInit, target);
           cell._absensiItems   = itemsInit;
@@ -3837,13 +3848,9 @@ window.AyatReservation = window.AyatReservation || (function(){
             const modal   = document.getElementById("absensiModalOverlay");
             const content = document.getElementById("absensiModalContent");
             content.innerHTML = "";
-
-            // render widget di modal (gunakan state terakhir dari cell)
             const presetItems = Array.isArray(cell._absensiItems) ? cell._absensiItems : itemsInit;
             const tgt = Number(cell._absensiTarget) || target;
             const widget = renderAbsensiFlex(content, { target: tgt, presetItems });
-
-            // sinkronisasi hasil ke cell setiap ada perubahan di modal
             content.addEventListener("change", () => {
               cell._absensiItems   = widget._absensiItems;
               cell._absensiTarget  = widget._absensiTarget;
@@ -3851,14 +3858,10 @@ window.AyatReservation = window.AyatReservation || (function(){
               cell._absensiPercent = widget._absensiPercent;
               updateMini();
             });
-
             modal.style.display = "flex";
           });
         })();
         // =============================================================
-
-        // === DAFTARKAN ke AyatReservation (sesudah semua listener siap)
-        window.AyatReservation.registerRow(row);
       });
     });
   } catch (err) {
@@ -3871,7 +3874,8 @@ window.AyatReservation = window.AyatReservation || (function(){
 
 
 
-    // ====== Dropdown Ayat: default kosong ======
+
+    // ====== Dropdown Ayat: default kosong + DISABLE berdasar selected-ayah ======
 function fillAyatOptions(selectEl, surahId, selectedAyat = "") {
   if (!selectEl) return;
   if (!surahId) {
@@ -3898,6 +3902,39 @@ function fillAyatOptions(selectEl, surahId, selectedAyat = "") {
   selectEl.innerHTML = "";
   selectEl.appendChild(frag);
   selectEl.value = selectedAyat ? String(selectedAyat) : "";
+
+  // NEW: apply disabling jika cache tersedia
+  const nis = selectEl.dataset?.nis || "";
+  const tanggal = selectEl.dataset?.tanggal || "";
+  if (window.__SEL_AYAH && nis) {
+    // gunakan helper dari tahap pertama
+    const apply = (el, sId, n, ex) => {
+      const sd = String(sId || "");
+      if (!sd) return;
+      [...el.options].forEach(o=>{
+        if (o.value==="") { o.disabled=false; return; }
+        const ay = Number(o.value);
+        o.disabled = (typeof window.isAyahTaken==='function')
+          ? window.isAyahTaken(n, sd, ay, ex)
+          : ( // fallback ke util lokal
+              (function(){
+                const merged = (window.__SEL_AYAH && window.__SEL_AYAH.getMerged) ? window.__SEL_AYAH.getMerged(n, ex) : {};
+                const list = merged[sd] || merged[Number(sd)] || [];
+                for (const seg of list) if (ay>=seg.from && ay<=seg.to) return true;
+                return false;
+              })()
+            );
+      });
+    };
+    // expose helper (sekali aja)
+    window.isAyahTaken ||= (nisX, surahX, ayatX, exceptDate) => {
+      const merged = (window.__SEL_AYAH && window.__SEL_AYAH.getMerged) ? window.__SEL_AYAH.getMerged(nisX, exceptDate) : {};
+      const list = merged[String(surahX)] || merged[Number(surahX)] || [];
+      for (const seg of list) if (ayatX>=seg.from && ayatX<=seg.to) return true;
+      return false;
+    };
+    apply(selectEl, surahId, nis, tanggal);
+  }
 }
 
     const jumlahAyatPerHalaman = {"1":7,"2":5,"3":11,"4":8,"5":5,"6":8,"7":11,"8":9,"9":4,"10":8,"11":7,"12":7,"13":5,"14":5,"15":8,"16":4,"17":7,"18":7,"19":7,"20":8,"21":7,"22":4,"23":8,"24":10,"25":6,"26":7,"27":5,"28":5,"29":4,"30":6,"31":6,"32":8,"33":5,"34":4,"35":5,"36":6,"37":3,"38":4,"39":8,"40":3,"41":4,"42":4,"43":3,"44":5,"45":5,"46":5,"47":7,"48":1,"49":4,"50":9,"51":6,"52":7,"53":7,"54":8,"55":8,"56":7,"57":9,"58":9,"59":7,"60":6,"61":8,"62":9,"63":8,"64":7,"65":6,"66":11,"67":8,"68":8,"69":5,"70":4,"71":8,"72":8,"73":7,"74":6,"75":8,"76":6,"77":6,"78":5,"79":3,"80":5,"81":4,"82":3,"83":7,"84":4,"85":7,"86":7,"87":8,"88":6,"89":9,"90":5,"91":7,"92":5,"93":3,"94":7,"95":4,"96":8,"97":8,"98":6,"99":7,"100":6,"101":7,"102":7,"103":8,"104":8,"105":5,"106":3,"107":3,"108":4,"109":4,"110":4,"111":6,"112":8,"113":5,"114":5,"115":4,"116":5,"117":7,"118":7,"119":6,"120":6,"121":6,"122":7,"123":6,"124":8,"125":5,"126":5,"127":7,"128":8,"129":10,"130":9,"131":8,"132":9,"133":8,"134":7,"135":9,"136":5,"137":8,"138":9,"139":4,"140":7,"141":9,"142":8,"143":6,"144":7,"145":6,"146":5,"147":4,"148":5,"149":6,"150":8,"151":11,"152":11,"153":8,"154":7,"155":6,"156":8,"157":6,"158":10,"159":6,"160":8,"161":6,"162":8,"163":9,"164":16,"165":10,"166":7,"167":6,"168":6,"169":6,"170":4,"171":4,"172":7,"173":8,"174":9,"175":8,"176":11,"177":8,"178":8,"179":9,"180":8,"181":7,"182":5,"183":7,"184":9,"185":8,"186":6,"187":6,"188":7,"189":7,"190":6,"191":5,"192":5,"193":4,"194":7,"195":7,"196":7,"197":7,"198":4,"199":7,"200":7,"201":7,"202":6,"203":7,"204":5,"205":6,"206":5,"207":7,"208":6,"209":8,"210":6,"211":5,"212":8,"213":9,"214":11,"215":8,"216":9,"217":8,"218":10,"219":9,"220":9,"221":8,"222":7,"223":7,"224":9,"225":9,"226":8,"227":8,"228":9,"229":9,"230":10,"231":7,"232":9,"233":11,"234":9,"235":10,"236":10,"237":8,"238":8,"239":7,"240":6,"241":9,"242":11,"243":6,"244":9,"245":8,"246":9,"247":8,"248":8,"249":5,"250":8,"251":5,"252":10,"253":6,"254":8,"255":6,"256":5,"257":8,"258":6,"259":9,"260":9,"261":10,"262":15,"263":16,"264":20,"265":19,"266":20,"267":15,"268":8,"269":12,"270":8,"271":8,"272":12,"273":10,"274":8,"275":7,"276":8,"277":6,"278":9,"279":8,"280":8,"281":10,"282":7,"283":10,"284":10,"285":11,"286":11,"287":9,"288":8,"289":9,"290":11,"291":10,"292":8,"293":11,"294":11,"295":5,"296":7,"297":7,"298":11,"299":8,"300":8,"301":13,"302":9,"303":14,"304":13,"305":11,"306":14,"307":13,"308":13,"309":13,"310":12,"311":19,"312":15,"313":25,"314":14,"315":13,"316":12,"317":11,"318":11,"319":15,"320":12,"321":10,"322":10,"323":14,"324":11,"325":9,"326":13,"327":15,"328":9,"329":9,"330":11,"331":11,"332":5,"333":10,"334":8,"335":7,"336":8,"337":8,"338":9,"339":9,"340":8,"341":6,"342":17,"343":10,"344":15,"345":17,"346":15,"347":15,"348":15,"349":14,"350":10,"351":10,"352":7,"353":4,"354":5,"355":7,"356":10,"357":5,"358":3,"359":5,"360":9,"361":9,"362":12,"363":11,"364":12,"365":12,"366":10,"367":19,"368":20,"369":21,"370":23,"371":28,"372":25,"373":23,"374":24,"375":23,"376":21,"377":13,"378":9,"379":13,"380":9,"381":11,"382":8,"383":13,"384":12,"385":10,"386":8,"387":8,"388":7,"389":7,"390":8,"391":7,"392":9,"393":11,"394":7,"395":7,"396":10,"397":8,"398":9,"399":7,"400":8,"401":7,"402":7,"403":11,"404":11,"405":10,"406":9,"407":8,"408":9,"409":9,"410":10,"411":11,"412":8,"413":9,"414":6,"415":11,"416":9,"417":10,"418":6,"419":9,"420":7,"421":8,"422":5,"423":8,"424":7,"425":4,"426":8,"427":11,"428":7,"429":7,"430":8,"431":9,"432":8,"433":9,"434":9,"435":8,"436":7,"437":12,"438":8,"439":6,"440":13,"441":15,"442":13,"443":14,"444":16,"445":13,"446":24,"447":27,"448":25,"449":26,"450":24,"451":27,"452":29,"453":16,"454":10,"455":16,"456":19,"457":22,"458":10,"459":5,"460":11,"461":10,"462":9,"463":7,"464":9,"465":11,"466":7,"467":8,"468":9,"469":9,"470":8,"471":7,"472":9,"473":9,"474":8,"475":11,"476":8,"477":11,"478":9,"479":9,"480":9,"481":8,"482":8,"483":10,"484":5,"485":7,"486":9,"487":13,"488":7,"489":12,"490":12,"491":11,"492":14,"493":13,"494":13,"495":16,"496":18,"497":21,"498":20,"499":13,"500":9,"501":10,"502":10,"503":9,"504":6,"505":8,"506":7,"507":11,"508":8,"509":10,"510":9,"511":9,"512":6,"513":8,"514":5,"515":5,"516":7,"517":7,"518":15,"519":20,"520":16,"521":24,"522":21,"523":23,"524":17,"525":18,"526":26,"527":18,"528":24,"529":21,"530":22,"531":22,"532":24,"533":27,"534":27,"535":34,"536":26,"537":23,"538":8,"539":7,"540":6,"541":5,"542":6,"543":5,"544":10,"545":4,"546":6,"547":7,"548":8,"549":5,"550":6,"551":7,"552":9,"553":8,"554":7,"555":7,"556":9,"557":9,"558":5,"559":7,"560":7,"561":5,"562":12,"563":14,"564":19,"565":27,"566":18,"567":26,"568":28,"569":29,"570":15,"571":18,"572":13,"573":15,"574":19,"575":18,"576":30,"577":28,"578":26,"579":20,"580":25,"581":31,"582":30,"583":25,"584":31,"585":42,"586":29,"587":25,"588":28,"589":27,"590":22,"591":32,"592":30,"593":23,"594":27,"595":29,"596":26,"597":27,"598":12,"599":18,"600":21,"601":17,"602":14,"603":14,"604":15
@@ -3910,7 +3947,6 @@ function updateTotalJuz(row) {
   const surahSampai   = row.querySelector(".surah-sampai")?.value?.trim() || "";
   const ayatSampaiStr = row.querySelector(".ayat-sampai")?.value?.trim() || "";
 
-  // Guard: jika ada yang kosong → kosongkan output & STOP (tidak menghitung)
   if (!surahDari || !ayatDariStr || !surahSampai || !ayatSampaiStr) {
     row.querySelector(".halaman-terbaca").textContent = "-";
     row.querySelector(".total-halaman").textContent   = "0.00";
@@ -3931,7 +3967,6 @@ function updateTotalJuz(row) {
   let totalJuz = 0;
   const halamanValid = [];
 
-  // Loop dari surahDari:ayatDari → surahSampai:ayatSampai per ayat
   for (let s = Number(surahDari); s <= Number(surahSampai); s++) {
     const surah = surahList.find(x => Number(x.id) === s);
     if (!surah) continue;
@@ -3945,38 +3980,27 @@ function updateTotalJuz(row) {
       const halaman = pagesMap[key];
       if (!halaman) continue;
 
-      // PAGE: catat semua (termasuk 21, 602-604)
       halamanValid.push(halaman);
-
-      // JUZ: exclude 21 dan 602–604
       if (halaman === 21 || (halaman >= 602 && halaman <= 604)) continue;
 
       const ayatDiHalaman = jumlahAyatPerHalaman[halaman];
-      if (!ayatDiHalaman) {
-        console.warn(`Jumlah ayat tidak ditemukan untuk halaman ${halaman}`);
-        continue;
-      }
+      if (!ayatDiHalaman) continue;
 
-      totalJuz += (0.05 / ayatDiHalaman); // bobot per ayat
+      totalJuz += (0.05 / ayatDiHalaman);
     }
   }
 
   totalJuz = totalJuz.toFixed(2);
 
-  // Hilangkan duplikat halaman
   const halamanUnik = [...new Set(halamanValid)].sort((a, b) => a - b);
 
-  // Hitung juz tercakup
   const juzTercakup = [];
   for (let i = 0; i < halamanAwalJuz.length; i++) {
     const awalJuz = halamanAwalJuz[i];
     const akhirJuz = i < halamanAwalJuz.length - 1 ? halamanAwalJuz[i + 1] - 1 : 604;
     if (akhirJuz >= 602 && awalJuz <= 604) continue;
     for (let h of halamanUnik) {
-      if (h >= awalJuz && h <= akhirJuz) {
-        juzTercakup.push(i + 1);
-        break;
-      }
+      if (h >= awalJuz && h <= akhirJuz) { juzTercakup.push(i + 1); break; }
     }
   }
 
@@ -3986,32 +4010,19 @@ function updateTotalJuz(row) {
     const ranges = [];
     let start = list[0], end = start;
     for (let i = 1; i < list.length; i++) {
-      if (list[i] === end + 1) {
-        end = list[i];
-      } else {
-        ranges.push(start === end ? `${start}` : `${start}-${end}`);
-        start = end = list[i];
-      }
+      if (list[i] === end + 1) { end = list[i]; }
+      else { ranges.push(start === end ? `${start}` : `${start}-${end}`); start = end = list[i]; }
     }
     ranges.push(start === end ? `${start}` : `${start}-${end}`);
     return ranges.join(", ");
   }
 
-  const juzTerbacaFormatted = compressJuzRanges(juzTercakup);
-
-  // ===== Hitung halaman terbaca (parsial) =====
   function calculateHalamanTerbaca(halamanList) {
     if (!halamanList || halamanList.length === 0) return { ranges: "-", total: 0 };
+    const halamanCountMap = {};
+    for (let h of halamanList) halamanCountMap[h] = (halamanCountMap[h] || 0) + 1;
 
-    const halamanCountMap = {}; // key: halaman, value: jumlah ayat terbaca
-    for (let h of halamanList) {
-      halamanCountMap[h] = (halamanCountMap[h] || 0) + 1;
-    }
-
-    const uniqueHalaman = Object.keys(halamanCountMap)
-                               .map(Number)
-                               .sort((a, b) => a - b);
-
+    const uniqueHalaman = Object.keys(halamanCountMap).map(Number).sort((a, b) => a - b);
     const ranges = [];
     let totalHalaman = 0;
 
@@ -4025,21 +4036,15 @@ function updateTotalJuz(row) {
       totalHalaman += ayatTerbaca / ayatTotal;
 
       if (i > 0) {
-        if (h === end + 1) {
-          end = h;
-        } else {
-          ranges.push(start === end ? `${start}` : `${start}-${end}`);
-          start = end = h;
-        }
+        if (h === end + 1) end = h;
+        else { ranges.push(start === end ? `${start}` : `${start}-${end}`); start = end = h; }
       }
     }
-
     ranges.push(start === end ? `${start}` : `${start}-${end}`);
-
     return { ranges: ranges.join(", "), total: totalHalaman };
   }
 
-  // Pemakaian di tabel
+  const juzTerbacaFormatted = compressJuzRanges(juzTercakup);
   const result = calculateHalamanTerbaca(halamanValid);
   row.querySelector(".halaman-terbaca").textContent = result.ranges;
   row.querySelector(".total-halaman").textContent = result.total.toFixed(2);
@@ -4103,9 +4108,7 @@ async function simpanDataMutabaah(saveBtn){
   // === ABSENSI FLEX — persis pola B57 ===
   function buildAbsensi6(items, target){
     const t = Math.max(1, Math.min(6, Number(target)||1));
-    const chosen = (items||[])
-      .filter(it=>it.checked)
-      .map(it=>String(it.key).toLowerCase().replace(/\d+$/,''));
+    const chosen = (items||[]).filter(it=>it.checked).map(it=>String(it.key).toLowerCase().replace(/\d+$/,''));
     const out=[]; for(let i=0;i<t;i++) out.push(chosen[i]||"");
     return out;
   }
@@ -4153,6 +4156,32 @@ async function simpanDataMutabaah(saveBtn){
 
   if (saveBtn){ saveBtn.disabled=true; saveBtn.dataset._old=saveBtn.textContent; saveBtn.textContent='⏳ Menyimpan...'; }
 
+  // NEW: helper POST selected-ayah (reuse dari tahap pertama jika ada)
+  const postSelectedAyah = async ({kelas, nis, tanggal, ranges, remove=false}) => {
+    try{
+      const res = await fetch("/api/selectedayah", {
+        method:"POST",
+        headers:{ "Content-Type":"application/json" },
+        body: JSON.stringify({ kelas, nis, tanggal, ranges, remove })
+      });
+      return res.ok;
+    }catch{ return false; }
+  };
+  const splitRangesAcrossSurah = (sFrom, aFrom, sTo, aTo) => {
+    const out=[]; if(!sFrom||!aFrom||!sTo||!aTo) return out;
+    const startS=Number(sFrom), endS=Number(sTo);
+    const asc = startS<=endS; const lo=asc?startS:endS; const hi=asc?endS:startS;
+    for (let s=lo; s<=hi; s++){
+      const surahObj = surahList.find(x=>Number(x.id)===Number(s));
+      const maxAyat = surahObj ? Number(surahObj.jumlah_ayat) : 0;
+      let f = (s===startS)?Number(aFrom):1;
+      let t = (s===endS)?Number(aTo):maxAyat;
+      if (f>t) [f,t]=[t,f];
+      if (maxAyat) out.push({ surah:Number(s), from:f, to:t });
+    }
+    return out;
+  };
+
   try{
     const groupByTanggal = new Map();
     rows.forEach(row=>{
@@ -4171,6 +4200,9 @@ async function simpanDataMutabaah(saveBtn){
       }catch(e){ console.warn('Tidak bisa ambil data lama', e); }
 
       const dataMerged = Array.isArray(dataLama)?[...dataLama]:[];
+
+      // === NEW: kumpulkan juga payload selected-ayah untuk tanggal ini per NIS ===
+      const selPayloadByNis = new Map();
 
       rowsTanggal.forEach(row=>{
         const id   = getRowId(row);
@@ -4197,7 +4229,6 @@ async function simpanDataMutabaah(saveBtn){
         const totalHalaman = row.querySelector(".total-halaman")?.textContent ?? existing?.totalHalaman ?? "";
         const juzTerbaca   = row.querySelector(".juz-terbaca")?.textContent ?? existing?.juzTerbaca ?? "";
 
-        // Nilai umum (tetap ada)
         const nilaiCell = row.querySelector(".lihat-quran-btn")?.parentElement;
         const nilaiStr  = nilaiCell?.querySelector("div:nth-child(1)")?.innerText?.trim()||"";
         const parsed    = parseNilaiStr(nilaiStr);
@@ -4210,7 +4241,6 @@ async function simpanDataMutabaah(saveBtn){
 
         // -------- Murajaah (3 sesi + nilai/predikat per sesi) --------
         const murCell=row.querySelector('.murajaah-cell');
-
         function collectSess(i){
           if (!murCell) return {from:"",to:"",pages:"", jFrom:null, jTo:null, juz:0, score:null, pText:null, pHuruf:null};
           const sF=murCell.dataset[`sf${i}`]||"", aF=murCell.dataset[`af${i}`]||"";
@@ -4227,46 +4257,12 @@ async function simpanDataMutabaah(saveBtn){
           const pHuruf= murCell.dataset[`phuruf${i}`] || null;
           return { from,to,pages,jFrom,jTo,juz, score, pText, pHuruf };
         }
-
-        let s1 = collectSess(1);
-        let s2 = collectSess(2);
-        let s3 = collectSess(3);
+        let s1 = collectSess(1), s2 = collectSess(2), s3 = collectSess(3);
 
         if (!murCell){
-          // fallback bila tidak ada modal dataset
-          s1 = {
-            from: existing?.murFrom || "",
-            to:   existing?.murTo   || "",
-            pages:existing?.murPages|| "",
-            jFrom: existing?.jFrom1 ?? null,
-            jTo:   existing?.jTo1   ?? null,
-            juz:   parseNum(existing?.juzmur1 || existing?.juzmurajaah || 0),
-            score: existing?.murScore1 ?? null,
-            pText: existing?.murPredText1 || null,
-            pHuruf: existing?.murPredHuruf1 || null
-          };
-          s2 = {
-            from: existing?.murFrom2 || "",
-            to:   existing?.murTo2   || "",
-            pages:existing?.murPages2|| "",
-            jFrom: existing?.jFrom2 ?? null,
-            jTo:   existing?.jTo2   ?? null,
-            juz:   parseNum(existing?.juzmur2 || 0),
-            score: existing?.murScore2 ?? null,
-            pText: existing?.murPredText2 || null,
-            pHuruf: existing?.murPredHuruf2 || null
-          };
-          s3 = {
-            from: existing?.murFrom3 || "",
-            to:   existing?.murTo3   || "",
-            pages:existing?.murPages3|| "",
-            jFrom: existing?.jFrom3 ?? null,
-            jTo:   existing?.jTo3   ?? null,
-            juz:   parseNum(existing?.juzmur3 || 0),
-            score: existing?.murScore3 ?? null,
-            pText: existing?.murPredText3 || null,
-            pHuruf: existing?.murPredHuruf3 || null
-          };
+          s1 = { from: existing?.murFrom || "", to: existing?.murTo || "", pages: existing?.murPages|| "", jFrom: existing?.jFrom1 ?? null, jTo: existing?.jTo1 ?? null, juz: parseNum(existing?.juzmur1 || existing?.juzmurajaah || 0), score: existing?.murScore1 ?? null, pText: existing?.murPredText1 || null, pHuruf: existing?.murPredHuruf1 || null };
+          s2 = { from: existing?.murFrom2||"", to: existing?.murTo2||"", pages:existing?.murPages2||"", jFrom: existing?.jFrom2 ?? null, jTo: existing?.jTo2 ?? null, juz: parseNum(existing?.juzmur2 || 0), score: existing?.murScore2 ?? null, pText: existing?.murPredText2 || null, pHuruf: existing?.murPredHuruf2 || null };
+          s3 = { from: existing?.murFrom3||"", to: existing?.murTo3||"", pages:existing?.murPages3||"", jFrom: existing?.jFrom3 ?? null, jTo: existing?.jTo3 ?? null, juz: parseNum(existing?.juzmur3 || 0), score: existing?.murScore3 ?? null, pText: existing?.murPredText3 || null, pHuruf: existing?.murPredHuruf3 || null };
         }
 
         let juzMurAll = 0;
@@ -4304,7 +4300,6 @@ async function simpanDataMutabaah(saveBtn){
         if (!marks.audio) marks.audio = [];
 
         // === SUSUN BASE DATA ===
-        // NOTE: 'dari'/'sampai' hanya diisi jika surah & ayat lengkap (supaya konsisten dgn reservasi)
         const base = {
           ...existing,
           id, nis, nama, jenjang, semester,
@@ -4317,7 +4312,6 @@ async function simpanDataMutabaah(saveBtn){
           sampai: (surahSampai && ayatSampai) ? `${surahSampai}:${ayatSampai}`   : "",
           totalJuz, halaman, totalHalaman, juzTerbaca, keterangan,
 
-          // Murajaah 3 sesi + skor/predikat
           juzmur1: Number(parseNum(s1.juz).toFixed(2)),
           juzmur2: Number(parseNum(s2.juz).toFixed(2)),
           juzmur3: Number(parseNum(s3.juz).toFixed(2)),
@@ -4338,12 +4332,9 @@ async function simpanDataMutabaah(saveBtn){
           murPredHuruf3: s3.pHuruf || null,
 
           murSessions,
-
-          // Legacy
           murFrom:  murFromLegacy,
           murTo:    murToLegacy,
           murPages: murPagesLegacy,
-
           marks
         };
         const newData = buttonCell ? { ...base, buttonCell } : base;
@@ -4351,8 +4342,18 @@ async function simpanDataMutabaah(saveBtn){
         const idx = dataMerged.findIndex(d=>String(d.id)===String(id));
         if (idx!==-1) dataMerged[idx]=newData;
         else dataMerged.push(newData);
+
+        // === NEW: siapkan payload selected-ayah per NIS/tanggal ===
+        if (!selPayloadByNis.has(nis)) selPayloadByNis.set(nis, []);
+        if (surahDari && ayatDari && surahSampai && ayatSampai) {
+          selPayloadByNis.get(nis).push({ tanggal, ranges: splitRangesAcrossSurah(surahDari, Number(ayatDari), surahSampai, Number(ayatSampai)) });
+        } else {
+          // kosong → hapus tanggal ini
+          selPayloadByNis.get(nis).push({ tanggal, remove:true, ranges:[] });
+        }
       });
 
+      // === SAVE absensi harian seperti biasa ===
       const res=await fetch('/api/saveData',{
         method:'POST',
         headers:{'Content-Type':'application/json','Accept':'application/json'},
@@ -4360,6 +4361,17 @@ async function simpanDataMutabaah(saveBtn){
       });
       const result=await res.json().catch(()=>({}));
       hasilKirim.push({tanggal, ok:!!result?.success, result});
+
+      // === NEW: persist selected-ayah ke server ===
+      for (const [nis, list] of selPayloadByNis.entries()){
+        for (const it of list){
+          await postSelectedAyah({
+            kelas, nis, tanggal: it.tanggal,
+            ranges: it.ranges || [],
+            remove: !!it.remove
+          });
+        }
+      }
     }
 
     const gagal=hasilKirim.filter(h=>!h.ok);
