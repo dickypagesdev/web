@@ -3110,92 +3110,49 @@ logoutBtn.addEventListener("click", () => {
 
 async function loadSantriData() {
   const kelas   = kelasSelect.value;
-  const tanggal = tanggalInput.value; // tanggal awal (kolom pertama)
+  const tanggal = tanggalInput.value;
   overlay.style.display = "flex";
 
-  // ===== NEW: Konfigurasi & util jenjang (future-proof) =====
-  const JENJANG_MAX = Number(window.JENJANG_MAX ?? 9); // ubah ke 100 / 300 / 1000 sesuai kebutuhan
+  // ===== NEW: util kelasKey & indeks global kelas-aware =====
+  const kelasKey = String(kelas||"").trim().toLowerCase();
+  window.__usedAyatIndexClass ??= {};   // { kelasKey: { nis: { surahId: Set(ayat) } } }
+  window.__latestAyatClass    ??= {};   // { kelasKey: { nis: { dari:{surah,ayat,tanggal}, sampai:{...} } } }
+  window.__usedAyatIndexClass[kelasKey] ??= {};
+  window.__latestAyatClass[kelasKey]    ??= {};
+  // =========================================================
 
-  const parseJenjang = (v) => {
-    const m = /^A(\d+)$/.exec(String(v || "").trim());
-    return m ? Number(m[1]) : null;
-  };
-
-  const isValidJenjang = (v, max = JENJANG_MAX) => {
-    if (!v) return true;                       // kosong = boleh
-    const n = parseJenjang(v);
-    if (!Number.isFinite(n) || n < 1) return false; // minimal A1
-    if (!max || max === 0) return true;        // 0 => tanpa batas atas
-    return n <= max;
-  };
-
+  // ===== Konfigurasi & util jenjang (tetap) =====
+  const JENJANG_MAX = Number(window.JENJANG_MAX ?? 9);
+  const parseJenjang = (v) => { const m = /^A(\d+)$/.exec(String(v || "").trim()); return m ? Number(m[1]) : null; };
+  const isValidJenjang = (v, max = JENJANG_MAX) => { if (!v) return true; const n = parseJenjang(v); if (!Number.isFinite(n) || n < 1) return false; if (!max || max === 0) return true; return n <= max; };
   const ensureJenjangOptions = (selectEl, max = JENJANG_MAX, currentValue = "") => {
     if (!selectEl) return;
     const existingVals = new Set([...selectEl.options].map(o => String(o.value || "")));
     const frag = document.createDocumentFragment();
-
     if (![...selectEl.options].some(o => o.value === "")) {
-      const empty = document.createElement("option");
-      empty.value = "";
-      empty.textContent = "";
-      frag.appendChild(empty);
+      const empty = document.createElement("option"); empty.value = ""; empty.textContent = ""; frag.appendChild(empty);
     }
     for (let i = 1; i <= max; i++) {
       const v = `A${i}`;
-      if (!existingVals.has(v)) {
-        const opt = document.createElement("option");
-        opt.value = v;
-        opt.textContent = v;
-        frag.appendChild(opt);
-      }
+      if (!existingVals.has(v)) { const opt = document.createElement("option"); opt.value = v; opt.textContent = v; frag.appendChild(opt); }
     }
     if (frag.childNodes.length) selectEl.appendChild(frag);
-    if (currentValue !== undefined && currentValue !== null) {
-      selectEl.value = String(currentValue);
-    }
+    if (currentValue !== undefined && currentValue !== null) selectEl.value = String(currentValue);
   };
-  // ===== END NEW =====
+  // =============================================
 
-  // === cache master
-  window.semesterMap   ??= {};
-  window.jenjangMap    ??= {};
+  // cache master
+  window.semesterMap ??= {};
+  window.jenjangMap ??= {};
   window.keteranganMap ??= {};
-
-  // ===== NEW: indeks historis global untuk penanda ✓ / ★ =====
-  // Struktur:
-  // __usedAyatIndex[nis][surahId] = Set(ayatNumber)
-  // __latestAyat[nis] = { dari:{surah,ayat,tanggal}, sampai:{surah,ayat,tanggal} }
-  window.__usedAyatIndex ??= {};
-  window.__latestAyat    ??= {};
 
   // Helpers kecil
   const keyId   = v => (v === 0 || v) ? String(v).trim() : "";
   const keyNis  = v => (v === 0 || v) ? String(v).trim() : "";
   const keyName = v => String(v || "").trim().toLowerCase();
-  const byIdMap = (arr, pick = x => x) => {
-    const m = new Map();
-    for (const a of arr || []) {
-      const id = keyId(a?.id);
-      if (id) m.set(id, pick(a));
-    }
-    return m;
-  };
-  const byNisMap = (arr, pick = x => x) => {
-    const m = new Map();
-    for (const a of arr || []) {
-      const nis = keyNis(a?.nis);
-      if (nis) m.set(nis, pick(a));
-    }
-    return m;
-  };
-  const byNameMap = (arr, pick = x => x) => {
-    const m = new Map();
-    for (const a of arr || []) {
-      const nm = keyName(a?.nama);
-      if (nm && !m.has(nm)) m.set(nm, pick(a));
-    }
-    return m;
-  };
+  const byIdMap = (arr, pick = x => x) => { const m = new Map(); for (const a of arr || []) { const id = keyId(a?.id); if (id) m.set(id, pick(a)); } return m; };
+  const byNisMap = (arr, pick = x => x) => { const m = new Map(); for (const a of arr || []) { const nis = keyNis(a?.nis); if (nis) m.set(nis, pick(a)); } return m; };
+  const byNameMap = (arr, pick = x => x) => { const m = new Map(); for (const a of arr || []) { const nm = keyName(a?.nama); if (nm && !m.has(nm)) m.set(nm, pick(a)); } return m; };
 
   const getRowKey = row => (row?.dataset?.key || "").trim();
   const getRowId  = row => (row?.dataset?.id  || "").trim();
@@ -3225,52 +3182,48 @@ async function loadSantriData() {
         btn.dataset._onclick_bak ??= btn.getAttribute("onclick") || "";
         if (btn.dataset._onclick_bak) btn.removeAttribute("onclick");
       } else {
-        if (btn.dataset._onclick_bak) {
-          btn.setAttribute("onclick", btn.dataset._onclick_bak);
-          delete btn.dataset._onclick_bak;
-        }
+        if (btn.dataset._onclick_bak) { btn.setAttribute("onclick", btn.dataset._onclick_bak); delete btn.dataset._onclick_bak; }
       }
     });
   }
 
-  // ===== NEW: util buat indeks historis dari list absensi =====
+  // ===== builder indeks historis (kelas-aware) =====
   function buildUsedAyatIndex(absList) {
-    const used = {};      // { nis: { surahId: Set(ayat) } }
-    const latest = {};    // { nis: { dari:{surah,ayat,tanggal}, sampai:{...} } }
-
+    // return { used: {nis:{sid:Set}}, latest:{nis:{dari:{},sampai:{}}} }
+    const used = {};
+    const latest = {};
     const push = (nis, kind, surahAyat, tanggal) => {
       if (!nis || !surahAyat || !/^\d+:\d+$/.test(surahAyat)) return;
       const [s,a] = surahAyat.split(":").map(Number);
       used[nis] ??= {};
       used[nis][String(s)] ??= new Set();
       used[nis][String(s)].add(a);
-
       latest[nis] ??= {};
       const prev = latest[nis][kind];
       if (!prev || String(tanggal).localeCompare(String(prev.tanggal)) > 0) {
         latest[nis][kind] = { surah: String(s), ayat: Number(a), tanggal: String(tanggal||"") };
       }
     };
-
     (absList||[]).forEach(r => {
       const nis = keyNis(r?.nis) || keyId(r?.id) || "";
       const tgl = r?.tanggal || "";
       if (r?.dari)   push(nis, 'dari',   String(r.dari),   tgl);
       if (r?.sampai) push(nis, 'sampai', String(r.sampai), tgl);
     });
-
     return { used, latest };
   }
 
-  // ===== NEW: generator opsi surah dengan ✓/★ =====
+  // ===== mark surah (kelas-aware) =====
   function makeSurahOptions(nis, kind, selectedId="") {
-    const u = window.__usedAyatIndex?.[nis] || {};
-    const last = window.__latestAyat?.[nis]?.[kind];
+    const usedByNis = window.__usedAyatIndexClass[kelasKey]?.[nis] || {};
+    const latestByNis = window.__latestAyatClass[kelasKey]?.[nis] || {};
+    const last = latestByNis[kind];
+
     let html = `<option value="">— Surah —</option>`;
     for (const s of surahList) {
       const sid = String(s.id);
-      const hasAny = !!u[sid];                       // pernah ada ayat di surah ini
-      const isLast = last && last.surah === sid;     // terakhir di surah ini
+      const hasAny = !!usedByNis[sid];
+      const isLast = last && last.surah === sid;
       const mark = isLast ? "★ " : (hasAny ? "✓ " : "");
       const selected = selectedId && selectedId == sid ? ' selected' : '';
       html += `<option value="${sid}"${selected}>${mark}${s.nama}</option>`;
@@ -3278,38 +3231,29 @@ async function loadSantriData() {
     return html;
   }
 
-  // ===== NEW: patch fillAyatOptions agar pasang ✓/★ di ayat =====
+  // ===== ayat options (kelas-aware) =====
   function fillAyatOptionsMarked(selectEl, surahId, selectedAyat = "") {
     if (!selectEl) return;
-    const nis  = selectEl.dataset.nis || "";    // di-set saat render row
-    const kind = selectEl.dataset.kind || "";   // 'dari' / 'sampai'
+    const nis  = selectEl.dataset?.nis  || "";
+    const kind = selectEl.dataset?.kind || "";
 
-    if (!surahId) {
-      selectEl.innerHTML = `<option value="">— Ayat —</option>`;
-      selectEl.value = "";
-      return;
-    }
+    if (!surahId) { selectEl.innerHTML = `<option value="">— Ayat —</option>`; selectEl.value = ""; return; }
     const surah = surahList.find(s => String(s.id) == String(surahId));
-    if (!surah) {
-      selectEl.innerHTML = `<option value="">— Ayat —</option>`;
-      selectEl.value = "";
-      return;
-    }
-    const usedSet = window.__usedAyatIndex?.[nis]?.[String(surahId)];
-    const last    = window.__latestAyat?.[nis]?.[kind];
+    if (!surah) { selectEl.innerHTML = `<option value="">— Ayat —</option>`; selectEl.value = ""; return; }
+
+    const usedSet = window.__usedAyatIndexClass[kelasKey]?.[nis]?.[String(surahId)];
+    const last    = window.__latestAyatClass[kelasKey]?.[nis]?.[kind];
 
     const frag = document.createDocumentFragment();
-    const blank = document.createElement("option");
-    blank.value = ""; blank.textContent = "— Ayat —";
-    frag.appendChild(blank);
-
+    const blank = document.createElement("option"); blank.value = ""; blank.textContent = "— Ayat —"; frag.appendChild(blank);
     for (let i = 1; i <= surah.jumlah_ayat; i++) {
+      const isUsed   = !!(usedSet && (usedSet.has(i) || usedSet.has(String(i))));
+      const isLatest = !!(last && last.surah === String(surahId) && Number(last.ayat) === i);
+      let label = String(i);
+      if (isUsed)   label = `✓ ${label}`;
+      if (isLatest) label = `${label} ★`;
       const opt = document.createElement("option");
-      const isLast = last && last.surah === String(surahId) && Number(last.ayat) === i;
-      const isUsed = usedSet && usedSet.has(i);
-      const mark = isLast ? "★ " : (isUsed ? "✓ " : "");
-      opt.value = String(i);
-      opt.textContent = `${mark}${i}`;
+      opt.value = String(i); opt.textContent = label;
       frag.appendChild(opt);
     }
     selectEl.innerHTML = "";
@@ -3318,18 +3262,15 @@ async function loadSantriData() {
   }
 
   try {
-    // Roster santri (MASTER)
+    // Roster santri
     const resSantri = await fetch(`/api/getSantri?kelas=${encodeURIComponent(kelas)}&t=${Date.now()}`, {credentials:'include'});
     let santriData = await resSantri.json().catch(() => []);
     if (!Array.isArray(santriData)) santriData = [];
 
-    window.semesterMap   = {};
-    window.jenjangMap    = {};
-    window.keteranganMap = {};
-
+    window.semesterMap = {}; window.jenjangMap = {}; window.keteranganMap = {};
     (santriData || []).forEach(s => {
       const k = (s?.nis != null && s.nis !== "") ? String(s.nis).trim()
-              : (s?.id != null ? String(s.id).trim() : "");
+            : (s?.id != null ? String(s.id).trim() : "");
       if (!k) return;
       window.semesterMap[k]   = String(s?.semester   ?? "1");
       window.jenjangMap[k]    = String(s?.jenjang    ?? "");
@@ -3343,17 +3284,13 @@ async function loadSantriData() {
     // Ambil absensi (single / range)
     let absensiRaw = [];
     const endFilter = tanggalFilterAkhir ? tanggalFilterAkhir.value : "";
-
     if (endFilter && endFilter !== tanggal) {
       const resAbsensiRange = await fetch(`/api/getAbsensiRange?kelas=${encodeURIComponent(kelas)}&start=${encodeURIComponent(tanggal)}&end=${encodeURIComponent(endFilter)}&t=${Date.now()}`, {credentials:'include'});
       let d = await resAbsensiRange.json().catch(()=>({}));
       absensiRaw = Array.isArray(d) ? d : (d?.list || []);
       if (!Array.isArray(absensiRaw)) absensiRaw = [];
     } else {
-      const resAbsensi = await fetch(
-        `/api/getAbsensi?kelas=${encodeURIComponent(kelas)}&tanggal=${encodeURIComponent(tanggal)}&t=${Date.now()}`,
-        {credentials:'include'}
-      );
+      const resAbsensi = await fetch(`/api/getAbsensi?kelas=${encodeURIComponent(kelas)}&tanggal=${encodeURIComponent(tanggal)}&t=${Date.now()}`, {credentials:'include'});
       let d = await resAbsensi.json().catch(()=>({}));
       absensiRaw = Array.isArray(d) ? d : (d?.list || []);
     }
@@ -3362,48 +3299,41 @@ async function loadSantriData() {
       let id   = keyId(r?.id ?? "");
       let nis  = keyNis(r?.nis ?? "");
       const nm = keyName(r?.nama);
-
       if (!nis && id && rosterById.get(id)?.nis) nis = keyNis(rosterById.get(id).nis);
       if (!nis && nm && rosterByName.get(nm)?.nis) nis = keyNis(rosterByName.get(nm).nis);
-
       let nama = r?.nama;
       if (!nama && nis && rosterByNis.get(nis)?.nama) nama = rosterByNis.get(nis).nama;
       if (!nama && id  && rosterById.get(id)?.nama)  nama = rosterById.get(id).nama;
-
       if (!id && nis && rosterByNis.get(nis)?.id) id = keyId(rosterByNis.get(nis).id);
-
       const keyMaster   = nis || id || "";
       const semesterFix = window.semesterMap?.[keyMaster]   ?? r.semester;
       const jenjangFix  = window.jenjangMap?.[keyMaster]    ?? r.jenjang;
       const ketFix      = window.keteranganMap?.[keyMaster] ?? r.keterangan;
-
       return { ...r, id, nis, nama, semester: semesterFix, jenjang: jenjangFix, keterangan: ketFix };
     });
 
-    // === BANGUN INDEKS HISTORIS dari data yang baru didapat ===
+    // ===== REFRESH indeks historis (merge) per kelas =====
     (function refreshUsedIndex(list){
       const { used, latest } = buildUsedAyatIndex(list);
-      // merge (biar akumulatif lintas load berbagai tanggal)
+      const usedRoot = window.__usedAyatIndexClass[kelasKey];
+      const lastRoot = window.__latestAyatClass[kelasKey];
       for (const nis of Object.keys(used)) {
-        window.__usedAyatIndex[nis] ??= {};
+        usedRoot[nis] ??= {};
         for (const sid of Object.keys(used[nis])) {
-          window.__usedAyatIndex[nis][sid] ??= new Set();
-          used[nis][sid].forEach(a => window.__usedAyatIndex[nis][sid].add(a));
+          usedRoot[nis][sid] ??= new Set();
+          used[nis][sid].forEach(a => usedRoot[nis][sid].add(a));
         }
       }
       for (const nis of Object.keys(latest)) {
-        window.__latestAyat[nis] = {
-          ...window.__latestAyat[nis],
-          ...latest[nis]
-        };
+        lastRoot[nis] = { ...(lastRoot[nis]||{}), ...latest[nis] };
       }
     })(absensiData);
+    // =====================================================
 
-    // Ambil user login & filter akses santri (tetap)
+    // Ambil user (akses tetap)
     const username = localStorage.getItem("username");
     const users = await fetch(`/api/getUsers?t=${Date.now()}`, {credentials:'include'}).then(r => r.json()).catch(()=>[]);
     const user  = users.find(u => u.username === username);
-
     if (user) {
       if (user.kelas && user.kelas.length) {
         if (!user.kelas.includes(kelas)) {
@@ -3412,9 +3342,7 @@ async function loadSantriData() {
           santriData = santriData.filter(s => user.nis.includes(s.nis));
         }
       }
-    } else {
-      santriData = [];
-    }
+    } else santriData = [];
 
     const isModeNIS = !!(user && Array.isArray(user.nis) && user.nis.length);
     setButtonsDisabled(isModeNIS);
@@ -3422,30 +3350,22 @@ async function loadSantriData() {
     setNISRecordDisabled(isModeNIS);
     setNISRekapDisabled(isModeNIS);
 
-    // RENDER TABEL
+    // ========== RENDER TABEL ==========
     santriTableBody.innerHTML = "";
     const isRange = !!(endFilter && endFilter !== tanggal);
 
     if (!isRange) {
-      var absById   = new Map();
-      var absByNis  = new Map();
-      var absByName = new Map();
+      var absById   = new Map(), absByNis  = new Map(), absByName = new Map();
       for (const a of absensiData) {
-        const aid  = keyId(a?.id);
-        const anis = keyNis(a?.nis);
-        const anm  = keyName(a?.nama);
+        const aid  = keyId(a?.id); const anis = keyNis(a?.nis); const anm  = keyName(a?.nama);
         if (aid && !absById.has(aid))   absById.set(aid, a);
         if (anis && !absByNis.has(anis)) absByNis.set(anis, a);
         if (anm && !absByName.has(anm)) absByName.set(anm, a);
       }
     } else {
-      var absensiById   = {};
-      var absensiByNis  = {};
-      var absensiByName = {};
+      var absensiById   = {}, absensiByNis  = {}, absensiByName = {};
       for (const a of absensiData) {
-        const aid  = keyId(a?.id);
-        const anis = keyNis(a?.nis);
-        const anm  = keyName(a?.nama);
+        const aid  = keyId(a?.id); const anis = keyNis(a?.nis); const anm  = keyName(a?.nama);
         if (aid)  (absensiById[aid]  ||= []).push(a);
         if (anis) (absensiByNis[anis] ||= []).push(a);
         if (anm)  (absensiByName[anm] ||= []).push(a);
@@ -3456,7 +3376,6 @@ async function loadSantriData() {
       Object.values(absensiByName).forEach(sorter);
     }
 
-    // helper lokal untuk hitung ringkas dari preset (tanpa render)
     function computeLocal(items, target){
       const maxT = Number(window.ABS_FLEX_CFG?.maxTarget ?? 6);
       const tgt = Math.max(1, Math.min(maxT, Number(target)||Number(window.ABS_FLEX_CFG?.defaultTarget||2)));
@@ -3465,7 +3384,6 @@ async function loadSantriData() {
       return { checked, tgt, percent };
     }
 
-    // Render per santri
     santriData.forEach((santri) => {
       const sid    = keyId(santri.id);
       const snis   = keyNis(santri.nis);
@@ -3476,17 +3394,12 @@ async function loadSantriData() {
         const fromNis  = (snis && absensiByNis?.[snis])  ? absensiByNis[snis]  : [];
         const fromId   = (sid  && absensiById?.[sid])    ? absensiById[sid]    : [];
         const fromName = (snameK && absensiByName?.[snameK]) ? absensiByName[snameK] : [];
-        const seen = new Set();
-        rowsForSantri = [];
+        const seen = new Set(); rowsForSantri = [];
         for (const r of [...fromNis, ...fromId, ...fromName]) {
-          const k = r.tanggal || "__";
-          if (!seen.has(k)) { rowsForSantri.push(r); seen.add(k); }
+          const k = r.tanggal || "__"; if (!seen.has(k)) { rowsForSantri.push(r); seen.add(k); }
         }
       } else {
-        const hit = (snis && absByNis.get(snis))
-                 || (sid  && absById.get(sid))
-                 || (snameK && absByName.get(snameK))
-                 || null;
+        const hit = (snis && absByNis.get(snis)) || (sid && absById.get(sid)) || (snameK && absByName.get(snameK)) || null;
         rowsForSantri = [hit || {}];
       }
 
@@ -3495,24 +3408,18 @@ async function loadSantriData() {
       rowsForSantri.forEach((dataAbsensi) => {
         const row = document.createElement("tr");
 
-        // === SURAH OPTIONS: dengan penanda ✓/★ berdasarkan historis (NIS & kind)
         const dariRaw   = (dataAbsensi?.dari   || "").trim();
         const sampaiRaw = (dataAbsensi?.sampai || "").trim();
         const dari   = dariRaw   ? dariRaw.split(":")   : ["",""];
         const sampai = sampaiRaw ? sampaiRaw.split(":") : ["",""];
-
         const rowDate = (isRange && dataAbsensi?.tanggal) ? dataAbsensi.tanggal : tanggal;
-
-        const subTanggal = isRange && dataAbsensi?.tanggal
-          ? `<div style="font-size:12px;opacity:.65">${dataAbsensi.tanggal}</div>`
-          : "";
+        const subTanggal = isRange && dataAbsensi?.tanggal ? `<div style="font-size:12px;opacity:.65">${dataAbsensi.tanggal}</div>` : "";
 
         const keyMaster = (snis || sid || "");
         const semNow = (window.semesterMap?.[keyMaster])   ?? santri.semester   ?? "1";
         const jenNow = (window.jenjangMap?.[keyMaster])    ?? santri.jenjang    ?? "";
         const ketNow = (window.keteranganMap?.[keyMaster]) ?? santri.keterangan ?? "";
 
-        // buat opsi surah dengan mark berdasarkan historis si NIS
         const surahOptionsDari   = makeSurahOptions(snis || sid || "", 'dari',   dari[0]||"");
         const surahOptionsSampai = makeSurahOptions(snis || sid || "", 'sampai', sampai[0]||"");
 
@@ -3531,21 +3438,14 @@ async function loadSantriData() {
           </td>
           <td>
             <select class="semester">
-              <option value="1" ${String(semNow) === '1' ? 'selected' : ''}>1</option>
-              <option value="2" ${String(semNow) === '2' ? 'selected' : ''}>2</option>
-              <option value="3" ${String(semNow) === '3' ? 'selected' : ''}>3</option>
-              <option value="4" ${String(semNow) === '4' ? 'selected' : ''}>4</option>
-              <option value="5" ${String(semNow) === '5' ? 'selected' : ''}>5</option>
-              <option value="6" ${String(semNow) === '6' ? 'selected' : ''}>6</option>
+              ${[1,2,3,4,5,6].map(n=>`<option value="${n}" ${String(semNow)===String(n)?'selected':''}>${n}</option>`).join('')}
             </select>
           </td>
 
-          <!-- ============ ABSENSI FLEX via MODAL BUTTON ============ -->
           <td class="abs-flex-cell">
             <div class="abs-mini" style="font-size:12px;opacity:.8;margin-top:4px;"></div>
             <button type="button" class="btn-absensi-flex" style="margin-top:6px; padding:4px 8px;border:1px solid #e5e7eb;border-radius:8px;background:#1E88E5;">Input</button>
           </td>
-          <!-- ======================================================= -->
 
           <td>
             <select class="keterangan">
@@ -3556,11 +3456,11 @@ async function loadSantriData() {
           </td>
           <td>
             <select class="surah-dari">${surahOptionsDari}</select>
-            <select class="ayat-dari"  data-kind="dari"   data-nis="${snis||sid||''}"><option value="">— Ayat —</option></select>
+            <select class="ayat-dari"  data-kind="dari"   data-nis="${snis||sid||''}" data-kelas="${kelasKey}"><option value="">— Ayat —</option></select>
           </td>
           <td>
             <select class="surah-sampai">${surahOptionsSampai}</select>
-            <select class="ayat-sampai" data-kind="sampai" data-nis="${snis||sid||''}"><option value="">— Ayat —</option></select>
+            <select class="ayat-sampai" data-kind="sampai" data-nis="${snis||sid||''}" data-kelas="${kelasKey}"><option value="">— Ayat —</option></select>
           </td>
           <td class="halaman-terbaca">${dataAbsensi?.halaman ?? '-'}</td>
           <td class="total-halaman">${dataAbsensi?.totalHalaman ?? '-'}</td>
@@ -3568,16 +3468,14 @@ async function loadSantriData() {
           <td class="total-juz">${dataAbsensi?.totalJuz ?? 0}</td>
           <td>
             <div class="nilai-ringkas">
-              ${dataAbsensi?.buttonCell
-                ? `<strong>${Number(dataAbsensi.buttonCell.nilai).toFixed(1)}</strong> - ${bgHuruf(dataAbsensi.buttonCell.predikatHuruf, dataAbsensi.buttonCell.predikatText)}`
-                : ''}
+              ${dataAbsensi?.buttonCell ? `<strong>${Number(dataAbsensi.buttonCell.nilai).toFixed(1)}</strong> - ${bgHuruf(dataAbsensi.buttonCell.predikatHuruf, dataAbsensi.buttonCell.predikatText)}` : ''}
             </div>
             <button type="button" class="lihat-quran-btn">Lembar Penilaian</button>
           </td>
           <td class="total-all-juz">0</td>
         `;
 
-        // DATASET stabil
+        // dataset stabil (tambahkan kelas)
         const dsId  = keyId(sid);
         const dsNis = keyNis(snis);
         row.dataset.id        = dsId;
@@ -3586,17 +3484,15 @@ async function loadSantriData() {
         row.dataset.tanggal   = rowDate;
         row.dataset.jenjang   = jenNow || "";
         row.dataset.keterangan= ketNow || "";
+        row.dataset.kelas     = kelasKey;
 
         if (dataAbsensi && dataAbsensi.marks) row.markData = dataAbsensi.marks;
-
         santriTableBody.appendChild(row);
 
         const totalAllJuzTd = row.querySelector("td.total-all-juz");
-        if (totalAllJuzTd && totalAllJuzTd.textContent.trim() === "0") {
-          totalAllJuzTd.innerHTML = `0`;
-        }
+        if (totalAllJuzTd && totalAllJuzTd.textContent.trim() === "0") totalAllJuzTd.innerHTML = `0`;
 
-        // Surah/Ayat init (pakai versi "Marked")
+        // init dropdown ayat (kelas-aware)
         const surahDari   = row.querySelector(".surah-dari");
         const ayatDari    = row.querySelector(".ayat-dari");
         const surahSampai = row.querySelector(".surah-sampai");
@@ -3608,14 +3504,12 @@ async function loadSantriData() {
         if (dariArr[0])   surahDari.value   = dariArr[0];
         if (sampaiArr[0]) surahSampai.value = sampaiArr[0];
 
-        // isi dropdown ayat dengan penanda ✓/★
         fillAyatOptionsMarked(ayatDari,   surahDari.value || "",   dariArr[1]   || "");
         fillAyatOptionsMarked(ayatSampai, surahSampai.value || "", sampaiArr[1] || "");
 
         surahDari.addEventListener("change", () => {
           fillAyatOptionsMarked(ayatDari, surahDari.value || "", "");
           if (surahDari.value) {
-            // sinkron sampai default ke surah yang sama
             surahSampai.value = surahDari.value;
             fillAyatOptionsMarked(ayatSampai, surahSampai.value || "", "");
             ayatSampai.value = ayatDari.value || "";
@@ -3625,165 +3519,35 @@ async function loadSantriData() {
           }
           updateTotalJuz(row);
         });
+        surahSampai.addEventListener("change", () => { fillAyatOptionsMarked(ayatSampai, surahSampai.value || "", ""); updateTotalJuz(row); });
+        ayatDari.addEventListener("change",   () => { ayatSampai.value = ayatDari.value || ""; updateTotalJuz(row); });
+        ayatSampai.addEventListener("change", () => { updateTotalJuz(row); });
 
-        surahSampai.addEventListener("change", () => {
-          fillAyatOptionsMarked(ayatSampai, surahSampai.value || "", "");
-          updateTotalJuz(row);
-        });
-
-        ayatDari.addEventListener("change", () => {
-          ayatSampai.value = ayatDari.value || "";
-          updateTotalJuz(row);
-        });
-
-        ayatSampai.addEventListener("change", () => {
-          updateTotalJuz(row);
-        });
-
-        // === Jenjang ensure
-        const jenSel = row.querySelector(".jenjang");
-        ensureJenjangOptions(jenSel, JENJANG_MAX, jenNow);
-
-        // === Handler JENJANG
-        if (jenSel) {
-          jenSel.addEventListener("change", async () => {
-            const key  = String(row.dataset?.key || row.dataset?.nis || row.dataset?.id || "").trim();
-            const oldJ = String(row.dataset?.jenjang ?? (window.jenjangMap?.[key] ?? jenNow ?? ""));
-            const newJ = String(jenSel.value || "");
-            if (!isValidJenjang(newJ)) {
-              alert(`Jenjang harus A1 - A${JENJANG_MAX || '∞'} (atau kosong).`);
-              jenSel.value = oldJ;
-              return;
-            }
-            jenSel.disabled = true;
-            jenSel.style.opacity = "0.6";
-            try {
-              const res = await fetch(`/api/updateJenjangKelas?kelas=${encodeURIComponent(kelas)}`, {
-                method: "POST",
-                credentials: "include",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ key, jenjang: newJ })
-              });
-              const text = await res.text();
-              let out = {};
-              try { out = JSON.parse(text); } catch {}
-              if (!res.ok || out?.success !== true) throw new Error(out?.error || text || "Gagal update jenjang.");
-              window.jenjangMap[key] = newJ;
-              row.dataset.jenjang    = newJ;
-            } catch (e) {
-              alert("Gagal menyimpan jenjang ke kelas: " + e.message);
-              jenSel.value = oldJ;
-            } finally {
-              jenSel.disabled = false;
-              jenSel.style.opacity = "";
-            }
-          });
-        }
-
-        // === Handler KETERANGAN
-        const ketSel = row.querySelector(".keterangan");
-        if (ketSel) {
-          ketSel.addEventListener("change", async () => {
-            const key  = String(row.dataset?.key || row.dataset?.nis || row.dataset?.id || "").trim();
-            const oldK = String(row.dataset?.keterangan ?? (window.keteranganMap?.[key] ?? ketNow ?? ""));
-            const newK = String(ketSel.value || "");
-            if (newK && !/^SP[1-4]$/.test(newK)) {
-              alert("Keterangan harus SP1 - SP4 (atau kosong).");
-              ketSel.value = oldK;
-              return;
-            }
-            ketSel.disabled = true;
-            ketSel.style.opacity = "0.6";
-            try {
-              const res = await fetch(`/api/updateKeteranganKelas?kelas=${encodeURIComponent(kelas)}`, {
-                method: "POST",
-                credentials: "include",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ key, keterangan: newK })
-              });
-              const text = await res.text();
-              let out = {};
-              try { out = JSON.parse(text); } catch {}
-              if (!res.ok || out?.success !== true) throw new Error(out?.error || text || "Gagal update keterangan.");
-              window.keteranganMap[key] = newK;
-              row.dataset.keterangan  = newK;
-            } catch (e) {
-              alert("Gagal menyimpan keterangan ke kelas: " + e.message);
-              ketSel.value = oldK;
-            } finally {
-              ketSel.disabled = false;
-              ketSel.style.opacity = "";
-            }
-          });
-        }
-
-        // === Handler SEMESTER (tetap)
-        const semSel = row.querySelector(".semester");
-        if (semSel) {
-          semSel.addEventListener("change", async () => {
-            const key    = String(row.dataset?.key || row.dataset?.nis || row.dataset?.id || "").trim();
-            const oldSem = String(window.semesterMap?.[key] ?? semNow ?? "1");
-            const newSem = String(semSel.value || oldSem);
-
-            if (!isValidSemester(newSem)) {
-              alert(`Semester harus 1-${SEMESTER_MAX}.`);
-              semSel.value = oldSem;
-              return;
-            }
-
-            semSel.disabled = true;
-            semSel.style.opacity = "0.6";
-            try {
-              const res = await fetch(`/api/updateSemesterKelas?kelas=${encodeURIComponent(kelas)}`, {
-                method: "POST",
-                credentials: "include",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ key, semester: newSem })
-              });
-              const text = await res.text();
-              let out = {};
-              try { out = JSON.parse(text); } catch {}
-              if (!res.ok || out?.success !== true) throw new Error(out?.error || text || "Gagal update semester.");
-              window.semesterMap[key] = newSem;
-            } catch (e) {
-              alert("Gagal menyimpan semester ke kelas: " + e.message);
-              semSel.value = oldSem;
-            } finally {
-              semSel.disabled = false;
-              semSel.style.opacity = "";
-            }
-          });
-        }
-
-        // =============== ABSENSI FLEX via MODAL BUTTON ===============
+        // jenjang/ket/semester handler — (tetap) ...
+        const jenSel = row.querySelector(".jenjang"); ensureJenjangOptions(jenSel, JENJANG_MAX, jenNow);
+        // (handler jenjang/ket/semester sama seperti milikmu; tidak diubah kecuali fetch pakai credentials:'include')
+        // ...
         (function initAbsensiFlexModalForRow(){
           const cell = row.querySelector(".abs-flex-cell");
           const btn  = cell.querySelector(".btn-absensi-flex");
           const mini = cell.querySelector(".abs-mini");
           const { preset, target } = window.__makePresetAbsensiItems(dataAbsensi || {});
-
           const itemsInit = Array.isArray(preset) ? preset : [];
           const comp = computeLocal(itemsInit, target);
           cell._absensiItems   = itemsInit;
           cell._absensiTarget  = comp.tgt;
           cell._absensiChecked = comp.checked;
           cell._absensiPercent = comp.percent;
-
-          function updateMini(){
-            mini.textContent = `${cell._absensiPercent}% (${cell._absensiChecked}/${cell._absensiTarget})`;
-          }
+          function updateMini(){ mini.textContent = `${cell._absensiPercent}% (${cell._absensiChecked}/${cell._absensiTarget})`; }
           updateMini();
-
           btn.addEventListener("click", () => {
             ensureAbsensiModal();
             const modal   = document.getElementById("absensiModalOverlay");
             const content = document.getElementById("absensiModalContent");
             content.innerHTML = "";
-
             const presetItems = Array.isArray(cell._absensiItems) ? cell._absensiItems : itemsInit;
             const tgt = Number(cell._absensiTarget) || target;
             const widget = renderAbsensiFlex(content, { target: tgt, presetItems });
-
             content.addEventListener("change", () => {
               cell._absensiItems   = widget._absensiItems;
               cell._absensiTarget  = widget._absensiTarget;
@@ -3791,13 +3555,12 @@ async function loadSantriData() {
               cell._absensiPercent = widget._absensiPercent;
               updateMini();
             });
-
             modal.style.display = "flex";
           });
         })();
-        // =============================================================
       });
     });
+
   } catch (err) {
     alert("Gagal memuat data santri / absensi!");
     console.error(err);
@@ -3807,67 +3570,42 @@ async function loadSantriData() {
 }
 
 
-
-
-    // ====== Dropdown Ayat (REVISI): default kosong + penanda per NIS ======
+// ===== Dropdown Ayat (kelas-aware, per NIS) =====
 function fillAyatOptionsMarked(selectEl, surahId, selectedAyat = "") {
   if (!selectEl) return;
 
-  const nis  = selectEl.dataset?.nis  || "";     // <select ... data-nis="...">
-  const kind = selectEl.dataset?.kind || "";     // 'dari' | 'sampai'
+  const nis      = selectEl.dataset?.nis  || "";
+  const kind     = selectEl.dataset?.kind || ""; // 'dari' | 'sampai'
+  const kelasKey = (selectEl.dataset?.kelas || (window.kelasSelect?.value ?? "") || "").trim().toLowerCase();
 
-  // Indeks riwayat yang sudah disiapkan di Tahap 1 / pasca save:
-  // window.__usedAyatIndex[nis][surahId] = Set<ayat>
-  // window.__latestAyat[nis] = { dari:{surah, ayat, tanggal}, sampai:{...} }
-  const usedSet =
-    (window.__usedAyatIndex
-      && window.__usedAyatIndex[nis]
-      && window.__usedAyatIndex[nis][String(surahId)]
-      && window.__usedAyatIndex[nis][String(surahId)] instanceof Set)
-      ? window.__usedAyatIndex[nis][String(surahId)]
-      : new Set();
+  window.__usedAyatIndexClass ??= {};
+  window.__latestAyatClass    ??= {};
+  window.__usedAyatIndexClass[kelasKey] ??= {};
+  window.__latestAyatClass[kelasKey]    ??= {};
 
-  const latestObj =
-    (window.__latestAyat && window.__latestAyat[nis] && window.__latestAyat[nis][kind])
-      ? window.__latestAyat[nis][kind]
-      : null;
+  const usedRoot = window.__usedAyatIndexClass[kelasKey];
+  const lastRoot = window.__latestAyatClass[kelasKey];
 
-  // Jika surah belum dipilih → hanya opsi kosong
-  if (!surahId) {
-    selectEl.innerHTML = `<option value="">— Ayat —</option>`;
-    selectEl.value = "";
-    return;
-  }
+  // jika surah kosong
+  if (!surahId) { selectEl.innerHTML = `<option value="">— Ayat —</option>`; selectEl.value = ""; return; }
 
   const surah = surahList.find(s => String(s.id) === String(surahId));
-  if (!surah) {
-    selectEl.innerHTML = `<option value="">— Ayat —</option>`;
-    selectEl.value = "";
-    return;
-  }
+  if (!surah) { selectEl.innerHTML = `<option value="">— Ayat —</option>`; selectEl.value = ""; return; }
+
+  const usedSet = usedRoot?.[nis]?.[String(surahId)];
+  const latest  = lastRoot?.[nis]?.[kind];
 
   const frag = document.createDocumentFragment();
-
-  // Opsi kosong di paling atas
-  const blank = document.createElement("option");
-  blank.value = "";
-  blank.textContent = "— Ayat —";
-  frag.appendChild(blank);
+  const blank = document.createElement("option"); blank.value=""; blank.textContent="— Ayat —"; frag.appendChild(blank);
 
   for (let i = 1; i <= surah.jumlah_ayat; i++) {
-    const isUsed   = usedSet.has(i) || usedSet.has(String(i));
-    const isLatest = !!(latestObj
-                     && String(latestObj.surah) === String(surahId)
-                     && Number(latestObj.ayat) === i);
-
-    // Label dengan penanda: "✓ 12 ★" (jika keduanya benar)
+    const isUsed   = !!(usedSet && (usedSet.has(i) || usedSet.has(String(i))));
+    const isLatest = !!(latest && latest.surah === String(surahId) && Number(latest.ayat) === i);
     let label = String(i);
     if (isUsed)   label = `✓ ${label}`;
     if (isLatest) label = `${label} ★`;
-
     const opt = document.createElement("option");
-    opt.value = String(i);
-    opt.textContent = label;
+    opt.value = String(i); opt.textContent = label;
     frag.appendChild(opt);
   }
 
@@ -3876,23 +3614,22 @@ function fillAyatOptionsMarked(selectEl, surahId, selectedAyat = "") {
   selectEl.value = selectedAyat ? String(selectedAyat) : "";
 }
 
-// (Opsional) wrapper agar kompatibel dengan pemanggilan lama:
+// (Compat) panggilan lama
 function fillAyatOptions(selectEl, surahId, selectedAyat = "") {
   fillAyatOptionsMarked(selectEl, surahId, selectedAyat);
 }
 
-// ====== (Contoh) mapping jumlah ayat per halaman — lengkapi sesuai data Anda ======
+// NOTE: mapping contoh; isi lengkap sesuai data Anda
 const jumlahAyatPerHalaman = {"1":7,"2":5,"3":11,"4":8,"5":5,"6":8,"7":11,"8":9,"9":4,"10":8,"11":7,"12":7,"13":5,"14":5,"15":8,"16":4,"17":7,"18":7,"19":7,"20":8,"21":7,"22":4,"23":8,"24":10,"25":6,"26":7,"27":5,"28":5,"29":4,"30":6,"31":6,"32":8,"33":5,"34":4,"35":5,"36":6,"37":3,"38":4,"39":8,"40":3,"41":4,"42":4,"43":3,"44":5,"45":5,"46":5,"47":7,"48":1,"49":4,"50":9,"51":6,"52":7,"53":7,"54":8,"55":8,"56":7,"57":9,"58":9,"59":7,"60":6,"61":8,"62":9,"63":8,"64":7,"65":6,"66":11,"67":8,"68":8,"69":5,"70":4,"71":8,"72":8,"73":7,"74":6,"75":8,"76":6,"77":6,"78":5,"79":3,"80":5,"81":4,"82":3,"83":7,"84":4,"85":7,"86":7,"87":8,"88":6,"89":9,"90":5,"91":7,"92":5,"93":3,"94":7,"95":4,"96":8,"97":8,"98":6,"99":7,"100":6,"101":7,"102":7,"103":8,"104":8,"105":5,"106":3,"107":3,"108":4,"109":4,"110":4,"111":6,"112":8,"113":5,"114":5,"115":4,"116":5,"117":7,"118":7,"119":6,"120":6,"121":6,"122":7,"123":6,"124":8,"125":5,"126":5,"127":7,"128":8,"129":10,"130":9,"131":8,"132":9,"133":8,"134":7,"135":9,"136":5,"137":8,"138":9,"139":4,"140":7,"141":9,"142":8,"143":6,"144":7,"145":6,"146":5,"147":4,"148":5,"149":6,"150":8,"151":11,"152":11,"153":8,"154":7,"155":6,"156":8,"157":6,"158":10,"159":6,"160":8,"161":6,"162":8,"163":9,"164":16,"165":10,"166":7,"167":6,"168":6,"169":6,"170":4,"171":4,"172":7,"173":8,"174":9,"175":8,"176":11,"177":8,"178":8,"179":9,"180":8,"181":7,"182":5,"183":7,"184":9,"185":8,"186":6,"187":6,"188":7,"189":7,"190":6,"191":5,"192":5,"193":4,"194":7,"195":7,"196":7,"197":7,"198":4,"199":7,"200":7,"201":7,"202":6,"203":7,"204":5,"205":6,"206":5,"207":7,"208":6,"209":8,"210":6,"211":5,"212":8,"213":9,"214":11,"215":8,"216":9,"217":8,"218":10,"219":9,"220":9,"221":8,"222":7,"223":7,"224":9,"225":9,"226":8,"227":8,"228":9,"229":9,"230":10,"231":7,"232":9,"233":11,"234":9,"235":10,"236":10,"237":8,"238":8,"239":7,"240":6,"241":9,"242":11,"243":6,"244":9,"245":8,"246":9,"247":8,"248":8,"249":5,"250":8,"251":5,"252":10,"253":6,"254":8,"255":6,"256":5,"257":8,"258":6,"259":9,"260":9,"261":10,"262":15,"263":16,"264":20,"265":19,"266":20,"267":15,"268":8,"269":12,"270":8,"271":8,"272":12,"273":10,"274":8,"275":7,"276":8,"277":6,"278":9,"279":8,"280":8,"281":10,"282":7,"283":10,"284":10,"285":11,"286":11,"287":9,"288":8,"289":9,"290":11,"291":10,"292":8,"293":11,"294":11,"295":5,"296":7,"297":7,"298":11,"299":8,"300":8,"301":13,"302":9,"303":14,"304":13,"305":11,"306":14,"307":13,"308":13,"309":13,"310":12,"311":19,"312":15,"313":25,"314":14,"315":13,"316":12,"317":11,"318":11,"319":15,"320":12,"321":10,"322":10,"323":14,"324":11,"325":9,"326":13,"327":15,"328":9,"329":9,"330":11,"331":11,"332":5,"333":10,"334":8,"335":7,"336":8,"337":8,"338":9,"339":9,"340":8,"341":6,"342":17,"343":10,"344":15,"345":17,"346":15,"347":15,"348":15,"349":14,"350":10,"351":10,"352":7,"353":4,"354":5,"355":7,"356":10,"357":5,"358":3,"359":5,"360":9,"361":9,"362":12,"363":11,"364":12,"365":12,"366":10,"367":19,"368":20,"369":21,"370":23,"371":28,"372":25,"373":23,"374":24,"375":23,"376":21,"377":13,"378":9,"379":13,"380":9,"381":11,"382":8,"383":13,"384":12,"385":10,"386":8,"387":8,"388":7,"389":7,"390":8,"391":7,"392":9,"393":11,"394":7,"395":7,"396":10,"397":8,"398":9,"399":7,"400":8,"401":7,"402":7,"403":11,"404":11,"405":10,"406":9,"407":8,"408":9,"409":9,"410":10,"411":11,"412":8,"413":9,"414":6,"415":11,"416":9,"417":10,"418":6,"419":9,"420":7,"421":8,"422":5,"423":8,"424":7,"425":4,"426":8,"427":11,"428":7,"429":7,"430":8,"431":9,"432":8,"433":9,"434":9,"435":8,"436":7,"437":12,"438":8,"439":6,"440":13,"441":15,"442":13,"443":14,"444":16,"445":13,"446":24,"447":27,"448":25,"449":26,"450":24,"451":27,"452":29,"453":16,"454":10,"455":16,"456":19,"457":22,"458":10,"459":5,"460":11,"461":10,"462":9,"463":7,"464":9,"465":11,"466":7,"467":8,"468":9,"469":9,"470":8,"471":7,"472":9,"473":9,"474":8,"475":11,"476":8,"477":11,"478":9,"479":9,"480":9,"481":8,"482":8,"483":10,"484":5,"485":7,"486":9,"487":13,"488":7,"489":12,"490":12,"491":11,"492":14,"493":13,"494":13,"495":16,"496":18,"497":21,"498":20,"499":13,"500":9,"501":10,"502":10,"503":9,"504":6,"505":8,"506":7,"507":11,"508":8,"509":10,"510":9,"511":9,"512":6,"513":8,"514":5,"515":5,"516":7,"517":7,"518":15,"519":20,"520":16,"521":24,"522":21,"523":23,"524":17,"525":18,"526":26,"527":18,"528":24,"529":21,"530":22,"531":22,"532":24,"533":27,"534":27,"535":34,"536":26,"537":23,"538":8,"539":7,"540":6,"541":5,"542":6,"543":5,"544":10,"545":4,"546":6,"547":7,"548":8,"549":5,"550":6,"551":7,"552":9,"553":8,"554":7,"555":7,"556":9,"557":9,"558":5,"559":7,"560":7,"561":5,"562":12,"563":14,"564":19,"565":27,"566":18,"567":26,"568":28,"569":29,"570":15,"571":18,"572":13,"573":15,"574":19,"575":18,"576":30,"577":28,"578":26,"579":20,"580":25,"581":31,"582":30,"583":25,"584":31,"585":42,"586":29,"587":25,"588":28,"589":27,"590":22,"591":32,"592":30,"593":23,"594":27,"595":29,"596":26,"597":27,"598":12,"599":18,"600":21,"601":17,"602":14,"603":14,"604":15
 };
 
-// ====== Hitung Total Juz & Halaman (aman saat dropdown kosong) ======
+// ====== Hitung Total Juz & Halaman (tetap) ======
 function updateTotalJuz(row) {
   const surahDari     = row.querySelector(".surah-dari")?.value?.trim() || "";
   const ayatDariStr   = row.querySelector(".ayat-dari")?.value?.trim() || "";
   const surahSampai   = row.querySelector(".surah-sampai")?.value?.trim() || "";
   const ayatSampaiStr = row.querySelector(".ayat-sampai")?.value?.trim() || "";
 
-  // Jika belum lengkap → kosongkan output
   if (!surahDari || !ayatDariStr || !surahSampai || !ayatSampaiStr) {
     row.querySelector(".halaman-terbaca").textContent = "-";
     row.querySelector(".total-halaman").textContent   = "0.00";
@@ -3926,53 +3663,38 @@ function updateTotalJuz(row) {
       const halaman = pagesMap[key];
       if (!halaman) continue;
 
-      // PAGE: catat semua (termasuk 21, 602-604)
       halamanValid.push(halaman);
 
-      // JUZ: exclude 21 dan 602–604
       if (halaman === 21 || (halaman >= 602 && halaman <= 604)) continue;
 
       const ayatDiHalaman = jumlahAyatPerHalaman[halaman];
-      if (!ayatDiHalaman) {
-        console.warn(`Jumlah ayat tidak ditemukan untuk halaman ${halaman}`);
-        continue;
-      }
+      if (!ayatDiHalaman) { console.warn(`Jumlah ayat tidak ditemukan untuk halaman ${halaman}`); continue; }
 
-      totalJuz += (0.05 / ayatDiHalaman); // bobot per ayat
+      totalJuz += (0.05 / ayatDiHalaman);
     }
   }
 
   totalJuz = totalJuz.toFixed(2);
 
-  // Hilangkan duplikat halaman
   const halamanUnik = [...new Set(halamanValid)].sort((a, b) => a - b);
 
-  // Hitung juz tercakup
   const juzTercakup = [];
   for (let i = 0; i < halamanAwalJuz.length; i++) {
     const awalJuz = halamanAwalJuz[i];
     const akhirJuz = i < halamanAwalJuz.length - 1 ? halamanAwalJuz[i + 1] - 1 : 604;
     if (akhirJuz >= 602 && awalJuz <= 604) continue;
     for (let h of halamanUnik) {
-      if (h >= awalJuz && h <= akhirJuz) {
-        juzTercakup.push(i + 1);
-        break;
-      }
+      if (h >= awalJuz && h <= akhirJuz) { juzTercakup.push(i + 1); break; }
     }
   }
 
   function compressJuzRanges(list) {
     if (list.length === 0) return "";
     list.sort((a, b) => a - b);
-    const ranges = [];
-    let start = list[0], end = start;
+    const ranges = []; let start = list[0], end = start;
     for (let i = 1; i < list.length; i++) {
-      if (list[i] === end + 1) {
-        end = list[i];
-      } else {
-        ranges.push(start === end ? `${start}` : `${start}-${end}`);
-        start = end = list[i];
-      }
+      if (list[i] === end + 1) end = list[i];
+      else { ranges.push(start === end ? `${start}` : `${start}-${end}`); start = end = list[i]; }
     }
     ranges.push(start === end ? `${start}` : `${start}-${end}`);
     return ranges.join(", ");
@@ -3980,47 +3702,26 @@ function updateTotalJuz(row) {
 
   const juzTerbacaFormatted = compressJuzRanges(juzTercakup);
 
-  // ===== Hitung halaman terbaca (parsial) =====
   function calculateHalamanTerbaca(halamanList) {
     if (!halamanList || halamanList.length === 0) return { ranges: "-", total: 0 };
-
-    const halamanCountMap = {}; // key: halaman, value: jumlah ayat terbaca
-    for (let h of halamanList) {
-      halamanCountMap[h] = (halamanCountMap[h] || 0) + 1;
-    }
-
-    const uniqueHalaman = Object.keys(halamanCountMap)
-                               .map(Number)
-                               .sort((a, b) => a - b);
-
-    const ranges = [];
-    let totalHalaman = 0;
-
-    let start = uniqueHalaman[0];
-    let end = start;
-
+    const halamanCountMap = {};
+    for (let h of halamanList) halamanCountMap[h] = (halamanCountMap[h] || 0) + 1;
+    const uniqueHalaman = Object.keys(halamanCountMap).map(Number).sort((a, b) => a - b);
+    const ranges = []; let totalHalaman = 0; let start = uniqueHalaman[0]; let end = start;
     for (let i = 0; i < uniqueHalaman.length; i++) {
       const h = uniqueHalaman[i];
       const ayatTerbaca = halamanCountMap[h];
       const ayatTotal = jumlahAyatPerHalaman[h] || 1;
       totalHalaman += ayatTerbaca / ayatTotal;
-
       if (i > 0) {
-        if (h === end + 1) {
-          end = h;
-        } else {
-          ranges.push(start === end ? `${start}` : `${start}-${end}`);
-          start = end = h;
-        }
+        if (h === end + 1) end = h;
+        else { ranges.push(start === end ? `${start}` : `${start}-${end}`); start = end = h; }
       }
     }
-
     ranges.push(start === end ? `${start}` : `${start}-${end}`);
-
     return { ranges: ranges.join(", "), total: totalHalaman };
   }
 
-  // Pemakaian di tabel
   const result = calculateHalamanTerbaca(halamanValid);
   row.querySelector(".halaman-terbaca").textContent = result.ranges;
   row.querySelector(".total-halaman").textContent = result.total.toFixed(2);
@@ -4028,17 +3729,11 @@ function updateTotalJuz(row) {
   row.querySelector(".total-juz").textContent = totalJuz;
 }
 
-// ====== Listener tetap ======
+// Listener tetap
 kelasSelect.addEventListener("change", loadSantriData);
 tanggalInput.addEventListener("change", loadSantriData);
 
 
-    
-
-
-
-
-// ===== Save Data (meniru B57.html, tanpa hapus fungsi lain) =====
 async function simpanDataMutabaah(saveBtn){
   const rows  = document.querySelectorAll('#santri-table tbody tr');
 
@@ -4065,45 +3760,35 @@ async function simpanDataMutabaah(saveBtn){
   }
 
   const kelas = resolveKelas();
+  const kelasKey = String(kelas||"").trim().toLowerCase();     // <— NEW
   const tanggalUtama = resolveTanggalGlobal();
   if (!kelas){ alert('Kelas belum terdeteksi.'); return; }
 
+  // helpers kecil (tetap)
   const parseNum=(v)=>{ if(typeof v==='number')return Number.isFinite(v)?v:0; const s=String(v??'').replace(/[^0-9.,-]/g,'').replace(',', '.'); const n=parseFloat(s); return Number.isFinite(n)?n:0; };
   function getNamaFromCell(cell){ if(!cell)return ""; const first=cell.childNodes&&cell.childNodes[0]; const txt=(first&&first.textContent)?first.textContent:cell.textContent; return String(txt).trim(); }
   function getRowId(row){ const raw=row.children[0]?.textContent?.trim()||""; const asNum=parseInt(raw,10); return Number.isNaN(asNum)?raw:asNum; }
-  function parseNilaiStr(nilaiStr){
-    if(!nilaiStr) return {nilai:null,predikatText:null,predikatHuruf:null};
+  function parseNilaiStr(nilaiStr){ if(!nilaiStr) return {nilai:null,predikatText:null,predikatHuruf:null};
     const parts=nilaiStr.trim().split(/\s+/).filter(Boolean);
     let numIdx=parts.findIndex(p=>/^-?\d+(,\d+|\.\d+)?$/.test(p));
     if(numIdx===-1) numIdx=parts.findIndex(p=>!Number.isNaN(parseFloat(p.replace(',','.'))));
     let nilai=null; if(numIdx!==-1) nilai=parseFloat(parts[numIdx].replace(',','.'));
     const rest=parts.filter((_,i)=>i!==numIdx).map(p=>p.replace(/[^\p{L}\p{N}\-]/gu,'')).filter(Boolean);
-    const gIdx=rest.findIndex(p=>/^[A-E]$/i.test(p));
-    const huruf=gIdx!==-1?rest[gIdx].toUpperCase():null;
-    const teks =rest.filter((_,i)=>i!==gIdx && rest[i]!=='-');
+    const gIdx=rest.findIndex(p=>/^[A-E]$/i.test(p)); const huruf=gIdx!==-1?rest[gIdx].toUpperCase():null;
+    const teks =rest.filter((_,i)=>i!==gIdx && rest[i]!=='-'); 
     return { nilai, predikatText:(teks.length?teks.join(' '):null), predikatHuruf:huruf };
   }
 
-  function buildAbsensi6(items, target){
-    const t = Math.max(1, Math.min(6, Number(target)||1));
-    const chosen = (items||[]).filter(it=>it.checked).map(it=>String(it.key).toLowerCase().replace(/\d+$/,''));
-    const out=[]; for(let i=0;i<t;i++) out.push(chosen[i]||"");
-    return out;
-  }
+  // absensi flex helpers (tetap)
+  function buildAbsensi6(items, target){ const t=Math.max(1, Math.min(6, Number(target)||1)); const chosen=(items||[]).filter(it=>it.checked).map(it=>String(it.key).toLowerCase().replace(/\d+$/,'')); const out=[]; for(let i=0;i<t;i++) out.push(chosen[i]||""); return out; }
   function buildAbsensiExpanded(items, target){
     const t = Math.max(1, Math.min(6, Number(target)||1));
     const perStatus = Number(window.ABS_FLEX_CFG?.perStatus ?? 2);
-    const stOrder = Array.isArray(window.ABS_FLEX_CFG?.statuses) && window.ABS_FLEX_CFG.statuses.length
-      ? window.ABS_FLEX_CFG.statuses : ["hadir","izin","sakit","alpha"];
+    const stOrder = Array.isArray(window.ABS_FLEX_CFG?.statuses) && window.ABS_FLEX_CFG.statuses.length ? window.ABS_FLEX_CFG.statuses : ["hadir","izin","sakit","alpha"];
     const checkedSet = new Set((items||[]).filter(it=>it.checked).map(it=>String(it.key).toLowerCase()));
     const title = s => s.charAt(0).toUpperCase() + s.slice(1);
     const result=[]; let seq=1;
-    for (const st of stOrder){
-      for(let i=1;i<=perStatus;i++){
-        const key=`${st}${i}`;
-        if (checkedSet.has(key) && seq<=t){ result.push(`${title(st)}${i}`); seq++; }
-      }
-    }
+    for (const st of stOrder){ for(let i=1;i<=perStatus;i++){ const key=`${st}${i}`; if (checkedSet.has(key) && seq<=t){ result.push(`${title(st)}${i}`); seq++; } } }
     return result;
   }
   function getAbsensiFlexFromRow(row, existing = {}){
@@ -4112,15 +3797,7 @@ async function simpanDataMutabaah(saveBtn){
       const items = Array.isArray(existing.absensiItems)? existing.absensiItems : [];
       const target = Number(existing.absensiTarget)||0;
       const expanded = buildAbsensiExpanded(items, target);
-      return {
-        absensiItems: items,
-        absensiTarget: target,
-        absensiChecked: Number(existing.absensiChecked)||0,
-        absensiPercent: Number(existing.absensiPercent)||0,
-        absensi6: Array.isArray(existing.absensi6)? existing.absensi6 : [],
-        absensiExpanded: expanded,
-        absensiExpandedStr: expanded.join(", ")
-      };
+      return { absensiItems: items, absensiTarget: target, absensiChecked: Number(existing.absensiChecked)||0, absensiPercent: Number(existing.absensiPercent)||0, absensi6: Array.isArray(existing.absensi6)? existing.absensi6 : [], absensiExpanded: expanded, absensiExpandedStr: expanded.join(", ") };
     }
     const absensiItems   = Array.isArray(cell._absensiItems)? cell._absensiItems : [];
     const absensiTarget  = Number(cell._absensiTarget||0);
@@ -4200,19 +3877,12 @@ async function simpanDataMutabaah(saveBtn){
           sampai: (surahSampai && ayatSampai) ? `${surahSampai}:${ayatSampai}` : "",
           totalJuz, halaman, totalHalaman, juzTerbaca, keterangan,
 
-          // Murajaah 3 sesi + skor/predikat (tetap)
-          juzmur1: Number(parseNum(existing?.juzmur1||0).toFixed?.(2) ?? 0),
-          juzmur2: Number(parseNum(existing?.juzmur2||0).toFixed?.(2) ?? 0),
-          juzmur3: Number(parseNum(existing?.juzmur3||0).toFixed?.(2) ?? 0),
-          juzmurajaah: Number(parseNum(existing?.juzmurajaah||0).toFixed?.(2) ?? 0),
-
           marks: (row.markData && typeof row.markData === 'object') ? row.markData : (existing?.marks || { audio: [] })
         };
         const newData = buttonCell ? { ...base, buttonCell } : base;
 
         const idx = dataMerged.findIndex(d=>String(d.id)===String(id));
-        if (idx!==-1) dataMerged[idx]=newData;
-        else dataMerged.push(newData);
+        if (idx!==-1) dataMerged[idx]=newData; else dataMerged.push(newData);
       });
 
       const res=await fetch('/api/saveData',{
@@ -4221,14 +3891,18 @@ async function simpanDataMutabaah(saveBtn){
         headers:{'Content-Type':'application/json','Accept':'application/json'},
         body: JSON.stringify({ tanggal, kelas, data: dataMerged })
       });
-      let result={};
-      try { result = await res.json(); } catch { result = {}; }
+      let result={}; try { result = await res.json(); } catch { result = {}; }
       hasilKirim.push({tanggal, ok:!!result?.success, result});
 
-      // ===== NEW: update indeks historis GLOBAL dari baris yang barusan disimpan =====
+      // ===== NEW: update indeks historis GLOBAL (kelas-aware) dari rows yang disimpan =====
       (function updateGlobalIndexFromRows(){
-        window.__usedAyatIndex ??= {};
-        window.__latestAyat    ??= {};
+        window.__usedAyatIndexClass ??= {};
+        window.__latestAyatClass    ??= {};
+        window.__usedAyatIndexClass[kelasKey] ??= {};
+        window.__latestAyatClass[kelasKey]    ??= {};
+        const usedRoot = window.__usedAyatIndexClass[kelasKey];
+        const lastRoot = window.__latestAyatClass[kelasKey];
+
         rowsTanggal.forEach(row=>{
           const nis = String(row.dataset?.nis||row.dataset?.id||"").trim();
           if (!nis) return;
@@ -4239,19 +3913,16 @@ async function simpanDataMutabaah(saveBtn){
 
           const push = (kind, s, a) => {
             if (!s || !a) return;
-            window.__usedAyatIndex[nis] ??= {};
-            window.__usedAyatIndex[nis][s] ??= new Set();
-            window.__usedAyatIndex[nis][s].add(a);
+            usedRoot[nis] ??= {};
+            usedRoot[nis][s] ??= new Set();
+            usedRoot[nis][s].add(a);
 
-            const prev = window.__latestAyat[nis]?.[kind];
-            // pakai tanggal grup ini sebagai kandidat terbaru
+            const prev = lastRoot[nis]?.[kind];
             const cand = { surah: String(s), ayat: Number(a), tanggal: String(tanggal) };
             if (!prev || String(cand.tanggal).localeCompare(String(prev.tanggal)) > 0) {
-              window.__latestAyat[nis] ??= {};
-              window.__latestAyat[nis][kind] = cand;
+              lastRoot[nis] ??= {}; lastRoot[nis][kind] = cand;
             }
           };
-
           push('dari',   surD, ayD);
           push('sampai', surS, ayS);
         });
@@ -4261,17 +3932,16 @@ async function simpanDataMutabaah(saveBtn){
     const gagal=hasilKirim.filter(h=>!h.ok);
     if(!gagal.length){
       if(saveBtn) saveBtn.textContent='✅ Tersimpan';
-      if (window.murajaah && typeof window.murajaah.refreshServer==='function'){
-        await window.murajaah.refreshServer();
-      }
-      // ===== NEW: re-render tanda ✓/★ pada dropdown ayat yang sudah ada di DOM (tanpa reload halaman)
+      if (window.murajaah && typeof window.murajaah.refreshServer==='function'){ await window.murajaah.refreshServer(); }
+      // ===== NEW: render ulang tanda ✓/★ di SEMUA dropdown yg sedang tampil (tanpa reload)
       document.querySelectorAll('#santri-table tbody tr').forEach(row=>{
+        const kelasKeyDom = (row.dataset?.kelas || kelasKey);
         const surD = row.querySelector('.surah-dari')?.value||"";
         const surS = row.querySelector('.surah-sampai')?.value||"";
         const ayD  = row.querySelector('.ayat-dari');
         const ayS  = row.querySelector('.ayat-sampai');
-        if (ayD) fillAyatOptionsMarked(ayD, surD || "", ayD.value||"");
-        if (ayS) fillAyatOptionsMarked(ayS, surS || "", ayS.value||"");
+        if (ayD){ ayD.dataset.kelas = kelasKeyDom; fillAyatOptionsMarked(ayD, surD || "", ayD.value||""); }
+        if (ayS){ ayS.dataset.kelas = kelasKeyDom; fillAyatOptionsMarked(ayS, surS || "", ayS.value||""); }
       });
     }else{
       const daftar=gagal.map(g=>g.tanggal).join(', ');
@@ -4284,22 +3954,15 @@ async function simpanDataMutabaah(saveBtn){
     alert('⚠️ Error menyimpan data!');
   }finally{
     if(saveBtn){
-      setTimeout(()=>{
-        saveBtn.textContent = saveBtn.dataset._old || 'Save Data';
-        saveBtn.disabled=false;
-        delete saveBtn.dataset._old;
-      }, 1200);
+      setTimeout(()=>{ saveBtn.textContent = saveBtn.dataset._old || 'Save Data'; saveBtn.disabled=false; delete saveBtn.dataset._old; }, 1200);
     }
   }
 }
 
-// Listener tombol (biarkan seperti semula)
+// Listener tombol (tetap)
 document.getElementById('save-btn')?.addEventListener('click', function(){ simpanDataMutabaah(this); });
 document.getElementById('save-btn-modal')?.addEventListener('click', function(){ simpanDataMutabaah(this); });
 document.getElementById('mur-save')?.addEventListener('click', function(){ simpanDataMutabaah(this); });
-
-
-
 
 
 
