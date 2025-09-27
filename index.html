@@ -6560,12 +6560,10 @@ const parseNum = (v) => {
   if (typeof v === "number") return Number.isFinite(v) ? v : 0;
   let s = String(v ?? "").trim();
   if (!s) return 0;
-  // buang selain digit, titik, koma, minus
   s = s.replace(/[^0-9.,-]/g, "");
   const comma = s.lastIndexOf(",");
   const dot   = s.lastIndexOf(".");
   if (comma > -1 && dot > -1) {
-    // jika koma paling kanan → koma desimal
     if (comma > dot) { s = s.replace(/\./g, "").replace(",", "."); }
     else { s = s.replace(/,/g, ""); }
   } else if (comma > -1) {
@@ -6577,7 +6575,38 @@ const parseNum = (v) => {
   return Number.isFinite(n) ? n : 0;
 };
 
-// helper ambil nama murni dari cell
+// --- normalisasi tanggal ke ISO (YYYY-MM-DD)
+function toISODate(d) {
+  if (!d) return "";
+  const s = String(d).trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;          // sudah ISO
+  if (/^\d{2}\/\d{2}\/\d{4}$/.test(s)) {                // dd/mm/yyyy → yyyy-mm-dd
+    const [dd, mm, yyyy] = s.split("/");
+    return `${yyyy}-${mm}-${dd}`;
+  }
+  const dt = new Date(s);
+  if (Number.isFinite(dt.getTime())) {
+    const Y = dt.getFullYear();
+    const M = String(dt.getMonth()+1).padStart(2,"0");
+    const D = String(dt.getDate()).padStart(2,"0");
+    return `${Y}-${M}-${D}`;
+  }
+  return "";
+}
+
+// --- ambil key & nama dari <tr> (robust)
+function getRowKey(row){
+  const ds = row?.dataset || {};
+  return (ds.key && ds.key.trim()) ||
+         (ds.nis && ds.nis.trim()) ||
+         (ds.id  && ds.id.trim())  || "";
+}
+function getRowName(row){
+  const nameCell = row.querySelector('[data-col="nama"], .col-nama, td:nth-child(2)');
+  return (nameCell?.textContent || "").trim().toLowerCase();
+}
+
+// helper ambil nama murni dari cell (dipakai di beberapa tempat lama)
 function getNamaFromCell(cell) {
   if (!cell) return "";
   const first = cell.childNodes && cell.childNodes[0];
@@ -6618,7 +6647,6 @@ function getSemesterForKey(key, row, fallbackFromArchive) {
 function getTotalJuzFromRow(row) {
   const td = row?.querySelector?.(".total-juz");
   if (!td) return 0;
-  // biasanya isi angka murni
   return parseNum(td.textContent);
 }
 
@@ -6626,45 +6654,50 @@ function getTotalJuzFromRow(row) {
 // HITUNG MANUAL (via overlay)
 // ============================
 async function hitungTotalAllJuzFromTable() {
-  const kelas  = kelasSelect.value;
-  const dari   = document.getElementById("rangeDari")?.value;
-  const sampai = document.getElementById("rangeSampai")?.value;
+  const kelas     = kelasSelect.value;
+  const dariRaw   = document.getElementById("rangeDari")?.value;
+  const sampaiRaw = document.getElementById("rangeSampai")?.value;
 
-  if (!dari)   { alert("Mohon pilih tanggal Dari.");   return; }
-  if (!sampai) { alert("Mohon pilih tanggal Sampai."); return; }
+  const dari   = toISODate(dariRaw);
+  const sampai = toISODate(sampaiRaw);
 
-  // ✅ overlay yang benar untuk modal tanggal
+  if (!dari)   { alert("Mohon pilih tanggal Dari (format benar).");   return; }
+  if (!sampai) { alert("Mohon pilih tanggal Sampai (format benar)."); return; }
+
   const overlay = document.getElementById("juzOverlay");
-  overlay.style.display = "flex";
+  if (overlay) overlay.style.display = "flex";
 
   try {
     await ensureSemesterMap(kelas);
 
-    // ✅ minta data agregat dari server
+    // WAJIB aggregate=1 agar server kirim rekap per-santri
     const res = await fetch(
       `/api/getAbsensiRange?kelas=${encodeURIComponent(kelas)}&start=${encodeURIComponent(dari)}&end=${encodeURIComponent(sampai)}&aggregate=1&t=${Date.now()}`
     );
     if (!res.ok) throw new Error("Gagal ambil data absensi.");
     const payload = await res.json();
-    const allData = Array.isArray(payload) ? payload : (payload?.list || []);
+    const list = Array.isArray(payload?.list) ? payload.list :
+                 Array.isArray(payload) ? payload : [];
 
     const rows = [...santriTableBody.querySelectorAll("tr")];
 
     // peta nama → key tabel (backup jika arsip tanpa id/nis)
     const nameToKey = new Map();
     rows.forEach(row => {
-      const key = normKey(row.dataset?.nis || row.dataset?.id || row.dataset?.key);
-      const nm  = getNamaFromCell(row.children?.[1]);
-      if (key && nm) nameToKey.set(nm.toLowerCase(), key);
+      const key = getRowKey(row);
+      const nm  = getRowName(row);
+      if (key && nm) nameToKey.set(nm, key);
     });
 
-    // ✅ rekap: dukung item.key dan berbagai nama field angka
+    // rekap: dukung item.key dan berbagai nama field angka
     const rekap = Object.create(null); // key => { totalJuz, semester? }
-    (allData || []).forEach(item => {
-      const id   = normKey(item?.id);
-      const nis  = normKey(item?.nis);
-      let   key  = normKey(item?.key || nis || id);
-
+    (list || []).forEach(item => {
+      let key = normKey(item?.key);
+      if (!key) {
+        const nis = normKey(item?.nis);
+        const id  = normKey(item?.id);
+        key = normKey(nis || id);
+      }
       if (!key) {
         const nm = normKey(item?.nama).toLowerCase();
         if (nm && nameToKey.has(nm)) key = nameToKey.get(nm);
@@ -6672,22 +6705,21 @@ async function hitungTotalAllJuzFromTable() {
       if (!key) return;
 
       const num = parseNum(item?.totalJuz ?? item?.total_juz ?? item?.total_juz_num ?? item?.juz);
-      if (!rekap[key]) rekap[key] = { totalJuz: 0, semester: item?.semester ?? null, id, nis, nama: item?.nama ?? "" };
+      if (!rekap[key]) rekap[key] = { totalJuz: 0, semester: item?.semester ?? null, id: normKey(item?.id), nis: normKey(item?.nis), nama: item?.nama ?? "" };
       rekap[key].totalJuz += num;
     });
 
     const batasSemester = {1: 8, 2: 13, 3: 18, 4: 23, 5: 28, 6: 30};
-
     const dataToSave = [];
+
     rows.forEach(row => {
-      const key  = normKey(row.dataset?.key || row.dataset?.nis || row.dataset?.id);
+      const key  = getRowKey(row);
       const cell = row.querySelector(".total-all-juz");
       if (!cell) return;
 
       let totalJuzNum = rekap[key] ? parseNum(rekap[key].totalJuz) : 0;
       let archSem     = rekap[key]?.semester ?? null;
 
-      // backup terakhir: tetap boleh baca dari sel harian (tidak ideal)
       if (!totalJuzNum) {
         const fallbackRowVal = getTotalJuzFromRow(row);
         if (fallbackRowVal) totalJuzNum = fallbackRowVal;
@@ -6701,9 +6733,8 @@ async function hitungTotalAllJuzFromTable() {
         let label, warna;
         if (totalJuzNum >= 30) { label = "KHATAM"; warna = "green"; }
         else {
-          let p = batas > 0 ? Math.floor((totalJuzNum / batas) * 100) : 0;
-          if (p > 100) p = 100;
-          label = (p >= 100) ? (warna="green", "TUNTAS") : (warna="red", `${p}%`);
+          let p = batas > 0 ? Math.min(100, Math.floor((totalJuzNum / batas) * 100)) : 0;
+          label = (p >= 100) ? (warna="green","TUNTAS") : (warna="red",`${p}%`);
         }
 
         cell.innerHTML = `${totalJuzStr}&nbsp;juz <span style="color:${warna}; font-size:12px;">${label}</span>`;
@@ -6721,7 +6752,7 @@ async function hitungTotalAllJuzFromTable() {
       }
     });
 
-    // (opsional) simpan range tanggal ke D1 — server memang hanya butuh kelas/fromDate/toDate
+    // simpan range tanggal per-kelas (endpoint ini memang hanya simpan range)
     await fetch('/api/aksesAutoUpdateAllJuz', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -6733,7 +6764,7 @@ async function hitungTotalAllJuzFromTable() {
     console.error(err);
     alert("❌ Terjadi kesalahan: " + err.message);
   } finally {
-    overlay.style.display = "none";
+    if (overlay) overlay.style.display = "none";
   }
 }
 
@@ -6762,7 +6793,11 @@ function bukaOverlayTotalAllJuz() {
   document.getElementById("juzOverlay").style.display = "flex";
 }
 
-document.getElementById("btnHitungTotalJuz").addEventListener("click", hitungTotalAllJuzFromTable);
+// aman pasang listener setelah DOM siap
+window.addEventListener("DOMContentLoaded", () => {
+  document.getElementById("btnHitungTotalJuz")
+    ?.addEventListener("click", hitungTotalAllJuzFromTable);
+});
 
 // ==================================
 // HITUNG OTOMATIS (setelah render)
@@ -6771,8 +6806,8 @@ async function hitungTotalAllJuzOtomatis() {
   const kelas = kelasSelect.value;
 
   // Tunggu tabel terisi
-  const rows = santriTableBody.querySelectorAll("tr");
-  if (rows.length === 0) {
+  const rowsNow = santriTableBody.querySelectorAll("tr");
+  if (rowsNow.length === 0) {
     setTimeout(hitungTotalAllJuzOtomatis, 200);
     return;
   }
@@ -6792,8 +6827,8 @@ async function hitungTotalAllJuzOtomatis() {
     console.error("Gagal ambil tanggal otomatis:", err);
   }
 
-  const dari = rangeDari?.value;
-  const sampai = rangeSampai?.value;
+  const dari = toISODate(rangeDari?.value);
+  const sampai = toISODate(rangeSampai?.value);
   if (!dari || !sampai) return;
 
   // Ambil absensi & hitung
@@ -6801,48 +6836,51 @@ async function hitungTotalAllJuzOtomatis() {
     await ensureSemesterMap(kelas);
 
     const resAbs = await fetch(
-      `/api/getAbsensiRange?kelas=${encodeURIComponent(kelas)}&start=${encodeURIComponent(dari)}&end=${encodeURIComponent(sampai)}&t=${Date.now()}`
+      `/api/getAbsensiRange?kelas=${encodeURIComponent(kelas)}&start=${encodeURIComponent(dari)}&end=${encodeURIComponent(sampai)}&aggregate=1&t=${Date.now()}`
     );
     if (!resAbs.ok) throw new Error("Gagal ambil data absensi.");
     const payload = await resAbs.json();
-    const allData = Array.isArray(payload) ? payload : (payload?.list || []);
+    const list = Array.isArray(payload?.list) ? payload.list :
+                 Array.isArray(payload) ? payload : [];
 
     // Peta nama → key tabel
     const rowsArr = [...santriTableBody.querySelectorAll("tr")];
     const nameToKey = new Map();
     rowsArr.forEach(row => {
-      const key = normKey(row.dataset?.nis || row.dataset?.id || row.dataset?.key);
-      const nm  = getNamaFromCell(row.children?.[1]);
-      if (key && nm) nameToKey.set(nm.toLowerCase(), key);
+      const key = getRowKey(row);
+      const nm  = getRowName(row);
+      if (key && nm) nameToKey.set(nm, key);
     });
 
-    // Rekap by key (nis || id → fallback nama)
+    // Rekap by key (utamakan item.key)
     const rekap = Object.create(null);
-    (allData || []).forEach(item => {
-      let id  = normKey(item?.id);
-      let nis = normKey(item?.nis);
-      let key = normKey(nis || id);
+    (list || []).forEach(item => {
+      let key = normKey(item?.key);
+      if (!key) {
+        const nis = normKey(item?.nis);
+        const id  = normKey(item?.id);
+        key = normKey(nis || id);
+      }
       if (!key) {
         const nm = normKey(item?.nama).toLowerCase();
         if (nm && nameToKey.has(nm)) key = nameToKey.get(nm);
       }
       if (!key) return;
+
+      const val = parseNum(item?.totalJuz ?? item?.total_juz ?? item?.total_juz_num ?? 0);
       if (!rekap[key]) rekap[key] = { totalJuz: 0, semester: item?.semester ?? null };
-      rekap[key].totalJuz += parseNum(item?.totalJuz);
+      rekap[key].totalJuz += val;
     });
 
     const batasSemester = {1: 8, 2: 13, 3: 18, 4: 23, 5: 28, 6: 30};
 
     rowsArr.forEach(row => {
-      const key  = normKey(row.dataset?.key || row.dataset?.nis || row.dataset?.id);
+      const key  = getRowKey(row);
       const cell = row.querySelector(".total-all-juz");
       if (!cell) return;
 
       let totalJuzNum = rekap[key] ? parseNum(rekap[key].totalJuz) : 0;
-      if (!totalJuzNum) {
-        // fallback baca langsung dari tabel kolom harian
-        totalJuzNum = getTotalJuzFromRow(row);
-      }
+      if (!totalJuzNum) totalJuzNum = getTotalJuzFromRow(row);
 
       if (totalJuzNum) {
         const semester = getSemesterForKey(key, row, rekap[key]?.semester);
@@ -6858,10 +6896,8 @@ async function hitungTotalAllJuzOtomatis() {
           else { label = `${prosentase}%`; warna = "red"; }
         }
 
-        // ← tambah "juz"
         cell.innerHTML = `${totalJuzStr}&nbsp;juz <span style="color:${warna}; font-size:14px">${label}</span>`;
       } else {
-        // ← tambah "juz"
         cell.innerHTML = `0.00&nbsp;juz <span style="color:red; font-size:16px">0%</span>`;
       }
     });
@@ -6888,6 +6924,7 @@ window.loadSantriData = async function (...args) {
 // Kalau ganti tanggal atau kelas, otomatis muat ulang tabel & hitung
 tanggalInput?.addEventListener("change", () => loadSantriData());
 kelasSelect?.addEventListener("change", () => loadSantriData());
+
 	 
 </script>
 
