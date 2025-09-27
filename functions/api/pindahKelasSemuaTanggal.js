@@ -1,9 +1,8 @@
-// /functions/api/pindahKelasSemuaTanggal.js
 export const onRequestOptions = () => json({}, 204);
 
 export async function onRequestPost(ctx){
-  const db = ctx.env.DB || ctx.env.ABSENSI_DB;
-  if (!db) return jsonErr(500, "Database binding (env.DB) tidak tersedia.");
+  const db = ctx.env.ABSENSI_DB || ctx.env.DB;
+  if (!db) return jsonErr(500, "Database binding (env.ABSENSI_DB) tidak tersedia.");
 
   try{
     const b = await ctx.request.json();
@@ -16,7 +15,6 @@ export async function onRequestPost(ctx){
     if (kelasAsal === kelasTujuan)  return jsonErr(400,"kelasAsal dan kelasTujuan tidak boleh sama");
     if (!ids.length && !nises.length) return jsonErr(400,"Wajib: minimal ids[] atau nises[]");
 
-    // Pastikan punya daftar NIS
     let nisList = [...new Set(nises.map(String))];
     if (!nisList.length && ids.length){
       const rs = await db.prepare(
@@ -26,7 +24,6 @@ export async function onRequestPost(ctx){
     }
     if (!nisList.length) return jsonErr(404,"Santri tidak ditemukan di kelas asal.");
 
-    // Ringkasan per tanggal sebelum update
     const before = await db.prepare(
       `SELECT date AS tanggal, COUNT(*) AS cnt
        FROM absensi
@@ -39,13 +36,11 @@ export async function onRequestPost(ctx){
     const now = nowIso();
     await db.exec("BEGIN TRANSACTION");
 
-    // Update seluruh tanggal
     await db.prepare(
       `UPDATE absensi SET kelas=?, updated_at=?
        WHERE kelas=? AND nis IN (${ph(nisList.length)})`
     ).bind(kelasTujuan, now, kelasAsal, ...nisList).run();
 
-    // Update roster
     await db.prepare(
       `UPDATE students SET kelas=?, updated_at=?
        WHERE kelas=? AND nis IN (${ph(nisList.length)})`
@@ -54,7 +49,7 @@ export async function onRequestPost(ctx){
     await db.exec("COMMIT");
     return json({ success:true, totalMoved, details, from:kelasAsal, to:kelasTujuan });
   }catch(e){
-    try{ await (ctx.env.DB || ctx.env.ABSENSI_DB)?.exec("ROLLBACK"); }catch{}
+    try{ await (ctx.env.ABSENSI_DB || ctx.env.DB)?.exec("ROLLBACK"); }catch{}
     return jsonErr(500, e?.message || String(e));
   }
 }
