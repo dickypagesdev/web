@@ -4236,23 +4236,34 @@ document.getElementById('mur-save')?.addEventListener('click', function(){ simpa
   }
 
   // ====== Helper slot absensi (BARU) ======
-  function _slotMetricsFromRecord(rec){
-    const items = Array.isArray(rec?.absensiItems) ? rec.absensiItems : [];
-    const target = Number(rec?.absensiTarget) || 0;
-    const checked = Number(rec?.absensiChecked) || items.filter(it=>it?.checked).length;
+  // ====== Helper slot absensi (D1-aware) ======
+function _slotMetricsFromRecord(recRaw){
+  const rec = toInternal(recRaw); // <— penting: pakai adapter
+  const items = Array.isArray(rec?.absensiItems) ? rec.absensiItems : [];
+  const target = Number(rec?.absensiTarget) || 0;
+  const checked = Number(rec?.absensiChecked)
+               || items.filter(it=>it?.checked).length;
 
-    const counts = { hadir:0, izin:0, sakit:0, alpha:0 };
-    for (const it of items){
-      if (!it?.checked) continue;
-      const st = String(it.key||'').toLowerCase().replace(/\d+$/,''); // "hadir1" -> "hadir"
-      if (st in counts) counts[st]++;
-    }
-    return {
-      _slotCounts: counts,
-      _slotTarget: target,
-      _slotChecked: checked
-    };
+  const counts = { hadir:0, izin:0, sakit:0, alpha:0 };
+  for (const it of items){
+    if (!it?.checked) continue;
+    const st = String((it.key ?? it.status ?? '')).toLowerCase().replace(/\d+$/,'');
+    if (st in counts) counts[st]++;
   }
+
+  // fallback legacy: bila tidak ada items, baca rec.absensi single
+  if (!items.length && rec?.absensi){
+    const st = (rec.absensi + '').toLowerCase();
+    if (st in counts) counts[st] = 1;
+  }
+
+  return {
+    _slotCounts: counts,
+    _slotTarget: target,
+    _slotChecked: checked
+  };
+}
+
 
   // ====== Helper agregasi slot per santri (BARU) ======
   function _aggregateSlotsPerKey(items){
@@ -4447,36 +4458,44 @@ if (typeof window.drawTableHeader !== 'function') {
     const rosterByName = byNameMap(santriData, s => s);
 
     // 3) Normalisasi (+ inject slot metrics)
-    const allDataNorm = allData.map(r => {
-      let id   = keyId(r?.id ?? "");
-      let nis  = keyNis(r?.nis ?? "");
-      const nmK = keyName(r?.nama);
-      if (!nis && id && rosterById.get(id)?.nis) nis = keyNis(rosterById.get(id).nis);
-      if (!nis && nmK && rosterByName.get(nmK)?.nis) nis = keyNis(rosterByName.get(nmK).nis);
+    // 3) Normalisasi (+ inject slot metrics) — D1-aware
+const allDataNorm = allData.map(raw => {
+  const base = toInternal(raw);          // <— D1 → internal
+  let id   = keyId(base?.id ?? "");
+  let nis  = keyNis(base?.nis ?? "");
+  const nmK = keyName(base?.nama);
 
-      let nama = r?.nama;
-      if (!nama && nis && rosterByNis.get(nis)?.nama) nama = rosterByNis.get(nis).nama;
-      if (!nama && id  && rosterById.get(id)?.nama)  nama = rosterById.get(id).nama;
-      if (!id && nis && rosterByNis.get(nis)?.id) id = keyId(rosterByNis.get(nis).id);
+  if (!nis && id && rosterById.get(id)?.nis) nis = keyNis(rosterById.get(id).nis);
+  if (!nis && nmK && rosterByName.get(nmK)?.nis) nis = keyNis(rosterByName.get(nmK).nis);
 
-      let semester = (r?.semester != null) ? Number(r.semester) : null;
-      if (semester == null) {
-        if (nis && rosterByNis.get(nis)?.semester != null) semester = Number(rosterByNis.get(nis).semester);
-        else if (id && rosterById.get(id)?.semester != null) semester = Number(rosterById.get(id).semester);
-      }
+  let nama = base?.nama;
+  if (!nama && nis && rosterByNis.get(nis)?.nama) nama = rosterByNis.get(nis).nama;
+  if (!nama && id  && rosterById.get(id)?.nama)  nama = rosterById.get(id).nama;
+  if (!id && nis && rosterByNis.get(nis)?.id) id = keyId(rosterByNis.get(nis).id);
 
-      let jenjang = r?.jenjang ?? null;
-      if (!jenjang && nis && rosterByNis.get(nis)?.jenjang) jenjang = rosterByNis.get(nis).jenjang;
-      if (!jenjang && id  && rosterById.get(id)?.jenjang)  jenjang = rosterById.get(id).jenjang;
+  let semester = (base?.semester != null) ? Number(base.semester) : null;
+  if (semester == null) {
+    if (nis && rosterByNis.get(nis)?.semester != null) semester = Number(rosterByNis.get(nis).semester);
+    else if (id && rosterById.get(id)?.semester != null) semester = Number(rosterById.get(id).semester);
+  }
 
-      let keterangan = r?.keterangan ?? null;
-      if (!keterangan && nis && rosterByNis.get(nis)?.keterangan) keterangan = rosterByNis.get(nis).keterangan;
-      if (!keterangan && id  && rosterById.get(id)?.keterangan)  keterangan = rosterById.get(id).keterangan;
+  let jenjang = base?.jenjang ?? null;
+  if (!jenjang && nis && rosterByNis.get(nis)?.jenjang) jenjang = rosterByNis.get(nis).jenjang;
+  if (!jenjang && id  && rosterById.get(id)?.jenjang)  jenjang = rosterById.get(id).jenjang;
 
-      const slot = _slotMetricsFromRecord(r);
+  let keterangan = base?.keterangan ?? null;
+  if (!keterangan && nis && rosterByNis.get(nis)?.keterangan) keterangan = rosterByNis.get(nis).keterangan;
+  if (!keterangan && id  && rosterById.get(id)?.keterangan)  keterangan = rosterById.get(id).keterangan;
 
-      return { ...r, ...slot, id, nis, nama, semester, jenjang, keterangan, tanggal: r?.tanggal ? String(r.tanggal).slice(0,10) : null };
-    });
+  const slot = _slotMetricsFromRecord(base);
+
+  return {
+    ...base,           // penting: pakai bidang seragam (dari D1/legacy)
+    ...slot,
+    id, nis, nama, semester, jenjang, keterangan,
+    tanggal: base?.tanggal ? String(base.tanggal).slice(0,10) : null
+  };
+});
 
     // KBM hari unik (kelas)
     const kbmDaySet = new Set();
@@ -5021,6 +5040,95 @@ window.PDF_joinSAsegmentsNamaCompact = PDF_joinSAsegmentsNamaCompact;
       let keterangan = r?.keterangan ?? null;
       if (!keterangan && nis && rosterByNis.get(nis)?.keterangan) keterangan = rosterByNis.get(nis).keterangan;
       if (!keterangan && id  && rosterById.get(id)?.keterangan)  keterangan = rosterById.get(id).keterangan;
+
+	  // === D1 adapter (BARU) =====================================
+// Deteksi record sudah D1 atau belum
+function isD1(rec){
+  // longgar: ada namespace "d1" ATAU tanda khas D1 pada absensi/setoran
+  return !!rec?.d1
+      || Array.isArray(rec?.slots)
+      || Array.isArray(rec?.absensi?.slots)
+      || (rec?.sa && (rec.sa.from || rec.sa.to));
+}
+
+// Normalisasi record apapun → bentuk internal yang digunakan seluruh kode
+function toInternal(rec){
+  if (!isD1(rec)) {
+    // --- legacy: kembalikan sebagian agar seragam ---
+    return {
+      id: rec?.id ?? null,
+      nis: rec?.nis ?? null,
+      nama: rec?.nama ?? null,
+      tanggal: rec?.tanggal ? String(rec.tanggal).slice(0,10) : null,
+      semester: rec?.semester ?? null,
+      jenjang: rec?.jenjang ?? null,
+      keterangan: rec?.keterangan ?? rec?.ket ?? null,
+
+      // absensi lama (single status) → slot tunggal
+      absensiItems: rec?.absensiItems || null,
+      absensiTarget: rec?.absensiTarget ?? null,
+      absensiChecked: rec?.absensiChecked ?? null,
+      absensi: rec?.absensi ?? rec?.status ?? null,
+
+      // setoran lama
+      dari: rec?.dari ?? rec?.dariSetoran ?? null,
+      sampai: rec?.sampai ?? rec?.sampaiSetoran ?? null,
+      halaman: rec?.halaman ?? rec?.page ?? null,
+      totalHalaman: rec?.totalHalaman ?? rec?.totalPage ?? null,
+      totalJuz: rec?.totalJuz ?? rec?.juz ?? null,
+
+      // murajaah lama
+      juzmurajaah: rec?.juzmurajaah ?? rec?.murajaah ?? rec?.mur_juz ?? null,
+
+      // nilai lama
+      nilai: rec?.buttonCell?.nilai ?? rec?.nilai ?? rec?.score ?? null,
+
+      // juz terbaca lama
+      juzTerbaca: rec?.juzTerbaca ?? rec?.juz_terbaca ?? rec?.juzTerbacaText ?? rec?.juzText ?? rec?.juz ?? null,
+    };
+  }
+
+  // --- D1: mapping bidang D1 ke internal ---
+  const d = rec?.d1 || rec;
+  // D1 asumsi:
+  // d.attendance = { target:number, checked:number, slots:[{key:'hadir'|'alpha'|'sakit'|'izin', checked:true}] }
+  // d.setoran = { sa:{from:{s,a}, to:{s,a}}, pages:{from:number,to:number,total?:number}, juz:number }
+  // d.murajaah = { juz:number }
+  // d.score = number
+  // d.meta = { id, nis, nama, tanggal:'YYYY-MM-DD', semester, jenjang, keterangan }
+  return {
+    id: d?.meta?.id ?? rec?.id ?? null,
+    nis: d?.meta?.nis ?? rec?.nis ?? null,
+    nama: d?.meta?.nama ?? rec?.nama ?? null,
+    tanggal: d?.meta?.tanggal ? String(d.meta.tanggal).slice(0,10) : (rec?.tanggal ? String(rec.tanggal).slice(0,10) : null),
+    semester: d?.meta?.semester ?? rec?.semester ?? null,
+    jenjang: d?.meta?.jenjang ?? rec?.jenjang ?? null,
+    keterangan: d?.meta?.keterangan ?? rec?.keterangan ?? rec?.ket ?? null,
+
+    // absensi D1
+    absensiItems: d?.attendance?.slots || d?.slots || null,
+    absensiTarget: d?.attendance?.target ?? null,
+    absensiChecked: d?.attendance?.checked ?? null,
+    absensi: null, // diabaikan (slot-based)
+
+    // setoran D1
+    dari: d?.setoran?.sa?.from ? `${d.setoran.sa.from.s}:${d.setoran.sa.from.a}` : null,
+    sampai: d?.setoran?.sa?.to   ? `${d.setoran.sa.to.s}:${d.setoran.sa.to.a}`   : null,
+    halaman: (d?.setoran?.pages?.from!=null && d?.setoran?.pages?.to!=null)
+              ? `${d.setoran.pages.from}-${d.setoran.pages.to}` : null,
+    totalHalaman: d?.setoran?.pages?.total ?? null,
+    totalJuz: d?.setoran?.juz ?? null,
+
+    // murajaah D1
+    juzmurajaah: d?.murajaah?.juz ?? null,
+
+    // nilai D1
+    nilai: d?.score ?? null,
+
+    // juz terbaca D1 (opsional)
+    juzTerbaca: d?.juzTerbaca ?? null,
+  };
+}
 
       const slot = _slotMetricsFromRecord(r);
 
