@@ -1,3 +1,4 @@
+// /functions/api/pindahKelasSemuaTanggal.js
 export const onRequestOptions = () => json({}, 204);
 
 export async function onRequestPost(ctx){
@@ -8,43 +9,43 @@ export async function onRequestPost(ctx){
     const b = await ctx.request.json();
     const kelasAsal   = normKelas(b?.kelasAsal);
     const kelasTujuan = normKelas(b?.kelasTujuan);
-    const nises       = arr(b?.nises);  // student_key
+    const nises       = arr(b?.nises);  // = student_key
 
     if (!kelasAsal || !kelasTujuan) return jsonErr(400,"Wajib: kelasAsal & kelasTujuan");
     if (kelasAsal === kelasTujuan)  return jsonErr(400,"kelasAsal dan kelasTujuan tidak boleh sama");
-    if (!nises.length) return jsonErr(400,"Wajib: nises[] (student_key)");
+    if (!nises.length)              return jsonErr(400,"Wajib: nises[] (student_key/NIS)");
 
-    // Ringkasan per tanggal (sebelum update)
+    // Ringkasan (sebelum update)
     const before = await db.prepare(
       `SELECT tanggal, COUNT(*) AS cnt
          FROM attendance_snapshots
         WHERE class_name=? AND student_key IN (${ph(nises.length)})
         GROUP BY tanggal ORDER BY tanggal`
     ).bind(kelasAsal, ...nises).all();
+
     const details = (before.results||[]).map(r=>({ tanggal:r.tanggal, moved:Number(r.cnt||0) }));
     const totalMoved = details.reduce((a,b)=>a+b.moved,0);
-
     const now = nowIso();
-    await db.exec("BEGIN TRANSACTION");
 
-    // 1) attendance_snapshots: pindah semua tanggal
-    await db.prepare(
-      `UPDATE attendance_snapshots
-          SET class_name=?, updated_at=?
-        WHERE class_name=? AND student_key IN (${ph(nises.length)})`
-    ).bind(kelasTujuan, now, kelasAsal, ...nises).run();
+    // Transaksi via db.batch()
+    const stmts = [
+      db.prepare(
+        `UPDATE attendance_snapshots
+            SET class_name=?, updated_at=?
+          WHERE class_name=? AND student_key IN (${ph(nises.length)})`
+      ).bind(kelasTujuan, now, kelasAsal, ...nises),
 
-    // 2) totals_store: pindah semua agregat
-    await db.prepare(
-      `UPDATE totals_store
-          SET kelas=?, updated_at=?
-        WHERE kelas=? AND student_key IN (${ph(nises.length)})`
-    ).bind(kelasTujuan, now, kelasAsal, ...nises).run();
+      db.prepare(
+        `UPDATE totals_store
+            SET kelas=?, updated_at=?
+          WHERE kelas=? AND student_key IN (${ph(nises.length)})`
+      ).bind(kelasTujuan, now, kelasAsal, ...nises),
+    ];
 
-    await db.exec("COMMIT");
+    await db.batch(stmts);
+
     return json({ success:true, totalMoved, details, from:kelasAsal, to:kelasTujuan });
   }catch(e){
-    try{ await (ctx.env.ABSENSI_DB || ctx.env.DB)?.exec("ROLLBACK"); }catch{}
     return jsonErr(500, e?.message || String(e));
   }
 }
