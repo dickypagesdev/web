@@ -6551,7 +6551,7 @@ window._pdfSantriDownload = pdfSantriDownload;
 
 
 // ============================
-// hitungTotalAllJuzFromTable (REVISI FINAL) — dengan extractor & key-matcher
+// hitungTotalAllJuzFromTable (REVISI FINAL) — dengan extractor & key-matcher + single-day guard
 // ============================
 
 // --- util kecil untuk normalisasi kunci & angka ---
@@ -6743,6 +6743,16 @@ async function hitungTotalAllJuzFromTable() {
       const archSem    = hasRekap ? (rekap[chosenKey]?.semester ?? null) : null;
       if (Number.isNaN(totalJuzNum)) totalJuzNum = 0;
 
+      // 🔒 SINGLE-DAY GUARD: kalau rentang 1 hari, jangan pernah kalah dari nilai di baris
+      const rd = document.getElementById("rangeDari");
+      const rs = document.getElementById("rangeSampai");
+      const isSingleDay = (dari === sampai) || (rd?.value && rs?.value && rd.value === rs.value);
+      if (isSingleDay) {
+        const rowVal = getTotalJuzFromRow(row);
+        if (rowVal > totalJuzNum) totalJuzNum = rowVal;
+      }
+      // 🔒 END GUARD
+
       const semester = getSemesterForKey(chosenKey || "", row, archSem);
       const batas    = batasSemester[semester] || 0;
       const totalJuzStr = totalJuzNum.toFixed(2);
@@ -6908,6 +6918,14 @@ async function hitungTotalAllJuzOtomatis() {
       let totalJuzNum = hasRekap ? parseNum(rekap[chosenKey].totalJuz) : getTotalJuzFromRow(row);
       if (Number.isNaN(totalJuzNum)) totalJuzNum = 0;
 
+      // 🔒 SINGLE-DAY GUARD
+      const isSingleDay = (dari === sampai) || (rangeDari?.value && rangeSampai?.value && rangeDari.value === rangeSampai.value);
+      if (isSingleDay) {
+        const rowVal = getTotalJuzFromRow(row);
+        if (rowVal > totalJuzNum) totalJuzNum = rowVal;
+      }
+      // 🔒 END GUARD
+
       const semester   = getSemesterForKey(chosenKey || "", row, hasRekap ? rekap[chosenKey]?.semester : null);
       const target     = batasSemester[semester] || 0;
       const totalJuzStr = totalJuzNum.toFixed(2);
@@ -6946,7 +6964,6 @@ window.loadSantriData = async function (...args) {
 // Kalau ganti tanggal atau kelas, otomatis muat ulang tabel & hitung
 tanggalInput?.addEventListener("change", () => loadSantriData());
 kelasSelect?.addEventListener("change", () => loadSantriData());
-
 
 	 
 </script>
