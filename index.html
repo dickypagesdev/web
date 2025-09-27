@@ -6448,6 +6448,12 @@ kelasSelect?.addEventListener("change", () => loadSantriData());
   const $$=(s,r=document)=>[...r.querySelectorAll(s)];
   const makeOpts=(n)=>Array.from({length:n},(_,i)=>`<option value="${i+1}">${i+1}</option>`).join('');
   const parseNum=(v)=>{ if(typeof v==='number')return Number.isFinite(v)?v:0; const s=String(v??'').replace(/[^0-9.,-]/g,'').replace(',', '.'); const n=parseFloat(s); return Number.isFinite(n)?n:0; };
+  // Tambahan: 0 dianggap valid (tidak "kosong")
+  function isDefinedNonEmpty(v){
+    if (v === undefined || v === null) return false;
+    if (typeof v === 'number') return true;
+    return String(v) !== '';
+  }
 
   // Predikat
   const PREDIKATS = [
@@ -6613,12 +6619,13 @@ kelasSelect?.addEventListener("change", () => loadSantriData());
 
     const cell = currentRowEl?.querySelector('.murajaah-cell');
     const hasDataset = !!(cell?.dataset?.[`pf${idx}`] || cell?.dataset?.[`pt${idx}`]
-                       || cell?.dataset?.[`sf${idx}`] || cell?.dataset?.[`st${idx}`]);
+                       || cell?.dataset?.[`sf${idx}`] || cell?.dataset?.[`st${idx}`]
+                       || (cell?.dataset?.[`juz${idx}`] !== undefined)); // 0.00 pun dianggap ada
 
     const isPristine = (!sFv || !aFv || !sTv || !aTv) &&
                        !hasDataset &&
-                       !juzFromVal && !juzToVal &&
-                       !pageFromEl.value && !pageToEl.value &&
+                       !isDefinedNonEmpty(juzFromVal) && !isDefinedNonEmpty(juzToVal) &&
+                       !isDefinedNonEmpty(pageFromEl.value) && !isDefinedNonEmpty(pageToEl.value) &&
                        !murState[idx]?.touched;
 
     if (isPristine){
@@ -6632,7 +6639,7 @@ kelasSelect?.addEventListener("change", () => loadSantriData());
         const sF=+sFv, aF=+aFv, sT=+sTv, aT=+aTv;
         const pages=ayahRangeToPages(sF,aF,sT,aT);
         if(pages){
-          if ((pageFromEl.value==='' && pageToEl.value==='') || hasDataset || juzFromVal || juzToVal){
+          if (!isDefinedNonEmpty(pageFromEl.value) && !isDefinedNonEmpty(pageToEl.value) || hasDataset || isDefinedNonEmpty(juzFromVal) || isDefinedNonEmpty(juzToVal)){
             pageFromEl.value=String(pages.pFrom);
             pageToEl.value  =String(pages.pTo);
           }
@@ -6908,7 +6915,13 @@ kelasSelect?.addEventListener("change", () => loadSantriData());
         fromRec(i,'pages')
       );
 
-      const hasAny = !!(fromStr || toStr || pagesStr || ds[`juz${i}`] || fromRec(i,'juz'));
+      const juzPreset = pickNonEmpty(ds[`juz${i}`], fromRec(i,'juz')); // bisa "0.00"
+      const hasAny = [
+        fromStr, toStr, pagesStr,
+        juzPreset,
+        fromRec(i,'jFrom'), fromRec(i,'jTo'),
+        fromRec(i,'score'), fromRec(i,'pText'), fromRec(i,'pHuruf')
+      ].some(isDefinedNonEmpty);
 
       if (hasAny){
         let [sF,aF] = splitSA(fromStr);
@@ -6921,17 +6934,17 @@ kelasSelect?.addEventListener("change", () => loadSantriData());
 
         const jf = pickNonEmpty(ds[`jfrom${i}`], fromRec(i,'jFrom'));
         const jt = pickNonEmpty(ds[`jto${i}`],   fromRec(i,'jTo'));
-        $(`#mur${i}-juzFrom`).value = jf!==undefined ? String(jf) : '';
-        $(`#mur${i}-juzTo`).value   = jt!==undefined ? String(jt) : '';
+        $(`#mur${i}-juzFrom`).value = isDefinedNonEmpty(jf) ? String(jf) : '';
+        $(`#mur${i}-juzTo`).value   = isDefinedNonEmpty(jt) ? String(jt) : '';
 
         const sc = pickNonEmpty(ds[`score${i}`], fromRec(i,'score'));
-        $(`#mur${i}-score`).value = sc!==undefined ? String(sc) : '';
+        $(`#mur${i}-score`).value = isDefinedNonEmpty(sc) ? String(sc) : '';
 
         murState[i].touched = true;
         setPredikatUI(i);
         renderSession(i);
 
-        const juzVal = pickNonEmpty(ds[`juz${i}`], fromRec(i,'juz'));
+        const juzVal = juzPreset;
         if (juzVal !== undefined){
           const v = Number(juzVal)||0;
           $(`#mur${i}-totalJuz`).textContent = v.toFixed(2);
@@ -7053,7 +7066,7 @@ kelasSelect?.addEventListener("change", () => loadSantriData());
         const id  = String(tr.children?.[0]?.textContent||'').trim();
         const rec = (nis && byNis.get(nis)) || (id && byId.get(id)) || null;
 
-        const total = num(rec?.juzmurajaah ?? 0);
+        const total = num(rec?.juzmurajaah ?? 0); // HANYA murajaah, tidak pakai totalJuz tilawah
         const valEl = cell.querySelector('.mur-val');
         if(valEl) valEl.textContent = `${total.toFixed(2)} juz`;
         cell.dataset.murtotal = total.toFixed(2);
@@ -7072,7 +7085,7 @@ kelasSelect?.addEventListener("change", () => loadSantriData());
           const fromStr  = takeNonEmpty(rec?.[`murFrom${i}`],  ses?.from,  rec?.murFrom);
           const toStr    = takeNonEmpty(rec?.[`murTo${i}`],    ses?.to,    rec?.murTo);
           const pagesStr = takeNonEmpty(rec?.[`murPages${i}`], ses?.pages, rec?.murPages);
-          const juzVal   = takeNonEmpty(rec?.[`juzmur${i}`], ses?.juz);
+          const juzVal   = takeNonEmpty(rec?.[`juzmur${i}`], ses?.juz); // HANYA murajaah
           const jFrom    = (rec?.[`jFrom${i}`] ?? ses?.jFrom);
           const jTo      = (rec?.[`jTo${i}`]   ?? ses?.jTo);
           const score    = (rec?.[`murScore${i}`]     ?? ses?.score);
@@ -7143,6 +7156,7 @@ kelasSelect?.addEventListener("change", () => loadSantriData());
   })();
 })();
 </script>
+
 <script>
 (function(){
   // ===== util & helpers Murajaah RANGE =====
@@ -7291,7 +7305,7 @@ kelasSelect?.addEventListener("change", () => loadSantriData());
         const v2 = parseNum(item?.juzmur2 ?? item?.juzSesi2 ?? item?.juzmurajaah2 ?? 0);
         const v3 = parseNum(item?.juzmur3 ?? item?.juzSesi3 ?? item?.juzmurajaah3 ?? 0);
         if (v1||v2||v3) return [v1,v2,v3];
-        const t = parseNum(item?.juzmurajaah ?? item?.totalJuz ?? 0);
+        const t = parseNum(item?.juzmurajaah ?? item?.totalJuz ?? 0); // fallback totalJuz hanya untuk REKAP range (bukan UI sesi)
         return [t,0,0];
       };
 
