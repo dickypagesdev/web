@@ -1400,8 +1400,8 @@ async function buatUserNIS() {
       <!-- Row 2, Col 1: PDF Halaqoh -->
       <button id="download-pdf-rekap" class="rekap-btn">PDF Halaqoh</button>
 
-      <!-- Row 2, Col 2: Excel Halaqoh -->
-      <button id="download-xls-rekap" class="rekap-btn">Excel Halaqoh</button>
+      <!-- Row 2, Col 2: Excel All Halaqoh -->
+      <button id="download-xls-rekap" class="rekap-btn">Excel All Halaqoh</button>
 
       <!-- Row 3, Col 1: PDF Individual -->
       <button id="download-pdf-santri" class="rekap-btn">PDF Individual</button>
@@ -4644,6 +4644,54 @@ if (!Array.isArray(santriData)) santriData = [];   // <<< penting: kalau API bal
     return list.map(PDF_fmtSASegmentNama).join(', ');
   }
 
+	// --- MERGE setoran yang berurutan/tumpang-tindih + formatter ringkas ---
+function PDF_mergeSASegmentsContinuous(list){
+  const segs = PDF_sortSASegments(PDF_dedupSASegments(list));
+  if (!segs.length) return [];
+
+  const out = [];
+  for (const seg of segs){
+    if (!seg?.from || !seg?.to) continue;
+    const s = (PDF_compareSA(seg.from, seg.to) <= 0) ? {from: seg.from, to: seg.to} : {from: seg.to, to: seg.from};
+
+    if (!out.length) { out.push({...s}); continue; }
+
+    const cur = out[out.length - 1];
+    // 1) Dalam surah yang sama: bersisian / overlap ayat
+    const sameSurahTouch = (s.from.s === cur.to.s) && (s.from.a <= cur.to.a + 1);
+    // 2) Lintas surah bertetangga & mulai ayat 1 (contoh: 1:… → 2:1)
+    const nextSurahFrom1 = (s.from.s === cur.to.s + 1) && (s.from.a === 1);
+
+    if (sameSurahTouch || nextSurahFrom1){
+      if (PDF_compareSA(s.to, cur.to) > 0) cur.to = s.to;   // perpanjang ujung kanan
+    } else {
+      out.push({...s});
+    }
+  }
+  return out;
+}
+
+function PDF_joinSAsegmentsNamaMerged(arr){
+  const merged = PDF_mergeSASegmentsContinuous(arr);
+  if (!merged.length) return '-';
+  return merged.map(seg => {
+    if (seg.from.s === seg.to.s){
+      const name = PDF_surahName(seg.from.s);
+      return `${name}: ${seg.from.a} s.d. ${seg.to.a}`;
+    } else {
+      const n1 = PDF_surahName(seg.from.s), n2 = PDF_surahName(seg.to.s);
+      return `${n1}: ${seg.from.a} s.d. ${n2}: ${seg.to.a}`;
+    }
+  }).join(', ');
+}
+
+// optional: expose global
+window.PDF_mergeSASegmentsContinuous = PDF_mergeSASegmentsContinuous;
+window.PDF_joinSAsegmentsNamaMerged  = PDF_joinSAsegmentsNamaMerged;
+
+
+
+
   // === Pewarnaan sel SP ===
   function PDF_spPaintCell(doc, x, y, w, h, spValue){
     const v = String(spValue||'').toUpperCase().replace(/\s+/g,''); // SP1 / SP 1 -> SP1
@@ -4748,7 +4796,7 @@ if (!Array.isArray(santriData)) santriData = [];   // <<< penting: kalau API bal
         const nilaiAvg  = r.nilaiCount ? (r.nilaiSum / r.nilaiCount) : 0;
         const pred      = PDF_predikatFromScore(nilaiAvg);
         const statusJuz = PDF_totalAllJuzStatus(r.totalJuz, r.semester);
-        const setoranText = PDF_joinSAsegmentsNama(r.saSegments);
+        const setoranText = PDF_joinSAsegmentsNamaMerged(r.saSegments);
         const juzText     = PDF_joinRangeSegments(r.juzSegments, true);
 
         // SLOT-based
@@ -5203,7 +5251,7 @@ if (!Array.isArray(santriData)) santriData = [];   // <<< penting: kalau API bal
           const nilaiAvg  = r.nilaiCount ? (r.nilaiSum / r.nilaiCount) : 0;
           const pred      = PDF_predikatFromScore(nilaiAvg);
           const statusJuz = PDF_totalAllJuzStatus(r.totalJuz, r.semester);
-          const setoranText = PDF_joinSAsegmentsNama(r.saSegments);
+          const setoranText = PDF_joinSAsegmentsNamaMerged(r.saSegments);
           const juzText     = PDF_joinRangeSegments(r.juzSegments, true);
 
           const hadirSlots = Number(r.hadirSlots ?? r.hadir ?? 0);
@@ -5422,7 +5470,7 @@ async function xlsRekapDownload(){
         const nilaiAvg  = r.nilaiCount ? (r.nilaiSum / r.nilaiCount) : 0;
         const pred      = PDF_predikatFromScore(nilaiAvg);
         const statusJuz = PDF_totalAllJuzStatus(r.totalJuz, r.semester);
-        const setoranText = PDF_joinSAsegmentsNama(r.saSegments);
+        const setoranText = PDF_joinSAsegmentsNamaMerged(r.saSegments);
         const juzText     = PDF_joinRangeSegments(r.juzSegments, true);
 
         const hadirSlots = Number(r.hadirSlots ?? r.hadir ?? 0);
@@ -6082,7 +6130,7 @@ async function pdfSantriDownload(){
         ket: keteranganSantri,
         h: d.cnt.hadir, a: d.cnt.alpha, s: d.cnt.sakit, i: d.cnt.izin,
         hadirPct: `${hadirPct}%`,
-        setoran: PDF_joinSAsegmentsNama(d.sa),
+        setoran: PDF_joinSAsegmentsNamaMerged(d.sa),
         juz: PDF_joinRangeSegments(d.juz, true),
         totJuz: d.totalJuz ? d.totalJuz.toFixed(2) : '0.00',
 		murRange: fmtMurRange(d.murJuz || 0, (d.murJuz||0) > 0 ? 1 : 0),
@@ -6094,7 +6142,7 @@ async function pdfSantriDownload(){
 
     // ==== Baris REKAP (slot-based) ====
     const predTotal = PDF_predikatFromScore(nilaiAvg);
-    const setoranTotal = agg ? PDF_joinSAsegmentsNama(agg.saSegments) : '-';
+    const setoranTotal = agg ? PDF_joinSAsegmentsNamaMerged(agg.saSegments) : '-';
     const juzTotalTxt  = agg ? PDF_joinRangeSegments(agg.juzSegments, true) : '-';
 
     tableRows.push({
