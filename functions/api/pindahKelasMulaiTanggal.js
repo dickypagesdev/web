@@ -29,14 +29,47 @@ export async function onRequestPost(ctx){
     const totalMoved = details.reduce((a,b)=>a+b.moved,0);
     const now = nowIso();
 
-    // Transaksi aman via db.batch()
+    // ====== ANTI-UNIQUE CONFLICT: hapus target yg bentrok, lalu UPDATE ======
     const stmts = [
+      // 1) attendance_snapshots: hapus baris di kelasTujuan yg (tanggal, student_key) juga ada di kelasAsal (>= start)
+      db.prepare(
+        `DELETE FROM attendance_snapshots AS t
+          WHERE t.class_name = ?
+            AND t.tanggal >= ?
+            AND t.student_key IN (${ph(nises.length)})
+            AND EXISTS (
+              SELECT 1 FROM attendance_snapshots s
+               WHERE s.class_name = ?
+                 AND s.tanggal    = t.tanggal
+                 AND s.student_key= t.student_key
+                 AND s.tanggal   >= ?
+            )`
+      ).bind(kelasTujuan, start, ...nises, kelasAsal, start),
+
+      // 2) attendance_snapshots: pindahkan kelasAsal -> kelasTujuan (>= start)
       db.prepare(
         `UPDATE attendance_snapshots
             SET class_name=?, updated_at=?
           WHERE class_name=? AND tanggal>=? AND student_key IN (${ph(nises.length)})`
       ).bind(kelasTujuan, now, kelasAsal, start, ...nises),
 
+      // 3) totals_store: hapus target yg bentrok (match start_date,end_date,student_key) untuk periode end_date >= start
+      db.prepare(
+        `DELETE FROM totals_store AS t
+          WHERE t.kelas = ?
+            AND t.student_key IN (${ph(nises.length)})
+            AND t.end_date >= ?
+            AND EXISTS (
+              SELECT 1 FROM totals_store s
+               WHERE s.kelas = ?
+                 AND s.student_key = t.student_key
+                 AND s.start_date  = t.start_date
+                 AND s.end_date    = t.end_date
+                 AND s.end_date   >= ?
+            )`
+      ).bind(kelasTujuan, ...nises, start, kelasAsal, start),
+
+      // 4) totals_store: pindahkan kelasAsal -> kelasTujuan utk periode end_date >= start
       db.prepare(
         `UPDATE totals_store
             SET kelas=?, updated_at=?
