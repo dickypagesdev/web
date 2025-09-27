@@ -3947,7 +3947,6 @@ kelasSelect.addEventListener("change", loadSantriData);
 tanggalInput.addEventListener("change", loadSantriData);
 
 
-
 async function simpanDataMutabaah(saveBtn){
   const rows  = document.querySelectorAll('#santri-table tbody tr');
 
@@ -3993,7 +3992,7 @@ async function simpanDataMutabaah(saveBtn){
     return { nilai, predikatText:(teks.length?teks.join(' '):null), predikatHuruf:huruf };
   }
 
-  // ==== util ABSENSI FLEX (tetap) ====
+  // ==== util ambil ABSENSI FLEX (tetap) ====
   function buildAbsensi6(items, target){
     const t = Math.max(1, Math.min(6, Number(target)||1));
     const chosen = (items||[]).filter(it=>it.checked).map(it=>String(it.key).toLowerCase().replace(/\d+$/,''));
@@ -4042,12 +4041,17 @@ async function simpanDataMutabaah(saveBtn){
     return { absensiItems, absensiTarget, absensiChecked, absensiPercent, absensi6, absensiExpanded, absensiExpandedStr };
   }
 
-  // ==== Murajaah 3 sesi (tetap) ====
+  // ==== NEW: ambil dataset Murajaah 3 sesi dari .murajaah-cell ====
   function getMurFromRow(row, existing={}){
     const cell = row.querySelector('.murajaah-cell');
     const out  = { sessions: [], total: null };
-    function pick(dsKey, fallback){ const v = cell?.dataset?.[dsKey]; return (v!==undefined && v!==null && String(v)!=='') ? v : fallback; }
+
+    function pick(dsKey, fallback){
+      const v = cell?.dataset?.[dsKey];
+      return (v!==undefined && v!==null && String(v)!=='') ? v : fallback;
+    }
     function num(v, fb=0){ const n=parseNum(v); return Number.isFinite(n)?n:fb; }
+
     for (let i=1;i<=3;i++){
       const sF = pick(`sf${i}`,  undefined);
       const aF = pick(`af${i}`,  undefined);
@@ -4062,6 +4066,7 @@ async function simpanDataMutabaah(saveBtn){
       const pt = pick(`ptext${i}`, undefined);
       const ph = pick(`phuruf${i}`,undefined);
 
+      // fallback ke existing bila kosong
       const ex = existing || {};
       const exSes = (Array.isArray(ex.murSessions) && ex.murSessions[i-1]) ? ex.murSessions[i-1] : {};
       const sess = {
@@ -4077,8 +4082,11 @@ async function simpanDataMutabaah(saveBtn){
       };
       out.sessions.push(sess);
     }
+
+    // total grand (kalau semua 0 → biarkan null agar tidak menimpa existing non-zero)
     const sum = out.sessions.reduce((a,s)=>a + (Number(s.juz)||0), 0);
     out.total = sum>0 ? +sum.toFixed(2) : null;
+
     return out;
   }
 
@@ -4123,17 +4131,15 @@ async function simpanDataMutabaah(saveBtn){
         const ayatDari     = (row.querySelector(".ayat-dari")?.value ?? "").trim();
         const surahSampai  = (row.querySelector(".surah-sampai")?.value ?? "").trim();
         const ayatSampai   = (row.querySelector(".ayat-sampai")?.value ?? "").trim();
-        const tilawahTotalJuz = row.querySelector(".total-juz")?.textContent || "0";
-        const tilawahTotalJuzNum = Number(parseNum(tilawahTotalJuz).toFixed(2));
+        const tilawahTotalJuz = row.querySelector(".total-juz")?.textContent || "0";  // tilawah harian
         const halaman      = row.querySelector(".halaman-terbaca")?.textContent ?? existing?.halaman ?? "";
         const totalHalaman = row.querySelector(".total-halaman")?.textContent ?? existing?.totalHalaman ?? "";
         const juzTerbaca   = row.querySelector(".juz-terbaca")?.textContent ?? existing?.juzTerbaca ?? "";
 
-        // Murajaah
+        // ==== NEW: tarik Murajaah dari row ====
         const mur = getMurFromRow(row, existing);
-        const murTotal = (mur.total!=null ? mur.total : Number(parseNum(existing?.juzmurajaah||0).toFixed(2)));
 
-        // Nilai umum
+        // Nilai umum (tetap)
         const nilaiCell = row.querySelector(".lihat-quran-btn")?.parentElement;
         const nilaiStr  = nilaiCell?.querySelector("div:nth-child(1)")?.innerText?.trim()||"";
         const parsed    = parseNilaiStr(nilaiStr);
@@ -4144,15 +4150,10 @@ async function simpanDataMutabaah(saveBtn){
           buttonCell = { nilai: parsed.nilai, predikatText, predikatHuruf };
         } else if (existing?.buttonCell) { buttonCell=existing.buttonCell; }
 
-        // Payload
-        const stableKey = (nis || String(id||"")).trim();
+        // ===== konstruksi payload =====
         const base = {
           ...existing,
           id, nis, nama, jenjang, semester,
-
-          // kunci stabil + alias yg mungkin dibaca backend
-          key: stableKey,
-          student_key: stableKey,
 
           absensi: absensiExpandedStr,
           absensiItems, absensiTarget, absensiChecked, absensiPercent, absensi6,
@@ -4161,14 +4162,12 @@ async function simpanDataMutabaah(saveBtn){
           dari:   (surahDari && ayatDari)     ? `${surahDari}:${ayatDari}`     : "",
           sampai: (surahSampai && ayatSampai) ? `${surahSampai}:${ayatSampai}` : "",
 
-          // Tilawah: angka bersih di semua alias
-          tilawahTotalJuz: tilawahTotalJuzNum,
-          totalJuz:        tilawahTotalJuzNum,
-          total_juz:       tilawahTotalJuzNum,
-
+          // tilawah harian disimpan ke key terpisah (bukan totalJuz)
+          tilawahTotalJuz: Number(parseNum(tilawahTotalJuz).toFixed(2)),
+		  totalJuz: Number(parseNum(tilawahTotalJuz).toFixed(2)), // <-- mirror utk kompatibilitas pembaca lama
           halaman, totalHalaman, juzTerbaca, keterangan,
 
-          // Murajaah 3 sesi + legacy
+          // ==== NEW: simpan Murajaah tiga sesi (+ legacy fields) ====
           murSessions: mur.sessions.map(s => ({
             from: s.from || "",
             to:   s.to   || "",
@@ -4181,7 +4180,7 @@ async function simpanDataMutabaah(saveBtn){
             predikatHuruf: s.predikatHuruf|| ""
           })),
 
-          // Sesi 1..3 (tetap)
+          // sesi 1
           murFrom1: mur.sessions[0]?.from || existing?.murFrom1 || "",
           murTo1:   mur.sessions[0]?.to   || existing?.murTo1   || "",
           murPages1: mur.sessions[0]?.pages || existing?.murPages1 || "",
@@ -4192,6 +4191,7 @@ async function simpanDataMutabaah(saveBtn){
           murPredText1:  mur.sessions[0]?.predikatText  ?? existing?.murPredText1  ?? "",
           murPredHuruf1: mur.sessions[0]?.predikatHuruf ?? existing?.murPredHuruf1 ?? "",
 
+          // sesi 2
           murFrom2: mur.sessions[1]?.from || existing?.murFrom2 || "",
           murTo2:   mur.sessions[1]?.to   || existing?.murTo2   || "",
           murPages2: mur.sessions[1]?.pages || existing?.murPages2 || "",
@@ -4202,6 +4202,7 @@ async function simpanDataMutabaah(saveBtn){
           murPredText2:  mur.sessions[1]?.predikatText  ?? existing?.murPredText2  ?? "",
           murPredHuruf2: mur.sessions[1]?.predikatHuruf ?? existing?.murPredHuruf2 ?? "",
 
+          // sesi 3
           murFrom3: mur.sessions[2]?.from || existing?.murFrom3 || "",
           murTo3:   mur.sessions[2]?.to   || existing?.murTo3   || "",
           murPages3: mur.sessions[2]?.pages || existing?.murPages3 || "",
@@ -4212,12 +4213,10 @@ async function simpanDataMutabaah(saveBtn){
           murPredText3:  mur.sessions[2]?.predikatText  ?? existing?.murPredText3  ?? "",
           murPredHuruf3: mur.sessions[2]?.predikatHuruf ?? existing?.murPredHuruf3 ?? "",
 
-          // Total Mur: angka bersih di semua alias
-          juzmurajaah: murTotal,
-          totalMur:    murTotal,
-          total_mur:   murTotal,
+          // total murajaah (kalau ada input, pakai sum baru; kalau tidak, pertahankan existing)
+          juzmurajaah: (mur.total!=null ? mur.total : Number(parseNum(existing?.juzmurajaah||0).toFixed?.(2) ?? 0)),
 
-          // marks (tetap)
+          // marks tetap
           marks: (row.markData && typeof row.markData === 'object') ? row.markData : (existing?.marks || { audio: [] })
         };
 
@@ -4237,7 +4236,7 @@ async function simpanDataMutabaah(saveBtn){
       let result={}; try { result = await res.json(); } catch { result = {}; }
       hasilKirim.push({tanggal, ok:!!result?.success, result});
 
-      // ===== refresh indeks ✓/★ dropdown tilawah (tetap) =====
+      // ===== perbarui indeks tanda ✓/★ (per KELAS) utk dropdown tilawah =====
       (function updateAyatIndexFromRows(){
         window.__ayatIndex  ??= {};
         window.__ayatLatest ??= {};
@@ -4273,10 +4272,11 @@ async function simpanDataMutabaah(saveBtn){
     const gagal=hasilKirim.filter(h=>!h.ok);
     if(!gagal.length){
       if(saveBtn) saveBtn.textContent='✅ Tersimpan';
+      // biarkan script Murajaah menarik ulang datanya sendiri
       if (window.murajaah && typeof window.murajaah.refreshServer==='function'){
         await window.murajaah.refreshServer();
       }
-      // segarkan tanda pada dropdown (tetap)
+      // segarkan tanda ✓/★ pada dropdown tilawah yg sedang tampil
       document.querySelectorAll('#santri-table tbody tr').forEach(row=>{
         const kelasRow = row.dataset?.kelas || resolveKelas() || "";
         const key      = String(row.dataset?.nis||row.dataset?.id||"").trim();
@@ -4324,7 +4324,6 @@ async function simpanDataMutabaah(saveBtn){
 document.getElementById('save-btn')?.addEventListener('click', function(){ simpanDataMutabaah(this); });
 document.getElementById('save-btn-modal')?.addEventListener('click', function(){ simpanDataMutabaah(this); });
 document.getElementById('mur-save')?.addEventListener('click', function(){ simpanDataMutabaah(this); });
-
 
 
 
@@ -6552,6 +6551,21 @@ window._pdfSantriDownload = pdfSantriDownload;
 
 
 
+// ==== HELPER: baca totalJuz dari berbagai nama field ====
+function readTotalJuz(rec){
+  // Prioritas: totalJuz -> tilawahTotalJuz -> (fallback lain jika ada)
+  return parseNum(
+    (rec && (
+      rec.totalJuz ??
+      rec.tilawahTotalJuz ??
+      rec.juzTotal ??
+      rec.total ??
+      0
+    )) || 0
+  );
+}
+
+
 // ============================
 // hitungTotalAllJuzFromTable (REVISI FINAL)
 // ============================
@@ -6670,7 +6684,7 @@ async function hitungTotalAllJuzFromTable() {
       }
       if (!key) return;
       if (!rekap[key]) rekap[key] = { totalJuz: 0, semester: item?.semester ?? null, id, nis, nama: item?.nama ?? "" };
-      rekap[key].totalJuz += parseNum(item?.totalJuz);
+      rekap[key].totalJuz += readTotalJuz(item);
     });
 
     // Batas ketuntasan per semester
@@ -6836,7 +6850,7 @@ async function hitungTotalAllJuzOtomatis() {
       }
       if (!key) return;
       if (!rekap[key]) rekap[key] = { totalJuz: 0, semester: item?.semester ?? null };
-      rekap[key].totalJuz += parseNum(item?.totalJuz);
+      rekap[key].totalJuz += readTotalJuz(item);
     });
 
     const batasSemester = {1: 8, 2: 13, 3: 18, 4: 23, 5: 28, 6: 30};
