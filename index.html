@@ -3113,27 +3113,24 @@ async function loadSantriData() {
   const tanggal = tanggalInput.value; // tanggal awal (kolom pertama)
   overlay.style.display = "flex";
 
-  // ===== NEW: Konfigurasi & util jenjang (future-proof) =====
-  const JENJANG_MAX = Number(window.JENJANG_MAX ?? 9); // ubah ke 100 / 300 / 1000 sesuai kebutuhan
+  // ===== util jenjang (tetap) =====
+  const JENJANG_MAX = Number(window.JENJANG_MAX ?? 9);
 
   const parseJenjang = (v) => {
     const m = /^A(\d+)$/.exec(String(v || "").trim());
     return m ? Number(m[1]) : null;
   };
-
   const isValidJenjang = (v, max = JENJANG_MAX) => {
-    if (!v) return true;                       // kosong = boleh
+    if (!v) return true;
     const n = parseJenjang(v);
-    if (!Number.isFinite(n) || n < 1) return false; // minimal A1
-    if (!max || max === 0) return true;        // 0 => tanpa batas atas
+    if (!Number.isFinite(n) || n < 1) return false;
+    if (!max || max === 0) return true;
     return n <= max;
   };
-
   const ensureJenjangOptions = (selectEl, max = JENJANG_MAX, currentValue = "") => {
     if (!selectEl) return;
     const existingVals = new Set([...selectEl.options].map(o => String(o.value || "")));
     const frag = document.createDocumentFragment();
-
     if (![...selectEl.options].some(o => o.value === "")) {
       const empty = document.createElement("option");
       empty.value = "";
@@ -3154,51 +3151,45 @@ async function loadSantriData() {
       selectEl.value = String(currentValue);
     }
   };
-  // ===== END NEW =====
 
   // === cache master
   window.semesterMap   ??= {};
   window.jenjangMap    ??= {};
   window.keteranganMap ??= {};
 
-  // Helpers kecil
+  // ===== index riwayat tilawah PER KELAS -> PER NIS -> PER SURAH =====
+  // __ayatIndex[kelas][nis][surahId] = Set(ayat)
+  // __ayatLatest[kelas][nis] = { dari:{surah,ayat,tanggal}, sampai:{...} }
+  window.__ayatIndex  ??= {};
+  window.__ayatLatest ??= {};
+  function getIndexBucket(k){ window.__ayatIndex[k] ??= {}; return window.__ayatIndex[k]; }
+  function getLatestBucket(k){ window.__ayatLatest[k] ??= {}; return window.__ayatLatest[k]; }
+
+  // Helpers kecil (tetap dengan konsep lama)
   const keyId   = v => (v === 0 || v) ? String(v).trim() : "";
   const keyNis  = v => (v === 0 || v) ? String(v).trim() : "";
   const keyName = v => String(v || "").trim().toLowerCase();
   const byIdMap = (arr, pick = x => x) => {
     const m = new Map();
-    for (const a of arr || []) {
-      const id = keyId(a?.id);
-      if (id) m.set(id, pick(a));
-    }
+    for (const a of arr || []) { const id = keyId(a?.id); if (id) m.set(id, pick(a)); }
     return m;
   };
   const byNisMap = (arr, pick = x => x) => {
     const m = new Map();
-    for (const a of arr || []) {
-      const nis = keyNis(a?.nis);
-      if (nis) m.set(nis, pick(a));
-    }
+    for (const a of arr || []) { const nis = keyNis(a?.nis); if (nis) m.set(nis, pick(a)); }
     return m;
   };
   const byNameMap = (arr, pick = x => x) => {
     const m = new Map();
-    for (const a of arr || []) {
-      const nm = keyName(a?.nama);
-      if (nm && !m.has(nm)) m.set(nm, pick(a));
-    }
+    for (const a of arr || []) { const nm = keyName(a?.nama); if (nm && !m.has(nm)) m.set(nm, pick(a)); }
     return m;
   };
-
-  const getRowKey = row => (row?.dataset?.key || "").trim();
-  const getRowId  = row => (row?.dataset?.id  || "").trim();
-  const getRowNis = row => (row?.dataset?.nis || "").trim();
 
   function setButtonsDisabled(disabled) {
     const targets = [
       document.getElementById("save-btn-modal"),
       document.getElementById("save-btn"),
-	  document.getElementById("mur-save"),
+      document.getElementById("mur-save"),
       document.getElementById("btnHitungTotalJuz"),
       document.querySelector("button[onclick='bukaModalSantri()']"),
       document.getElementById("btnHapusSantri"),
@@ -3226,11 +3217,68 @@ async function loadSantriData() {
     });
   }
 
+  // === bangun index dari list absensi (hanya baca 'dari' / 'sampai')
+  function buildAyatIndexFromList(kelasKey, absList) {
+    const usedBucket   = getIndexBucket(kelasKey);
+    const latestBucket = getLatestBucket(kelasKey);
+
+    const push = (nis, kind, surahAyat, tanggal) => {
+      if (!nis || !surahAyat || !/^\d+:\d+$/.test(surahAyat)) return;
+      const [s,a] = surahAyat.split(":").map(Number);
+      usedBucket[nis] ??= {};
+      usedBucket[nis][String(s)] ??= new Set();
+      usedBucket[nis][String(s)].add(a);
+
+      latestBucket[nis] ??= {};
+      const prev = latestBucket[nis][kind];
+      if (!prev || String(tanggal).localeCompare(String(prev.tanggal)) > 0) {
+        latestBucket[nis][kind] = { surah: String(s), ayat: Number(a), tanggal: String(tanggal||"") };
+      }
+    };
+
+    (absList||[]).forEach(r => {
+      const nis = keyNis(r?.nis) || keyId(r?.id) || "";
+      const tgl = r?.tanggal || "";
+      if (r?.dari)   push(nis, 'dari',   String(r.dari),   tgl);
+      if (r?.sampai) push(nis, 'sampai', String(r.sampai), tgl);
+    });
+  }
+
+  // generator opsi surah dengan tanda ✓ (pernah) / ★ (terakhir)
+  function makeSurahOptions(kelasKey, nis, kind, selectedId="") {
+    const u    = (getIndexBucket(kelasKey)?.[nis]) || {};
+    const last = (getLatestBucket(kelasKey)?.[nis]?.[kind]);
+    let html = `<option value="">— Surah —</option>`;
+    for (const s of surahList) {
+      const sid    = String(s.id);
+      const hasAny = !!u[sid];
+      const isLast = last && last.surah === sid;
+      const mark   = isLast ? "★ " : (hasAny ? "✓ " : "");
+      const sel    = selectedId && selectedId == sid ? ' selected' : '';
+      html += `<option value="${sid}"${sel}>${mark}${s.nama}</option>`;
+    }
+    return html;
+  }
+  // expose untuk dipakai ulang setelah SAVE
+  window.__makeSurahOptions = makeSurahOptions;
+
+  // AYAT dropdown bertanda ✓/★ — jika modul Tahap 2 belum terpasang, fallback aman
+  function fillAyatOptionsMarked(selectEl, surahId, selectedAyat = "") {
+    if (typeof window.fillAyatOptionsMarked === "function") {
+      window.fillAyatOptionsMarked(selectEl, surahId, selectedAyat);
+      return;
+    }
+    // Fallback minimal (tanpa penandaan): hanya kosongkan + set value
+    if (!selectEl) return;
+    selectEl.innerHTML = `<option value="">— Ayat —</option>`;
+    if (selectedAyat) selectEl.value = String(selectedAyat);
+  }
+
   try {
     // Roster santri (MASTER)
-    const resSantri = await fetch(`/api/getSantri?kelas=${encodeURIComponent(kelas)}&t=${Date.now()}`);
-let santriData = await resSantri.json().catch(() => []);
-if (!Array.isArray(santriData)) santriData = [];   // <<< penting: kalau API balik {error:...}
+    const resSantri = await fetch(`/api/getSantri?kelas=${encodeURIComponent(kelas)}&t=${Date.now()}`, { credentials:'include' });
+    let santriData = await resSantri.json().catch(() => []);
+    if (!Array.isArray(santriData)) santriData = [];
 
     window.semesterMap   = {};
     window.jenjangMap    = {};
@@ -3251,21 +3299,22 @@ if (!Array.isArray(santriData)) santriData = [];   // <<< penting: kalau API bal
 
     // Ambil absensi (single / range)
     let absensiRaw = [];
-    const endFilter = tanggalFilterAkhir ? tanggalFilterAkhir.value : "";
+    // dukung #tanggalFilterAkhir atau window.tanggalFilterAkhir
+    const endEl = (typeof tanggalFilterAkhir !== 'undefined' && tanggalFilterAkhir) ? tanggalFilterAkhir : window.tanggalFilterAkhir;
+    const endFilter = endEl ? endEl.value : "";
 
     if (endFilter && endFilter !== tanggal) {
-      const resAbsensiRange = await fetch(`/api/getAbsensiRange?kelas=${encodeURIComponent(kelas)}&start=${encodeURIComponent(tanggal)}&end=${encodeURIComponent(endFilter)}&t=${Date.now()}`);
-		let d = await resAbsensiRange.json();
-		absensiRaw = Array.isArray(d) ? d : (d?.list || []);
+      const resAbsensiRange = await fetch(`/api/getAbsensiRange?kelas=${encodeURIComponent(kelas)}&start=${encodeURIComponent(tanggal)}&end=${encodeURIComponent(endFilter)}&t=${Date.now()}`, { credentials:'include' });
+      let d = await resAbsensiRange.json().catch(()=>({}));
+      absensiRaw = Array.isArray(d) ? d : (d?.list || []);
       if (!Array.isArray(absensiRaw)) absensiRaw = [];
     } else {
-      const resAbsensi = await fetch(
-        `/api/getAbsensi?kelas=${encodeURIComponent(kelas)}&tanggal=${encodeURIComponent(tanggal)}&t=${Date.now()}`
-      );
-      let d = await resAbsensi.json();
+      const resAbsensi = await fetch(`/api/getAbsensi?kelas=${encodeURIComponent(kelas)}&tanggal=${encodeURIComponent(tanggal)}&t=${Date.now()}`, { credentials:'include' });
+      let d = await resAbsensi.json().catch(()=>({}));
       absensiRaw = Array.isArray(d) ? d : (d?.list || []);
     }
 
+    // Normalisasi absensi (lengkapi id/nis/nama dari roster) — konsep lama dipertahankan
     let absensiData = absensiRaw.map((r) => {
       let id   = keyId(r?.id ?? "");
       let nis  = keyNis(r?.nis ?? "");
@@ -3288,9 +3337,12 @@ if (!Array.isArray(santriData)) santriData = [];   // <<< penting: kalau API bal
       return { ...r, id, nis, nama, semester: semesterFix, jenjang: jenjangFix, keterangan: ketFix };
     });
 
+    // === bangun / merge index tanda ✓/★ untuk kelas ini
+    buildAyatIndexFromList(kelas, absensiData);
+
     // Ambil user login & filter akses santri (tetap)
     const username = localStorage.getItem("username");
-    const users = await fetch(`/api/getUsers?t=${Date.now()}`).then(r => r.json());
+    const users = await fetch(`/api/getUsers?t=${Date.now()}`, {credentials:'include'}).then(r => r.json()).catch(()=>[]);
     const user  = users.find(u => u.username === username);
 
     if (user) {
@@ -3315,22 +3367,23 @@ if (!Array.isArray(santriData)) santriData = [];   // <<< penting: kalau API bal
     santriTableBody.innerHTML = "";
     const isRange = !!(endFilter && endFilter !== tanggal);
 
+    let absById, absByNis, absByName, absensiById, absensiByNis, absensiByName;
     if (!isRange) {
-      var absById   = new Map();
-      var absByNis  = new Map();
-      var absByName = new Map();
+      absById   = new Map();
+      absByNis  = new Map();
+      absByName = new Map();
       for (const a of absensiData) {
         const aid  = keyId(a?.id);
         const anis = keyNis(a?.nis);
         const anm  = keyName(a?.nama);
         if (aid && !absById.has(aid))   absById.set(aid, a);
         if (anis && !absByNis.has(anis)) absByNis.set(anis, a);
-        if (anm && !absByName.has(anm)) absByName.set(anm, a);
+        if (anm && !absByName.has(anm))  absByName.set(anm, a);
       }
     } else {
-      var absensiById   = {};
-      var absensiByNis  = {};
-      var absensiByName = {};
+      absensiById   = {};
+      absensiByNis  = {};
+      absensiByName = {};
       for (const a of absensiData) {
         const aid  = keyId(a?.id);
         const anis = keyNis(a?.nis);
@@ -3345,7 +3398,7 @@ if (!Array.isArray(santriData)) santriData = [];   // <<< penting: kalau API bal
       Object.values(absensiByName).forEach(sorter);
     }
 
-    // helper lokal untuk hitung ringkas dari preset (tanpa render)
+    // helper lokal
     function computeLocal(items, target){
       const maxT = Number(window.ABS_FLEX_CFG?.maxTarget ?? 6);
       const tgt = Math.max(1, Math.min(maxT, Number(target)||Number(window.ABS_FLEX_CFG?.defaultTarget||2)));
@@ -3384,71 +3437,73 @@ if (!Array.isArray(santriData)) santriData = [];   // <<< penting: kalau API bal
       rowsForSantri.forEach((dataAbsensi) => {
         const row = document.createElement("tr");
 
-        const surahOptions = surahList.map(s => `<option value="${s.id}">${s.nama}</option>`).join("");
-        const dari   = (dataAbsensi?.dari   || "1:1").split(":");
-        const sampai = (dataAbsensi?.sampai || "1:1").split(":");
+        const dariRaw   = (dataAbsensi?.dari   || "").trim();
+        const sampaiRaw = (dataAbsensi?.sampai || "").trim();
+        const dari   = dariRaw   ? dariRaw.split(":")   : ["",""];
+        const sampai = sampaiRaw ? sampaiRaw.split(":") : ["",""];
 
         const rowDate = (isRange && dataAbsensi?.tanggal) ? dataAbsensi.tanggal : tanggal;
-
         const subTanggal = isRange && dataAbsensi?.tanggal
-          ? `<div style="font-size:12px;opacity:.65">${dataAbsensi.tanggal}</div>`
-          : "";
+          ? `<div style="font-size:12px;opacity:.65">${dataAbsensi.tanggal}</div>` : "";
 
         const keyMaster = (snis || sid || "");
         const semNow = (window.semesterMap?.[keyMaster])   ?? santri.semester   ?? "1";
         const jenNow = (window.jenjangMap?.[keyMaster])    ?? santri.jenjang    ?? "";
         const ketNow = (window.keteranganMap?.[keyMaster]) ?? santri.keterangan ?? "";
 
+        // opsi SURAH dengan tanda ✓/★ per-KELAS & per-NIS
+        const surahOptionsDari   = makeSurahOptions(kelas, snis || sid || "", 'dari',   dari[0]||"");
+        const surahOptionsSampai = makeSurahOptions(kelas, snis || sid || "", 'sampai', sampai[0]||"");
+
         row.innerHTML = `
           <td class="col-nis">${santri.nis ?? santri.id ?? ""}</td>
           <td class="col-nama">${santri.nama ?? ""}${subTanggal}</td>
           <td>
             <select class="jenjang">
-    <option value="A1" ${jenNow === 'A1' ? 'selected' : ''}>1 PDF</option>
-    <option value="A2" ${jenNow === 'A2' ? 'selected' : ''}>2 PDF</option>
-    <option value="A3" ${jenNow === 'A3' ? 'selected' : ''}>3 PDF</option>
-    <option value="A4" ${jenNow === 'A4' ? 'selected' : ''}>1 MA</option>
-    <option value="A5" ${jenNow === 'A5' ? 'selected' : ''}>2 MA</option>
-    <option value="A6" ${jenNow === 'A6' ? 'selected' : ''}>3 MA</option>
-  </select>
+              <option value="A1" ${jenNow === 'A1' ? 'selected' : ''}>1 PDF</option>
+              <option value="A2" ${jenNow === 'A2' ? 'selected' : ''}>2 PDF</option>
+              <option value="A3" ${jenNow === 'A3' ? 'selected' : ''}>3 PDF</option>
+              <option value="A4" ${jenNow === 'A4' ? 'selected' : ''}>1 MA</option>
+              <option value="A5" ${jenNow === 'A5' ? 'selected' : ''}>2 MA</option>
+              <option value="A6" ${jenNow === 'A6' ? 'selected' : ''}>3 MA</option>
+            </select>
           </td>
           <td>
             <select class="semester">
-    <option value="1" ${String(semNow) === '1' ? 'selected' : ''}>1</option>
-    <option value="2" ${String(semNow) === '2' ? 'selected' : ''}>2</option>
-    <option value="3" ${String(semNow) === '3' ? 'selected' : ''}>3</option>
-    <option value="4" ${String(semNow) === '4' ? 'selected' : ''}>4</option>
-    <option value="5" ${String(semNow) === '5' ? 'selected' : ''}>5</option>
-    <option value="6" ${String(semNow) === '6' ? 'selected' : ''}>6</option>
-  </select>
+              <option value="1" ${String(semNow) === '1' ? 'selected' : ''}>1</option>
+              <option value="2" ${String(semNow) === '2' ? 'selected' : ''}>2</option>
+              <option value="3" ${String(semNow) === '3' ? 'selected' : ''}>3</option>
+              <option value="4" ${String(semNow) === '4' ? 'selected' : ''}>4</option>
+              <option value="5" ${String(semNow) === '5' ? 'selected' : ''}>5</option>
+              <option value="6" ${String(semNow) === '6' ? 'selected' : ''}>6</option>
+            </select>
           </td>
 
-          <!-- ============ ABSENSI FLEX via MODAL BUTTON ============ -->
+          <!-- ABSENSI FLEX -->
           <td class="abs-flex-cell">
-		    <div class="abs-mini" style="font-size:12px;opacity:.8;margin-top:4px;"></div>
+            <div class="abs-mini" style="font-size:12px;opacity:.8;margin-top:4px;"></div>
             <button type="button" class="btn-absensi-flex" style="margin-top:6px; padding:4px 8px;border:1px solid #e5e7eb;border-radius:8px;background:#1E88E5;">Input</button>
           </td>
-          <!-- ======================================================= -->
 
           <td>
             <select class="keterangan">
-    <option value="" ${!ketNow ? 'selected' : ''}></option>
-    <option value="SP1" ${ketNow === 'SP1' ? 'selected' : ''}>SP1</option>
-    <option value="SP2" ${ketNow === 'SP2' ? 'selected' : ''}>SP2</option>
-  </select>
+              <option value="" ${!ketNow ? 'selected' : ''}></option>
+              <option value="SP1" ${ketNow === 'SP1' ? 'selected' : ''}>SP1</option>
+              <option value="SP2" ${ketNow === 'SP2' ? 'selected' : ''}>SP2</option>
+            </select>
           </td>
           <td>
-            <select class="surah-dari">${surahOptions}</select>
-            <select class="ayat-dari"></select>
+            <select class="surah-dari">${surahOptionsDari}</select>
+            <select class="ayat-dari"  data-kind="dari"   data-kelas="${kelas}" data-nis="${snis||sid||''}"><option value="">— Ayat —</option></select>
           </td>
           <td>
-            <select class="surah-sampai">${surahOptions}</select>
-            <select class="ayat-sampai"></select>
+            <select class="surah-sampai">${surahOptionsSampai}</select>
+            <select class="ayat-sampai" data-kind="sampai" data-kelas="${kelas}" data-nis="${snis||sid||''}"><option value="">— Ayat —</option></select>
           </td>
           <td class="halaman-terbaca">${dataAbsensi?.halaman ?? '-'}</td>
           <td class="total-halaman">${dataAbsensi?.totalHalaman ?? '-'}</td>
           <td class="juz-terbaca">${dataAbsensi?.juzTerbaca ?? '-'}</td>
-          <td class="total-juz">${dataAbsensi?.totalJuz ?? 0}</td>
+          <td class="total-juz">0.00</td>
           <td>
             <div class="nilai-ringkas">
               ${dataAbsensi?.buttonCell
@@ -3467,6 +3522,7 @@ if (!Array.isArray(santriData)) santriData = [];   // <<< penting: kalau API bal
         row.dataset.nis       = dsNis;
         row.dataset.key       = (dsNis || dsId || "");
         row.dataset.tanggal   = rowDate;
+        row.dataset.kelas     = kelas;   // scoping penting untuk index ✓/★
         row.dataset.jenjang   = jenNow || "";
         row.dataset.keterangan= ketNow || "";
 
@@ -3479,7 +3535,7 @@ if (!Array.isArray(santriData)) santriData = [];   // <<< penting: kalau API bal
           totalAllJuzTd.innerHTML = `0`;
         }
 
-        // Surah/Ayat init
+        // Surah/Ayat init (pakai versi "Marked" bila ada)
         const surahDari   = row.querySelector(".surah-dari");
         const ayatDari    = row.querySelector(".ayat-dari");
         const surahSampai = row.querySelector(".surah-sampai");
@@ -3488,30 +3544,56 @@ if (!Array.isArray(santriData)) santriData = [];   // <<< penting: kalau API bal
         const dariArr   = Array.isArray(dari)   ? dari   : String(dari).split(":");
         const sampaiArr = Array.isArray(sampai) ? sampai : String(sampai).split(":");
 
-        surahDari.value   = dariArr[0];
-        surahSampai.value = sampaiArr[0];
+        if (dariArr[0])   surahDari.value   = dariArr[0];
+        if (sampaiArr[0]) surahSampai.value = sampaiArr[0];
 
-        fillAyatOptions(ayatDari,   surahDari.value,   dariArr[1]);
-        fillAyatOptions(ayatSampai, surahSampai.value, sampaiArr[1]);
+        fillAyatOptionsMarked(ayatDari,   surahDari.value || "",   dariArr[1]   || "");
+        fillAyatOptionsMarked(ayatSampai, surahSampai.value || "", sampaiArr[1] || "");
 
-        surahDari.addEventListener("change", () => fillAyatOptions(ayatDari, surahDari.value));
-        surahSampai.addEventListener("change", () => fillAyatOptions(ayatSampai, surahSampai.value));
+        // tampilkan total-juz jika server kirim (tilawahTotalJuz),
+        // kalau tidak, hitung saat user ubah dropdown
+        if (dataAbsensi?.tilawahTotalJuz) {
+          const tj = Number(dataAbsensi.tilawahTotalJuz);
+          if (!Number.isNaN(tj)) row.querySelector(".total-juz").textContent = tj.toFixed(2);
+        } else if (dariArr[0] && dariArr[1] && sampaiArr[0] && sampaiArr[1]) {
+          updateTotalJuz(row);
+        }
 
+        // events: regenerate label dengan ✓/★ setiap ganti SURAH
         surahDari.addEventListener("change", () => {
-          surahSampai.value = surahDari.value;
-          fillAyatOptions(ayatSampai, surahSampai.value, ayatDari.value);
+          surahDari.innerHTML = makeSurahOptions(kelas, dsNis || dsId || "", 'dari', surahDari.value);
+          fillAyatOptionsMarked(ayatDari, surahDari.value || "", "");
+          if (surahDari.value) {
+            surahSampai.value = surahDari.value;
+            surahSampai.innerHTML = makeSurahOptions(kelas, dsNis || dsId || "", 'sampai', surahSampai.value);
+            fillAyatOptionsMarked(ayatSampai, surahSampai.value || "", "");
+            ayatSampai.value = ayatDari.value || "";
+          } else {
+            surahSampai.value = "";
+            surahSampai.innerHTML = makeSurahOptions(kelas, dsNis || dsId || "", 'sampai', "");
+            fillAyatOptionsMarked(ayatSampai, "", "");
+          }
+          updateTotalJuz(row);
         });
-        ayatDari.addEventListener("change", () => { ayatSampai.value = ayatDari.value; });
 
-        [ayatDari, ayatSampai, surahDari, surahSampai].forEach(el => {
-          el.addEventListener("change", () => updateTotalJuz(row));
+        surahSampai.addEventListener("change", () => {
+          surahSampai.innerHTML = makeSurahOptions(kelas, dsNis || dsId || "", 'sampai', surahSampai.value);
+          fillAyatOptionsMarked(ayatSampai, surahSampai.value || "", "");
+          updateTotalJuz(row);
         });
 
-        // === Jenjang ensure
+        ayatDari.addEventListener("change", () => {
+          ayatSampai.value = ayatDari.value || "";
+          updateTotalJuz(row);
+        });
+
+        ayatSampai.addEventListener("change", () => {
+          updateTotalJuz(row);
+        });
+
+        // Jenjang ensure + handlers (simpan ke server — tetap)
         const jenSel = row.querySelector(".jenjang");
         ensureJenjangOptions(jenSel, JENJANG_MAX, jenNow);
-
-        // === Handler JENJANG
         if (jenSel) {
           jenSel.addEventListener("change", async () => {
             const key  = String(row.dataset?.key || row.dataset?.nis || row.dataset?.id || "").trim();
@@ -3526,13 +3608,12 @@ if (!Array.isArray(santriData)) santriData = [];   // <<< penting: kalau API bal
             jenSel.style.opacity = "0.6";
             try {
               const res = await fetch(`/api/updateJenjangKelas?kelas=${encodeURIComponent(kelas)}`, {
-                method: "POST",
+                method: "POST", credentials: "include",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ key, jenjang: newJ })
               });
               const text = await res.text();
-              let out = {};
-              try { out = JSON.parse(text); } catch {}
+              let out = {}; try { out = JSON.parse(text); } catch {}
               if (!res.ok || out?.success !== true) throw new Error(out?.error || text || "Gagal update jenjang.");
               window.jenjangMap[key] = newJ;
               row.dataset.jenjang    = newJ;
@@ -3546,7 +3627,7 @@ if (!Array.isArray(santriData)) santriData = [];   // <<< penting: kalau API bal
           });
         }
 
-        // === Handler KETERANGAN
+        // Keterangan (tetap)
         const ketSel = row.querySelector(".keterangan");
         if (ketSel) {
           ketSel.addEventListener("change", async () => {
@@ -3562,13 +3643,12 @@ if (!Array.isArray(santriData)) santriData = [];   // <<< penting: kalau API bal
             ketSel.style.opacity = "0.6";
             try {
               const res = await fetch(`/api/updateKeteranganKelas?kelas=${encodeURIComponent(kelas)}`, {
-                method: "POST",
+                method: "POST", credentials: "include",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ key, keterangan: newK })
               });
               const text = await res.text();
-              let out = {};
-              try { out = JSON.parse(text); } catch {}
+              let out = {}; try { out = JSON.parse(text); } catch {}
               if (!res.ok || out?.success !== true) throw new Error(out?.error || text || "Gagal update keterangan.");
               window.keteranganMap[key] = newK;
               row.dataset.keterangan  = newK;
@@ -3582,7 +3662,7 @@ if (!Array.isArray(santriData)) santriData = [];   // <<< penting: kalau API bal
           });
         }
 
-        // === Handler SEMESTER
+        // Semester (tetap, fungsi isValidSemester/SEMESTER_MAX assumed global)
         const semSel = row.querySelector(".semester");
         if (semSel) {
           semSel.addEventListener("change", async () => {
@@ -3590,7 +3670,7 @@ if (!Array.isArray(santriData)) santriData = [];   // <<< penting: kalau API bal
             const oldSem = String(window.semesterMap?.[key] ?? semNow ?? "1");
             const newSem = String(semSel.value || oldSem);
 
-            if (!isValidSemester(newSem)) {
+            if (typeof isValidSemester === "function" && !isValidSemester(newSem)) {
               alert(`Semester harus 1-${SEMESTER_MAX}.`);
               semSel.value = oldSem;
               return;
@@ -3600,13 +3680,12 @@ if (!Array.isArray(santriData)) santriData = [];   // <<< penting: kalau API bal
             semSel.style.opacity = "0.6";
             try {
               const res = await fetch(`/api/updateSemesterKelas?kelas=${encodeURIComponent(kelas)}`, {
-                method: "POST",
+                method: "POST", credentials: "include",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ key, semester: newSem })
               });
               const text = await res.text();
-              let out = {};
-              try { out = JSON.parse(text); } catch {}
+              let out = {}; try { out = JSON.parse(text); } catch {}
               if (!res.ok || out?.success !== true) throw new Error(out?.error || text || "Gagal update semester.");
               window.semesterMap[key] = newSem;
             } catch (e) {
@@ -3619,14 +3698,13 @@ if (!Array.isArray(santriData)) santriData = [];   // <<< penting: kalau API bal
           });
         }
 
-        // =============== ABSENSI FLEX via MODAL BUTTON ===============
+        // ABSENSI FLEX (tetap)
         (function initAbsensiFlexModalForRow(){
           const cell = row.querySelector(".abs-flex-cell");
           const btn  = cell.querySelector(".btn-absensi-flex");
           const mini = cell.querySelector(".abs-mini");
           const { preset, target } = window.__makePresetAbsensiItems(dataAbsensi || {});
 
-          // state awal di cell (agar SAVE bisa baca)
           const itemsInit = Array.isArray(preset) ? preset : [];
           const comp = computeLocal(itemsInit, target);
           cell._absensiItems   = itemsInit;
@@ -3645,12 +3723,10 @@ if (!Array.isArray(santriData)) santriData = [];   // <<< penting: kalau API bal
             const content = document.getElementById("absensiModalContent");
             content.innerHTML = "";
 
-            // render widget di modal (gunakan state terakhir dari cell)
             const presetItems = Array.isArray(cell._absensiItems) ? cell._absensiItems : itemsInit;
             const tgt = Number(cell._absensiTarget) || target;
             const widget = renderAbsensiFlex(content, { target: tgt, presetItems });
 
-            // sinkronisasi hasil ke cell setiap ada perubahan di modal
             content.addEventListener("change", () => {
               cell._absensiItems   = widget._absensiItems;
               cell._absensiTarget  = widget._absensiTarget;
@@ -3662,7 +3738,6 @@ if (!Array.isArray(santriData)) santriData = [];   // <<< penting: kalau API bal
             modal.style.display = "flex";
           });
         })();
-        // =============================================================
       });
     });
   } catch (err) {
@@ -3672,6 +3747,7 @@ if (!Array.isArray(santriData)) santriData = [];   // <<< penting: kalau API bal
 
   overlay.style.display = "none";
 }
+
 
 
 
