@@ -7259,7 +7259,7 @@ kelasSelect?.addEventListener("change", () => loadSantriData());
         const id  = String(tr.children?.[0]?.textContent||'').trim();
         const rec = (nis && byNis.get(nis)) || (id && byId.get(id)) || null;
 
-        const total = num(rec?.juzmurajaah ?? rec?.totalJuz ?? 0);
+        const total = num(rec?.juzmurajaah ?? 0);
         const valEl = cell.querySelector('.mur-val');
         if(valEl) valEl.textContent = `${total.toFixed(2)} juz`;
         cell.dataset.murtotal = total.toFixed(2);
@@ -7278,7 +7278,7 @@ kelasSelect?.addEventListener("change", () => loadSantriData());
           const fromStr  = takeNonEmpty(rec?.[`murFrom${i}`],  ses?.from,  rec?.murFrom);
           const toStr    = takeNonEmpty(rec?.[`murTo${i}`],    ses?.to,    rec?.murTo);
           const pagesStr = takeNonEmpty(rec?.[`murPages${i}`], ses?.pages, rec?.murPages);
-          const juzVal   = takeNonEmpty(rec?.[`juzmur${i}`], rec?.[`juzSesi${i}`], ses?.juz);
+          const juzVal   = takeNonEmpty(rec?.[`juzmur${i}`], ses?.juz);
           const jFrom    = (rec?.[`jFrom${i}`] ?? ses?.jFrom);
           const jTo      = (rec?.[`jTo${i}`]   ?? ses?.jTo);
           const score    = (rec?.[`murScore${i}`]     ?? ses?.score);
