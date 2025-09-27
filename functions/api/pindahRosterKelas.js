@@ -1,9 +1,8 @@
-// /functions/api/pindahRosterKelas.js
 export const onRequestOptions = () => json({}, 204);
 
 export async function onRequestPost(ctx){
-  const db = ctx.env.DB || ctx.env.ABSENSI_DB;
-  if (!db) return jsonErr(500, "Database binding (env.DB) tidak tersedia.");
+  const db = ctx.env.ABSENSI_DB || ctx.env.DB;
+  if (!db) return jsonErr(500, "Database binding (env.ABSENSI_DB) tidak tersedia.");
 
   try {
     const b = await ctx.request.json();
@@ -15,7 +14,6 @@ export async function onRequestPost(ctx){
     if (kelasAsal === kelasTujuan)  return jsonErr(400,"kelasAsal dan kelasTujuan tidak boleh sama");
     if (!identifiers.length)        return jsonErr(400,"Wajib: identifiers[] (id/nis/nama)");
 
-    // --- ambil roster sumber & tujuan
     const src = (await db.prepare(`SELECT * FROM students WHERE kelas=?`).bind(kelasAsal).all()).results || [];
     const dst = (await db.prepare(`SELECT * FROM students WHERE kelas=?`).bind(kelasTujuan).all()).results || [];
 
@@ -32,7 +30,6 @@ export async function onRequestPost(ctx){
     const sumber = src.filter(matchRow);
     if (!sumber.length) return jsonErr(404, "Santri tidak ditemukan di kelas asal (cek id/nis/nama).");
 
-    // --- siapkan index tujuan utk match (nis prioritas, fallback nama lower)
     const byNis  = new Map(dst.filter(r=>r.nis).map(r=>[String(r.nis), r]));
     const byName = new Map(dst.map(r=>[String(r.nama||"").toLowerCase(), r]));
 
@@ -49,7 +46,6 @@ export async function onRequestPost(ctx){
       const d = (keyNis && byNis.get(keyNis)) || (keyName && byName.get(keyName)) || null;
 
       if (d){
-        // UPDATE semua kolom non-id (override dari sumber), set kelas = kelasTujuan
         const sets=[], params=[];
         for (const c of nonId){
           if (c === "created_at") continue;
@@ -61,7 +57,6 @@ export async function onRequestPost(ctx){
         await db.prepare(`UPDATE students SET ${sets.join(",")} WHERE id=? AND kelas=?`).bind(...params).run();
         merged++;
       } else {
-        // INSERT copy semua kolom non-id, kelas override
         const placeholders = nonId.map(_=>"?").join(",");
         const vals = nonId.map(c => c==="kelas" ? kelasTujuan :
                                    c==="updated_at" ? now :
@@ -75,7 +70,7 @@ export async function onRequestPost(ctx){
 
     return json({ success:true, moved: merged+inserted, merged, inserted, idMap: [] });
   } catch (e){
-    try{ await (ctx.env.DB || ctx.env.ABSENSI_DB)?.exec("ROLLBACK"); }catch{}
+    try{ await (ctx.env.ABSENSI_DB || ctx.env.DB)?.exec("ROLLBACK"); }catch{}
     return jsonErr(500, e?.message || String(e));
   }
 }
