@@ -1400,8 +1400,8 @@ async function buatUserNIS() {
       <!-- Row 2, Col 1: PDF Halaqoh -->
       <button id="download-pdf-rekap" class="rekap-btn">PDF Halaqoh</button>
 
-      <!-- Row 2, Col 2: Excel Halaqoh -->
-      <button id="download-xls-rekap" class="rekap-btn">Excel Halaqoh</button>
+      <!-- Row 2, Col 2: Excel All Halaqoh -->
+      <button id="download-xls-rekap" class="rekap-btn">Excel All Halaqoh</button>
 
       <!-- Row 3, Col 1: PDF Individual -->
       <button id="download-pdf-santri" class="rekap-btn">PDF Individual</button>
@@ -4291,7 +4291,6 @@ document.getElementById('mur-save')?.addEventListener('click', function(){ simpa
 
 
 
-
 // Download PDF/Excel Rekap (slot-based attendance)
 // ============================
 (function(){
@@ -6514,7 +6513,6 @@ window._pdfSantriDownload = pdfSantriDownload;
 
 
 
-
 // ============================
 // hitungTotalAllJuzFromTable (REVISI FINAL)
 // ============================
@@ -6861,8 +6859,6 @@ tanggalInput?.addEventListener("change", () => loadSantriData());
 kelasSelect?.addEventListener("change", () => loadSantriData());
 	 
 </script>
-
-
 
 
 <script>
@@ -7913,6 +7909,7 @@ kelasSelect?.addEventListener("change", () => loadSantriData());
   window.hitungTotalMurRangeFromTable = hitungTotalMurRangeFromTable;
 })();
 </script>
+
 
 
 <script>
