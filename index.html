@@ -6664,7 +6664,7 @@ async function hitungTotalAllJuzFromTable() {
 
     const rows = [...santriTableBody.querySelectorAll("tr")];
 
-    // peta nama → key tabel (backup)
+    // peta nama → key tabel (backup) + loose→strict
     const nameToKey = new Map();
     const looseToStrict = new Map();
     rows.forEach(row => {
@@ -6685,9 +6685,7 @@ async function hitungTotalAllJuzFromTable() {
       }
       if (!k) return;
 
-      // cocokkan longgar → balik ke strict key tabel jika ada
       const strictKey = looseToStrict.get(normKeyLoose(k)) || k;
-
       const num = parseNum(item?.totalJuz ?? item?.total_juz ?? item?.total_juz_num ?? item?.juz);
       if (!rekap[strictKey]) rekap[strictKey] = { totalJuz: 0, semester: item?.semester ?? null, id: normKey(item?.id), nis: normKey(item?.nis), nama: item?.nama ?? "" };
       rekap[strictKey].totalJuz += num;
