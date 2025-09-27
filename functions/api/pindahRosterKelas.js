@@ -1,13 +1,11 @@
+// /functions/api/pindahRosterKelas.js
 export const onRequestOptions = () => json({}, 204);
 
 export async function onRequestPost(ctx){
   const db = ctx.env.ABSENSI_DB || ctx.env.DB;
   if (!db) return jsonErr(500, "Database binding (env.ABSENSI_DB) tidak tersedia.");
-
   try{
-    // Di skema ini tidak ada tabel roster terpisah.
-    // Roster tersirat dari attendance_snapshots, sehingga step ini tidak perlu memodifikasi DB.
-    // Tetap balas sukses agar alur front-end lanjut ke langkah berikutnya.
+    // Roster implicit di attendance_snapshots, jadi tidak ada yang perlu diubah di sini.
     return json({ success:true, moved:0, merged:0, inserted:0, idMap:[] });
   }catch(e){
     return jsonErr(500, e?.message || String(e));
