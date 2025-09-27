@@ -8,43 +8,38 @@ export async function onRequestPost(ctx){
     const b = await ctx.request.json();
     const kelasAsal   = normKelas(b?.kelasAsal);
     const kelasTujuan = normKelas(b?.kelasTujuan);
-    const ids   = arr(b?.ids);
-    const nises = arr(b?.nises);
+    const nises       = arr(b?.nises);  // student_key
 
     if (!kelasAsal || !kelasTujuan) return jsonErr(400,"Wajib: kelasAsal & kelasTujuan");
     if (kelasAsal === kelasTujuan)  return jsonErr(400,"kelasAsal dan kelasTujuan tidak boleh sama");
-    if (!ids.length && !nises.length) return jsonErr(400,"Wajib: minimal ids[] atau nises[]");
+    if (!nises.length) return jsonErr(400,"Wajib: nises[] (student_key)");
 
-    let nisList = [...new Set(nises.map(String))];
-    if (!nisList.length && ids.length){
-      const rs = await db.prepare(
-        `SELECT nis FROM students WHERE kelas=? AND id IN (${ph(ids.length)})`
-      ).bind(kelasAsal, ...ids).all();
-      nisList = (rs?.results||[]).map(r=>String(r.nis)).filter(Boolean);
-    }
-    if (!nisList.length) return jsonErr(404,"Santri tidak ditemukan di kelas asal.");
-
+    // Ringkasan per tanggal (sebelum update)
     const before = await db.prepare(
-      `SELECT date AS tanggal, COUNT(*) AS cnt
-       FROM absensi
-       WHERE kelas=? AND nis IN (${ph(nisList.length)})
-       GROUP BY date ORDER BY date`
-    ).bind(kelasAsal, ...nisList).all();
-    const details = (before?.results||[]).map(r=>({tanggal:r.tanggal, moved:Number(r.cnt||0)}));
+      `SELECT tanggal, COUNT(*) AS cnt
+         FROM attendance_snapshots
+        WHERE class_name=? AND student_key IN (${ph(nises.length)})
+        GROUP BY tanggal ORDER BY tanggal`
+    ).bind(kelasAsal, ...nises).all();
+    const details = (before.results||[]).map(r=>({ tanggal:r.tanggal, moved:Number(r.cnt||0) }));
     const totalMoved = details.reduce((a,b)=>a+b.moved,0);
 
     const now = nowIso();
     await db.exec("BEGIN TRANSACTION");
 
+    // 1) attendance_snapshots: pindah semua tanggal
     await db.prepare(
-      `UPDATE absensi SET kelas=?, updated_at=?
-       WHERE kelas=? AND nis IN (${ph(nisList.length)})`
-    ).bind(kelasTujuan, now, kelasAsal, ...nisList).run();
+      `UPDATE attendance_snapshots
+          SET class_name=?, updated_at=?
+        WHERE class_name=? AND student_key IN (${ph(nises.length)})`
+    ).bind(kelasTujuan, now, kelasAsal, ...nises).run();
 
+    // 2) totals_store: pindah semua agregat
     await db.prepare(
-      `UPDATE students SET kelas=?, updated_at=?
-       WHERE kelas=? AND nis IN (${ph(nisList.length)})`
-    ).bind(kelasTujuan, now, kelasAsal, ...nisList).run();
+      `UPDATE totals_store
+          SET kelas=?, updated_at=?
+        WHERE kelas=? AND student_key IN (${ph(nises.length)})`
+    ).bind(kelasTujuan, now, kelasAsal, ...nises).run();
 
     await db.exec("COMMIT");
     return json({ success:true, totalMoved, details, from:kelasAsal, to:kelasTujuan });
