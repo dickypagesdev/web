@@ -4123,17 +4123,17 @@ async function simpanDataMutabaah(saveBtn){
         const ayatDari     = (row.querySelector(".ayat-dari")?.value ?? "").trim();
         const surahSampai  = (row.querySelector(".surah-sampai")?.value ?? "").trim();
         const ayatSampai   = (row.querySelector(".ayat-sampai")?.value ?? "").trim();
-        const tilawahTotalJuz = row.querySelector(".total-juz")?.textContent || "0";  // tilawah harian
-        const tilawahTotalJuzNum = Number(parseNum(tilawahTotalJuz).toFixed(2));     // NEW: angka bersih untuk alias agregasi
+        const tilawahTotalJuz = row.querySelector(".total-juz")?.textContent || "0";
+        const tilawahTotalJuzNum = Number(parseNum(tilawahTotalJuz).toFixed(2));
         const halaman      = row.querySelector(".halaman-terbaca")?.textContent ?? existing?.halaman ?? "";
         const totalHalaman = row.querySelector(".total-halaman")?.textContent ?? existing?.totalHalaman ?? "";
         const juzTerbaca   = row.querySelector(".juz-terbaca")?.textContent ?? existing?.juzTerbaca ?? "";
 
-        // ==== Murajaah ====
+        // Murajaah
         const mur = getMurFromRow(row, existing);
         const murTotal = (mur.total!=null ? mur.total : Number(parseNum(existing?.juzmurajaah||0).toFixed(2)));
 
-        // Nilai umum (tetap)
+        // Nilai umum
         const nilaiCell = row.querySelector(".lihat-quran-btn")?.parentElement;
         const nilaiStr  = nilaiCell?.querySelector("div:nth-child(1)")?.innerText?.trim()||"";
         const parsed    = parseNilaiStr(nilaiStr);
@@ -4144,13 +4144,15 @@ async function simpanDataMutabaah(saveBtn){
           buttonCell = { nilai: parsed.nilai, predikatText, predikatHuruf };
         } else if (existing?.buttonCell) { buttonCell=existing.buttonCell; }
 
-        // ===== payload (esensi lama dipertahankan) =====
+        // Payload
+        const stableKey = (nis || String(id||"")).trim();
         const base = {
           ...existing,
           id, nis, nama, jenjang, semester,
 
-          // NEW: kunci stabil untuk snapshot/aggregator
-          key: (nis || String(id||"")).trim(),
+          // kunci stabil + alias yg mungkin dibaca backend
+          key: stableKey,
+          student_key: stableKey,
 
           absensi: absensiExpandedStr,
           absensiItems, absensiTarget, absensiChecked, absensiPercent, absensi6,
@@ -4159,13 +4161,14 @@ async function simpanDataMutabaah(saveBtn){
           dari:   (surahDari && ayatDari)     ? `${surahDari}:${ayatDari}`     : "",
           sampai: (surahSampai && ayatSampai) ? `${surahSampai}:${ayatSampai}` : "",
 
-          // tilawah harian (tetap) + alias numerik aman
+          // Tilawah: angka bersih di semua alias
           tilawahTotalJuz: tilawahTotalJuzNum,
-          total_juz:       tilawahTotalJuzNum,   // NEW: alias snake_case untuk backend aggregator
+          totalJuz:        tilawahTotalJuzNum,
+          total_juz:       tilawahTotalJuzNum,
 
           halaman, totalHalaman, juzTerbaca, keterangan,
 
-          // Murajaah 3 sesi + legacy (tetap)
+          // Murajaah 3 sesi + legacy
           murSessions: mur.sessions.map(s => ({
             from: s.from || "",
             to:   s.to   || "",
@@ -4178,7 +4181,7 @@ async function simpanDataMutabaah(saveBtn){
             predikatHuruf: s.predikatHuruf|| ""
           })),
 
-          // sesi 1..3 (tetap)
+          // Sesi 1..3 (tetap)
           murFrom1: mur.sessions[0]?.from || existing?.murFrom1 || "",
           murTo1:   mur.sessions[0]?.to   || existing?.murTo1   || "",
           murPages1: mur.sessions[0]?.pages || existing?.murPages1 || "",
@@ -4209,9 +4212,10 @@ async function simpanDataMutabaah(saveBtn){
           murPredText3:  mur.sessions[2]?.predikatText  ?? existing?.murPredText3  ?? "",
           murPredHuruf3: mur.sessions[2]?.predikatHuruf ?? existing?.murPredHuruf3 ?? "",
 
-          // total mur (tetap) + alias numerik aman
+          // Total Mur: angka bersih di semua alias
           juzmurajaah: murTotal,
-          total_mur:   murTotal,                 // NEW: alias snake_case untuk backend
+          totalMur:    murTotal,
+          total_mur:   murTotal,
 
           // marks (tetap)
           marks: (row.markData && typeof row.markData === 'object') ? row.markData : (existing?.marks || { audio: [] })
@@ -4320,6 +4324,7 @@ async function simpanDataMutabaah(saveBtn){
 document.getElementById('save-btn')?.addEventListener('click', function(){ simpanDataMutabaah(this); });
 document.getElementById('save-btn-modal')?.addEventListener('click', function(){ simpanDataMutabaah(this); });
 document.getElementById('mur-save')?.addEventListener('click', function(){ simpanDataMutabaah(this); });
+
 
 
 
