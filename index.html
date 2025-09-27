@@ -5369,140 +5369,9 @@ if (!Array.isArray(santriData)) santriData = [];   // <<< penting: kalau API bal
   }
 
   // ================= Excel (.xlsx) =================
-  async function xlsRekapDownload(){
-  const btn = document.getElementById('download-xls-rekap');
-  const setBtnLoading = window.setBtnLoading || function(){};
-  function safeSheetName(name){
-    const bad=/[\\/?*\[\]:]/g; let n=String(name||'Sheet').replace(bad,' ');
-    if(n.length>31) n=n.slice(0,31); if(!n.trim()) n='Sheet'; return n;
-  }
-  try{
-    setBtnLoading(btn, true, 'Membuat Excel…');
-    // pastikan XLSX siap
-    if (typeof ensureXLSX === 'function') await ensureXLSX();
-    else if (!window.XLSX){
-      await new Promise((res,rej)=>{const s=document.createElement('script');
-        s.src='https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js';
-        s.onload=res; s.onerror=()=>rej(new Error('Gagal memuat XLSX')); document.head.appendChild(s);
-      });
-    }
-
-    const startDate = document.querySelector('#pdf-start-date')?.value;
-    const endDate   = document.querySelector('#pdf-end-date')?.value;
-    if (!startDate || !endDate) throw new Error('Mohon pilih tanggal mulai & akhir.');
-
-    // --- daftar kelas persis seperti PDF All Kelas ---
-    const kelasKeys = (typeof _getAllKelasKeys==='function') ? _getAllKelasKeys() : [];
-    if (!Array.isArray(kelasKeys) || !kelasKeys.length) throw new Error('Tidak menemukan daftar kelas.');
-
-    // --- siapkan workbook ---
-    const wb = XLSX.utils.book_new();
-    const header = [
-      "No","NIS","Nama","SM","KLS","H","A","S","I","Hadir %","SP",
-      "Setoran (Surah: Ayat s.d. Surah: Ayat)","Juz","Total Juz","Murajaah","THMS","Nilai Rata2","Predikat"
-    ];
-
-    // ringkasan
-    const summaryAoA = [["Kelas","Total Santri (ber-NIS)","KBM (hari)"]];
-
-    // loop semua kelas persis alur pdfAllKelasDownload
-    for (const kelasKey of kelasKeys){
-      let data = null;
-      try{
-        data = await collectRekapDataForClass(kelasKey, startDate, endDate);
-      }catch(e){
-        console.warn('Gagal ambil data kelas', kelasKey, e);
-      }
-      // jika null/empty → sheet "(kosong)" agar kelihatan jelas
-      if (!data || !Array.isArray(data.rows) || data.rows.length === 0){
-        const wsEmpty = XLSX.utils.aoa_to_sheet([["(kosong)"]]);
-        XLSX.utils.book_append_sheet(wb, wsEmpty, safeSheetName(kelasKey));
-        summaryAoA.push([kelasKey, 0, data?.kbmDays || 0]);
-        continue;
-      }
-
-      const rows = data.rows.map((r, idx) => {
-        const nilaiAvg  = r.nilaiCount ? (r.nilaiSum / r.nilaiCount) : 0;
-        const pred      = window.PDF_predikatFromScore?.(nilaiAvg) || {huruf:'-'};
-        const statusJuz = window.PDF_totalAllJuzStatus?.(r.totalJuz, r.semester) || {label:''};
-        const setoranText = window.PDF_joinSAsegmentsNamaCompact?.(r.saSegments) || '-';
-        const juzText     = window.PDF_joinRangeSegments?.(r.juzSegments, true) || '-';
-
-        // SLOT-based (harus sama dengan PDF)
-        const hadirSlots = Number(r.hadirSlots ?? r.hadir ?? 0);
-        const izinSlots  = Number(r.izinSlots  ?? r.izin  ?? 0);
-        const sakitSlots = Number(r.sakitSlots ?? r.sakit ?? 0);
-        const alphaSlots = Number(r.alphaSlots ?? r.alpha ?? 0);
-        const targetSlots= Number(r.targetSlots ?? 0);
-        const hadirPct   = targetSlots>0 ? Math.round((hadirSlots/targetSlots)*100) : 0;
-
-        const jenjangLbl = window.jenjangLabel?.(r.jenjang ?? '') ?? (r.jenjang ?? '');
-        const fmtMur = window.fmtMurRange || ((t,c)=>`${Number(t||0).toFixed(2)} (${Number(c||0)})`);
-
-        return [
-          idx+1,
-          r.nis || r.id || '',
-          r.nama || '',
-          (r.semester ?? ''),
-          jenjangLbl,
-          hadirSlots, alphaSlots, sakitSlots, izinSlots,
-          hadirPct,
-          (r.keterangan ?? ''),
-          setoranText,
-          juzText,
-          Number(Number(r.totalJuz||0).toFixed(2)),
-          fmtMur(r.murTotalJuz || 0, r.murCount || 0),
-          statusJuz.label,
-          (nilaiAvg ? Number(nilaiAvg.toFixed(1)) : null),
-          pred.huruf
-        ];
-      });
-
-      const aoa = [header, ...rows];
-      const ws  = XLSX.utils.aoa_to_sheet(aoa);
-      // auto width jika ada util kamu
-      if (typeof window.autoFitColumns === 'function') ws['!cols'] = window.autoFitColumns(aoa);
-      else {
-        const cols = header.map((_,i)=>{
-          const maxLen = Math.max(...aoa.map(r=>String(r[i]??'').length), 0);
-          return { wch: Math.min(60, Math.max(6, Math.ceil(maxLen*1.1)+2)) };
-        });
-        ws['!cols'] = cols;
-      }
-      XLSX.utils.book_append_sheet(wb, ws, safeSheetName(kelasKey));
-
-      summaryAoA.push([kelasKey, rows.length, data.kbmDays || 0]);
-    }
-
-    // sheet ringkasan
-    const wsSum = XLSX.utils.aoa_to_sheet(summaryAoA);
-    wsSum['!cols'] = [{wch:28},{wch:26},{wch:12}];
-    XLSX.utils.book_append_sheet(wb, wsSum, safeSheetName('RINGKASAN'));
-
-    const fileName = `Rekap_AllKelas_${startDate}_sd_${endDate}.xlsx`;
-    XLSX.writeFile(wb, fileName);
-
-  } catch (err){
-    console.error(err);
-    alert('Gagal mengunduh Excel All Kelas: ' + (err.message || err));
-  } finally {
-    setBtnLoading(btn, false);
-  }
-}
-// === END REPLACEMENT ===
-
-// ====== Ganti handler tombol Excel menjadi "ALL KELAS (rapih, 1 sheet, per-blok)" ======
-(function attachXlsAllKelasRapi(){
-  let xlsBtn = document.getElementById('download-xls-rekap');
-  if (!xlsBtn) return;
-  const fresh = xlsBtn.cloneNode(true); // buang listener lama
-  xlsBtn.parentNode.replaceChild(fresh, xlsBtn);
-  fresh.addEventListener('click', xlsAllKelasDownloadRapi);
-})();
-
-async function xlsAllKelasDownloadRapi(){
-  const btn = document.getElementById('download-xls-rekap');
-  setBtnLoading(btn, true, 'Membuat Excel…');
+  // ================= Excel (.xlsx) — ALL KELAS =================
+async function xlsRekapDownload(){
+  setBtnLoading(xlsBtn, true, 'Membuat Excel…');
   try {
     await ensureXLSX();
 
@@ -5513,71 +5382,35 @@ async function xlsAllKelasDownloadRapi(){
     const kelasKeys = _getAllKelasKeys();
     if (!kelasKeys.length) throw new Error('Tidak menemukan daftar kelas.');
 
-    // Header tabel (sama kolom seperti PDF + tambahan "Kelas/Kelompok")
-    const headerCols = [
-      "No","Kelas/Kelompok","NIS","Nama","SM","KLS",
-      "H","A","S","I","Hadir %","SP",
-      "Setoran (Surah: Ayat s.d. Surah: Ayat)","Juz","Total Juz","Murajaah",
-      "THMS","Nilai Rata2","Predikat"
+    // Header & kolom (pakai format yang sudah kamu pakai sebelumnya)
+    const header = [
+      "No","NIS","Nama","SM","KLS","H","A","S","I","Hadir %","SP",
+      "Setoran (Surah: Ayat s.d. Surah: Ayat)","Juz","Total Juz","Murajaah","THMS","Nilai Rata2","Predikat"
     ];
-    const COLS = headerCols.length;
 
-    // Helper buat bikin label kelas/kelompok rapi seperti PDF
-    function getKelasLabel(kelasKey){
-      if (typeof _kelasKelompokLineFor === 'function') {
-        const { kelasNum, kelompok } = _kelasKelompokLineFor(kelasKey);
-        return { kelasNum, kelompok, line: `Halaqoh: ${kelasNum}, ${kelompok}` };
-      }
-      const num = (String(kelasKey).match(/(\d+)/)?.[1]) || kelasKey;
-      const nama = (window.namaKelasCustom?.[kelasKey] || window.NAMA_KELAS_CUSTOM?.[kelasKey] || '')
-                    .replace(/^Kelompok\s+/i,'').trim() || '-';
-      return { kelasNum: num, kelompok: nama, line: `Halaqoh: ${num}, ${nama}` };
-    }
+    // Workbook
+    const wb = XLSX.utils.book_new();
 
-    // Bangun AOA + daftar merge
-    const aoa = [];
-    const merges = [];
-    let rowPtr = 0;
-    const pushMergedTitle = (text) => {
-      aoa.push([text]);
-      merges.push({ s:{r:rowPtr, c:0}, e:{r:rowPtr, c:COLS-1} });
-      rowPtr++;
-    };
-    const pushRow = (arr) => { aoa.push(arr); rowPtr++; };
+    // ——— Sheet gabungan (semua kelas digabung) ———
+    const headerAll = ["Kelas","Kelompok","KBM (hari)","No", ...header];
+    const rowsAll = [];
 
-    // ===== Judul & Periode (merged) =====
-    pushMergedTitle('Rekap Absensi & Setoran');
-    pushMergedTitle(`Periode: ${fmtD_M_YYYY(startDate)} s.d. ${fmtD_M_YYYY(endDate)}`);
-    pushRow([]); // spasi
+    // Loop setiap kelas → sheet per kelas + isi gabungan
+    for (let i = 0; i < kelasKeys.length; i++) {
+      const k = kelasKeys[i];
+      // ambil data rekap 1 kelas (pakai helper milikmu)
+      const data = await collectRekapDataForClass(k, startDate, endDate).catch(()=>null);
+      if (!data) continue;
 
-    let runningNo = 1;
-    let firstHeaderStartRow = -1;
-    let firstHeaderEndCol = -1;
+      const { kelas:kelasKey, kelasLine, kbmDays, rows } = data;
 
-    for (const kelasKey of kelasKeys){
-      // Ambil data per kelas (fungsi sudah ada di file)
-      const data = await collectRekapDataForClass(kelasKey, startDate, endDate).catch(()=>null);
-      if (!data || !data.rows?.length) continue;
-
-      // Header kelas (merged) — mirip drawClassHeaderCompact
-      const { line: kelasLine } = getKelasLabel(kelasKey);
-      const headerText = `${kelasLine}, KBM: ${data.kbmDays} hari, Total Santri: ${data.rows.length}`;
-      pushMergedTitle(headerText);
-
-      // Header kolom
-      pushRow(headerCols.slice());
-      if (firstHeaderStartRow < 0) {
-        firstHeaderStartRow = rowPtr - 1;      // baris header pertama (0-based)
-        firstHeaderEndCol = COLS - 1;
-      }
-
-      // Baris data
-      for (const r of data.rows){
+      // body untuk sheet kelas
+      const body = rows.map((r, idx) => {
         const nilaiAvg  = r.nilaiCount ? (r.nilaiSum / r.nilaiCount) : 0;
         const pred      = PDF_predikatFromScore(nilaiAvg);
         const statusJuz = PDF_totalAllJuzStatus(r.totalJuz, r.semester);
 
-        const setoranText = PDF_joinSAsegmentsNamaCompact(r.saSegments);
+        const setoranText = PDF_joinSAsegmentsNama(r.saSegments);
         const juzText     = PDF_joinRangeSegments(r.juzSegments, true);
 
         const hadirSlots = Number(r.hadirSlots ?? r.hadir ?? 0);
@@ -5587,11 +5420,8 @@ async function xlsAllKelasDownloadRapi(){
         const targetSlots= Number(r.targetSlots ?? 0);
         const hadirPct   = targetSlots > 0 ? Math.round((hadirSlots / targetSlots) * 100) : 0;
 
-        const { kelasNum, kelompok } = getKelasLabel(kelasKey);
-
-        pushRow([
-          runningNo++,
-          `${kelasNum} — ${kelompok}`,
+        return [
+          idx+1,
           r.nis || r.id || '',
           r.nama || '',
           (r.semester ?? ''),
@@ -5606,39 +5436,56 @@ async function xlsAllKelasDownloadRapi(){
           statusJuz.label,
           (nilaiAvg ? Number(nilaiAvg.toFixed(1)) : null),
           pred.huruf
+        ];
+      });
+
+      // Sheet kelas: “Rekap — <nomor/label kelas>”
+      const ws = XLSX.utils.aoa_to_sheet([header, ...body]);
+      ws['!cols'] = autoFitColumns([header, ...body]);
+      XLSX.utils.book_append_sheet(wb, ws, (kelasKey || 'Kelas').slice(0,31));
+
+      // Tambah ke gabungan
+      const kelasLineText = kelasLine || '-';
+      for (let idx = 0; idx < body.length; idx++) {
+        rowsAll.push([
+          kelasKey,
+          kelasLineText.replace(/^Halaqoh:\s*/i,''),
+          kbmDays,
+          ...body[idx]
         ]);
       }
-
-      pushRow([]); // spasi antar kelas
     }
 
-    if (runningNo === 1) throw new Error('Tidak ada data untuk rentang tanggal tersebut.');
-
-    // Buat workbook
-    const wb = XLSX.utils.book_new();
-    const ws = XLSX.utils.aoa_to_sheet(aoa);
-
-    // Merge judul/kelas
-    ws['!merges'] = merges;
-
-    // Auto-fit + Freeze di bawah judul (baris ke-4 = index 3)
-    ws['!cols'] = autoFitColumns(aoa);
-    ws['!freeze'] = { xSplit: 0, ySplit: 3 };
-
-    // AutoFilter hanya untuk header kolom pertama (biar tidak konflik)
-    if (firstHeaderStartRow >= 0) {
-      const start = { r: firstHeaderStartRow, c: 0 };
-      const end   = { r: rowPtr-1, c: firstHeaderEndCol };
-      ws['!autofilter'] = { ref: XLSX.utils.encode_range({ s:start, e:{ r:start.r, c:end.c } }) };
+    // Sheet gabungan (jika ada data)
+    if (rowsAll.length) {
+      const wsAll = XLSX.utils.aoa_to_sheet([headerAll, ...rowsAll]);
+      wsAll['!cols'] = autoFitColumns([headerAll, ...rowsAll]);
+      XLSX.utils.book_append_sheet(wb, wsAll, 'SemuaKelas');
     }
 
-    XLSX.utils.book_append_sheet(wb, ws, 'Rekap All Kelas');
-    XLSX.writeFile(wb, `Rekap_AllKelas_${startDate}_sd_${endDate}.xlsx`);
-  } catch (err){
+    // Sheet Meta Ringkasan (opsional sederhana)
+    const meta = [
+      ["Rekap Absensi & Setoran — ALL KELAS", ""],
+      ["Periode", `${fmtD_M_YYYY(startDate)} s.d. ${fmtD_M_YYYY(endDate)}`],
+      ["Jumlah Kelas", kelasKeys.length],
+      ["Dicetak", new Date().toLocaleString()]
+    ];
+    const wsMeta = XLSX.utils.aoa_to_sheet(meta);
+    wsMeta['!cols'] = [{wch:28},{wch:48}];
+    XLSX.utils.book_append_sheet(wb, wsMeta, 'Meta');
+
+    // Nama file
+    const pad = n => String(n).padStart(2,'0');
+    const now = new Date();
+    const ts  = `${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())}_${pad(now.getHours())}${pad(now.getMinutes())}`;
+    const fname = `Rekap_AllKelas_${startDate}_sd_${endDate}_${ts}.xlsx`;
+
+    XLSX.writeFile(wb, fname);
+  } catch (err) {
     console.error(err);
     alert('Gagal mengunduh Excel All Kelas: ' + (err.message || err));
   } finally {
-    setBtnLoading(btn, false);
+    setBtnLoading(xlsBtn, false);
   }
 }
   // ===== Util umum (widths) =====
