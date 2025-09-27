@@ -1,3 +1,4 @@
+// /functions/api/pindahKelasMulaiTanggal.js
 export const onRequestOptions = () => json({}, 204);
 
 export async function onRequestPost(ctx){
@@ -8,45 +9,45 @@ export async function onRequestPost(ctx){
     const b = await ctx.request.json();
     const kelasAsal   = normKelas(b?.kelasAsal);
     const kelasTujuan = normKelas(b?.kelasTujuan);
-    const nises       = arr(b?.nises);       // isikan NIS (student_key)
+    const nises       = arr(b?.nises);        // = student_key
     const start       = String(b?.startDate||"").trim();
 
     if (!kelasAsal || !kelasTujuan) return jsonErr(400,"Wajib: kelasAsal & kelasTujuan");
     if (kelasAsal === kelasTujuan)  return jsonErr(400,"kelasAsal dan kelasTujuan tidak boleh sama");
     if (!/^\d{4}-\d{2}-\d{2}$/.test(start)) return jsonErr(400,"startDate harus YYYY-MM-DD");
-    if (!nises.length) return jsonErr(400,"Wajib: nises[] (student_key)");
+    if (!nises.length) return jsonErr(400,"Wajib: nises[] (student_key/NIS)");
 
-    // Ringkasan per tanggal sebelum update (untuk status di UI)
+    // Ringkasan sebelum update (untuk feedback UI)
     const before = await db.prepare(
       `SELECT tanggal, COUNT(*) AS cnt
          FROM attendance_snapshots
         WHERE class_name=? AND tanggal>=? AND student_key IN (${ph(nises.length)})
         GROUP BY tanggal ORDER BY tanggal`
     ).bind(kelasAsal, start, ...nises).all();
+
     const details = (before.results||[]).map(r=>({ tanggal:r.tanggal, moved:Number(r.cnt||0) }));
     const totalMoved = details.reduce((a,b)=>a+b.moved,0);
-
     const now = nowIso();
-    await db.exec("BEGIN TRANSACTION");
 
-    // 1) attendance_snapshots: pindah class_name sejak startDate
-    await db.prepare(
-      `UPDATE attendance_snapshots
-          SET class_name=?, updated_at=?
-        WHERE class_name=? AND tanggal>=? AND student_key IN (${ph(nises.length)})`
-    ).bind(kelasTujuan, now, kelasAsal, start, ...nises).run();
+    // Transaksi aman via db.batch()
+    const stmts = [
+      db.prepare(
+        `UPDATE attendance_snapshots
+            SET class_name=?, updated_at=?
+          WHERE class_name=? AND tanggal>=? AND student_key IN (${ph(nises.length)})`
+      ).bind(kelasTujuan, now, kelasAsal, start, ...nises),
 
-    // 2) totals_store: pindah kelas untuk agregat yang periode akhirnya >= startDate
-    await db.prepare(
-      `UPDATE totals_store
-          SET kelas=?, updated_at=?
-        WHERE kelas=? AND end_date>=? AND student_key IN (${ph(nises.length)})`
-    ).bind(kelasTujuan, now, kelasAsal, start, ...nises).run();
+      db.prepare(
+        `UPDATE totals_store
+            SET kelas=?, updated_at=?
+          WHERE kelas=? AND end_date>=? AND student_key IN (${ph(nises.length)})`
+      ).bind(kelasTujuan, now, kelasAsal, start, ...nises),
+    ];
 
-    await db.exec("COMMIT");
+    await db.batch(stmts);
+
     return json({ success:true, totalMoved, details, from:kelasAsal, to:kelasTujuan, startDate:start });
   }catch(e){
-    try{ await (ctx.env.ABSENSI_DB || ctx.env.DB)?.exec("ROLLBACK"); }catch{}
     return jsonErr(500, e?.message || String(e));
   }
 }
