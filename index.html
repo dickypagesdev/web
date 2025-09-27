@@ -6549,8 +6549,9 @@ window._pdfSantriDownload = pdfSantriDownload;
 
 
 
-
-
+// ============================
+// hitungTotalAllJuzFromTable (REVISI FINAL)
+// ============================
 // ==== HELPER: baca totalJuz dari berbagai nama field ====
 function readTotalJuz(rec){
   // Prioritas: totalJuz -> tilawahTotalJuz -> (fallback lain jika ada)
@@ -6564,11 +6565,6 @@ function readTotalJuz(rec){
     )) || 0
   );
 }
-
-
-// ============================
-// hitungTotalAllJuzFromTable (REVISI FINAL)
-// ============================
 
 // --- util kecil untuk normalisasi kunci & angka ---
 const normKey = (v) => String(v ?? "").trim();
