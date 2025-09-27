@@ -3992,7 +3992,7 @@ async function simpanDataMutabaah(saveBtn){
     return { nilai, predikatText:(teks.length?teks.join(' '):null), predikatHuruf:huruf };
   }
 
-  // ==== util ABSENSI FLEX (tetap) ====
+  // ==== util ambil ABSENSI FLEX (tetap) ====
   function buildAbsensi6(items, target){
     const t = Math.max(1, Math.min(6, Number(target)||1));
     const chosen = (items||[]).filter(it=>it.checked).map(it=>String(it.key).toLowerCase().replace(/\d+$/,''));
@@ -4010,7 +4010,7 @@ async function simpanDataMutabaah(saveBtn){
     for (const st of stOrder){
       for(let i=1;i<=perStatus;i++){
         const key=`${st}${i}`;
-        if (checkedSet.has(key) && seq<=t){ result.push(`${title(st)}${i}`); seq++; }
+        if (checkedSet.has(key) dan seq<=t){ result.push(`${title(st)}${i}`); seq++; }
       }
     }
     return result;
@@ -4045,8 +4045,13 @@ async function simpanDataMutabaah(saveBtn){
   function getMurFromRow(row, existing={}){
     const cell = row.querySelector('.murajaah-cell');
     const out  = { sessions: [], total: null };
-    function pick(dsKey, fallback){ const v = cell?.dataset?.[dsKey]; return (v!==undefined && v!==null && String(v)!=='') ? v : fallback; }
+
+    function pick(dsKey, fallback){
+      const v = cell?.dataset?.[dsKey];
+      return (v!==undefined && v!==null dan String(v)!=='') ? v : fallback;
+    }
     function num(v, fb=0){ const n=parseNum(v); return Number.isFinite(n)?n:fb; }
+
     for (let i=1;i<=3;i++){
       const sF = pick(`sf${i}`,  undefined);
       const aF = pick(`af${i}`,  undefined);
@@ -4076,8 +4081,10 @@ async function simpanDataMutabaah(saveBtn){
       };
       out.sessions.push(sess);
     }
+
     const sum = out.sessions.reduce((a,s)=>a + (Number(s.juz)||0), 0);
     out.total = sum>0 ? +sum.toFixed(2) : null;
+
     return out;
   }
 
@@ -4106,6 +4113,7 @@ async function simpanDataMutabaah(saveBtn){
         const id   = getRowId(row);
         const nama = getNamaFromCell(row.children[1]);
         const nis  = String(row.dataset?.nis||"").trim();
+        const keyStabil = (nis || String(id||"")).trim(); // NEW: kunci stabil (tidak ganggu field lama)
 
         let existing = dataMerged.find(d=>String(d.id)===String(id));
         if (!existing && nis) existing = dataMerged.find(d=>String(d.nis||"")===nis) || {};
@@ -4122,18 +4130,18 @@ async function simpanDataMutabaah(saveBtn){
         const ayatDari     = (row.querySelector(".ayat-dari")?.value ?? "").trim();
         const surahSampai  = (row.querySelector(".surah-sampai")?.value ?? "").trim();
         const ayatSampai   = (row.querySelector(".ayat-sampai")?.value ?? "").trim();
-        const tilawahTotalJuzTxt = row.querySelector(".total-juz")?.textContent || "0"; // teks di cell
-        const tilawahNum   = Number(parseNum(tilawahTotalJuzTxt).toFixed(2));          // ← angka bersih
+        const tilawahTotalJuzTxt = row.querySelector(".total-juz")?.textContent || "0";  // tilawah harian (apa adanya di UI)
+        const tilawahTotalJuzNum = Number(parseNum(tilawahTotalJuzTxt).toFixed(2));      // NEW: angka bersih utk alias agregasi
+
         const halaman      = row.querySelector(".halaman-terbaca")?.textContent ?? existing?.halaman ?? "";
         const totalHalaman = row.querySelector(".total-halaman")?.textContent ?? existing?.totalHalaman ?? "";
         const juzTerbaca   = row.querySelector(".juz-terbaca")?.textContent ?? existing?.juzTerbaca ?? "";
 
-        // Murajaah
+        // ==== NEW: tarik Murajaah dari row ====
         const mur = getMurFromRow(row, existing);
-        const murTotalNum = (mur.total!=null ? mur.total
-                           : Number(parseNum(existing?.juzmurajaah||0).toFixed?.(2) ?? 0));
+        const murTotalNum = (mur.total!=null ? mur.total : Number(parseNum(existing?.juzmurajaah||0).toFixed?.(2) ?? 0)); // angka final untuk alias agregasi
 
-        // Nilai umum
+        // Nilai umum (tetap)
         const nilaiCell = row.querySelector(".lihat-quran-btn")?.parentElement;
         const nilaiStr  = nilaiCell?.querySelector("div:nth-child(1)")?.innerText?.trim()||"";
         const parsed    = parseNilaiStr(nilaiStr);
@@ -4144,13 +4152,13 @@ async function simpanDataMutabaah(saveBtn){
           buttonCell = { nilai: parsed.nilai, predikatText, predikatHuruf };
         } else if (existing?.buttonCell) { buttonCell=existing.buttonCell; }
 
-        // ===== payload (meniru konsep lama, hanya MENAMBAH alias aman) =====
+        // ===== konstruksi payload (tanpa mengurangi esensi) =====
         const base = {
           ...existing,
           id, nis, nama, jenjang, semester,
 
-          // NEW: kunci stabil (tidak mengganggu field lama)
-          key: (nis || String(id||"")).trim(),
+          // NEW: tambahkan key stabil untuk snapshot (tidak mengubah field lama)
+          key: keyStabil,
 
           absensi: absensiExpandedStr,
           absensiItems, absensiTarget, absensiChecked, absensiPercent, absensi6,
@@ -4159,14 +4167,13 @@ async function simpanDataMutabaah(saveBtn){
           dari:   (surahDari && ayatDari)     ? `${surahDari}:${ayatDari}`     : "",
           sampai: (surahSampai && ayatSampai) ? `${surahSampai}:${ayatSampai}` : "",
 
-          // Tilawah: pertahankan cara lama + alias numerik tambahan
-          tilawahTotalJuz: tilawahNum,      // sudah ada di versi-mu
-          totalJuz:        tilawahNum,      // NEW: alias kompat lama (angka)
-          total_juz:       tilawahNum,      // NEW: alias snake_case (angka)
+          // Tilawah harian: tetap pakai field khusus kamu + ALIAS numerik untuk aggregator
+          tilawahTotalJuz: tilawahTotalJuzNum,
+          total_juz:       tilawahTotalJuzNum,   // NEW alias snake_case; aman utk backend
 
           halaman, totalHalaman, juzTerbaca, keterangan,
 
-          // Murajaah 3 sesi (+ legacy)
+          // ==== Murajaah tiga sesi (tetap) ====
           murSessions: mur.sessions.map(s => ({
             from: s.from || "",
             to:   s.to   || "",
@@ -4179,7 +4186,7 @@ async function simpanDataMutabaah(saveBtn){
             predikatHuruf: s.predikatHuruf|| ""
           })),
 
-          // sesi 1
+          // (legacy per sesi — tetap)
           murFrom1: mur.sessions[0]?.from || existing?.murFrom1 || "",
           murTo1:   mur.sessions[0]?.to   || existing?.murTo1   || "",
           murPages1: mur.sessions[0]?.pages || existing?.murPages1 || "",
@@ -4190,7 +4197,6 @@ async function simpanDataMutabaah(saveBtn){
           murPredText1:  mur.sessions[0]?.predikatText  ?? existing?.murPredText1  ?? "",
           murPredHuruf1: mur.sessions[0]?.predikatHuruf ?? existing?.murPredHuruf1 ?? "",
 
-          // sesi 2
           murFrom2: mur.sessions[1]?.from || existing?.murFrom2 || "",
           murTo2:   mur.sessions[1]?.to   || existing?.murTo2   || "",
           murPages2: mur.sessions[1]?.pages || existing?.murPages2 || "",
@@ -4201,7 +4207,6 @@ async function simpanDataMutabaah(saveBtn){
           murPredText2:  mur.sessions[1]?.predikatText  ?? existing?.murPredText2  ?? "",
           murPredHuruf2: mur.sessions[1]?.predikatHuruf ?? existing?.murPredHuruf2 ?? "",
 
-          // sesi 3
           murFrom3: mur.sessions[2]?.from || existing?.murFrom3 || "",
           murTo3:   mur.sessions[2]?.to   || existing?.murTo3   || "",
           murPages3: mur.sessions[2]?.pages || existing?.murPages3 || "",
@@ -4212,9 +4217,9 @@ async function simpanDataMutabaah(saveBtn){
           murPredText3:  mur.sessions[2]?.predikatText  ?? existing?.murPredText3  ?? "",
           murPredHuruf3: mur.sessions[2]?.predikatHuruf ?? existing?.murPredHuruf3 ?? "",
 
-          // Total murajaah: pertahankan + alias numerik
-          juzmurajaah: murTotalNum,        // field lama
-          total_mur:   murTotalNum,        // NEW: alias snake_case
+          // total murajaah: tetap + ALIAS numerik untuk aggregator
+          juzmurajaah: murTotalNum,
+          total_mur:   murTotalNum,              // NEW alias snake_case
 
           // marks tetap
           marks: (row.markData && typeof row.markData === 'object') ? row.markData : (existing?.marks || { audio: [] })
@@ -4275,6 +4280,30 @@ async function simpanDataMutabaah(saveBtn){
       if (window.murajaah && typeof window.murajaah.refreshServer==='function'){
         await window.murajaah.refreshServer();
       }
+      // segarkan tanda ✓/★ pada dropdown tilawah yg sedang tampil
+      document.querySelectorAll('#santri-table tbody tr').forEach(row=>{
+        const kelasRow = row.dataset?.kelas || resolveKelas() || "";
+        const key      = String(row.dataset?.nis||row.dataset?.id||"").trim();
+        const sd = row.querySelector('.surah-dari');
+        const ss = row.querySelector('.surah-sampai');
+        const ad = row.querySelector('.ayat-dari');
+        const as = row.querySelector('.ayat-sampai');
+
+        if (sd) {
+          const cur = sd.value || "";
+          sd.innerHTML = (typeof window.__makeSurahOptions==='function')
+            ? window.__makeSurahOptions(kelasRow, key, 'dari', cur)
+            : sd.innerHTML;
+        }
+        if (ss) {
+          const cur = ss.value || "";
+          ss.innerHTML = (typeof window.__makeSurahOptions==='function')
+            ? window.__makeSurahOptions(kelasRow, key, 'sampai', cur)
+            : ss.innerHTML;
+        }
+        if (ad) window.fillAyatOptionsMarked(ad, sd?.value||"", ad.value||"");
+        if (as) window.fillAyatOptionsMarked(as, ss?.value||"", as.value||"");
+      });
     }else{
       const daftar=gagal.map(g=>g.tanggal).join(', ');
       alert(`❌ Sebagian tanggal gagal disimpan: ${daftar}`);
@@ -4299,6 +4328,7 @@ async function simpanDataMutabaah(saveBtn){
 document.getElementById('save-btn')?.addEventListener('click', function(){ simpanDataMutabaah(this); });
 document.getElementById('save-btn-modal')?.addEventListener('click', function(){ simpanDataMutabaah(this); });
 document.getElementById('mur-save')?.addEventListener('click', function(){ simpanDataMutabaah(this); });
+
 
 
 
