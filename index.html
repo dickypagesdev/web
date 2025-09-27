@@ -6562,10 +6562,8 @@ const parseNum = (v) => {
   if (!s) return 0;
   // buang selain digit, titik, koma, minus
   s = s.replace(/[^0-9.,-]/g, "");
-  const comma = s.lastIndexOf(",");
-  const dot   = s.lastIndexOf(".");
+  const comma = s.lastIndexOf(","), dot = s.lastIndexOf(".");
   if (comma > -1 && dot > -1) {
-    // jika koma paling kanan → koma desimal
     if (comma > dot) { s = s.replace(/\./g, "").replace(",", "."); }
     else { s = s.replace(/,/g, ""); }
   } else if (comma > -1) {
@@ -6576,6 +6574,18 @@ const parseNum = (v) => {
   const n = parseFloat(s);
   return Number.isFinite(n) ? n : 0;
 };
+
+// membaca berbagai kemungkinan field total juz dari payload
+function readTotalJuzField(item){
+  return parseNum(
+    item?.totalJuz ??
+    item?.tilawahTotalJuz ??
+    item?.total_juz ??
+    item?.juzTerbaca ??
+    item?.juz_total ??
+    item?.total ?? 0
+  );
+}
 
 // helper ambil nama murni dari cell
 function getNamaFromCell(cell) {
@@ -6614,12 +6624,30 @@ function getSemesterForKey(key, row, fallbackFromArchive) {
   return 1;
 }
 
-// fallback: baca total juz dari kolom harian di baris (kalau rekap kosong)
+// fallback: baca total juz dari kolom harian di baris (kalau rekap tidak ada entri)
 function getTotalJuzFromRow(row) {
-  const td = row?.querySelector?.(".total-juz");
-  if (!td) return 0;
-  // biasanya isi angka murni
-  return parseNum(td.textContent);
+  if (!row) return 0;
+  // cari beberapa kemungkinan selector
+  let el =
+    row.querySelector(".total-juz") ||
+    row.querySelector(".totalJuz")  ||
+    row.querySelector('[data-col="total-juz"]') ||
+    row.querySelector('[data-total-juz]') ||
+    row.querySelector('td[class*="total"][class*="juz"]') ||
+    row.querySelector('td[data-col*="total"][data-col*="juz"]');
+
+  if (!el) return 0;
+
+  // urutan prioritas pembacaan
+  const viaData = el.getAttribute?.("data-total-juz");
+  if (viaData != null && viaData !== "") return parseNum(viaData);
+
+  const inp = el.querySelector?.("input, [contenteditable], .value, .num");
+  if (inp) {
+    const v = ("value" in inp) ? inp.value : inp.textContent;
+    return parseNum(v);
+  }
+  return parseNum(el.textContent);
 }
 
 // ============================
@@ -6638,9 +6666,9 @@ async function hitungTotalAllJuzFromTable() {
   try {
     await ensureSemesterMap(kelas);
 
-    // Ambil data absensi rentang (anti-cache)
+    // Ambil data absensi rentang (pakai aggregate=1)
     const res = await fetch(
-      `/api/getAbsensiRange?kelas=${encodeURIComponent(kelas)}&start=${encodeURIComponent(dari)}&end=${encodeURIComponent(sampai)}&t=${Date.now()}`
+      `/api/getAbsensiRange?kelas=${encodeURIComponent(kelas)}&start=${encodeURIComponent(dari)}&end=${encodeURIComponent(sampai)}&aggregate=1&t=${Date.now()}`
     );
     if (!res.ok) throw new Error("Gagal ambil data absensi.");
     const payload = await res.json();
@@ -6656,19 +6684,23 @@ async function hitungTotalAllJuzFromTable() {
       if (key && nm) nameToKey.set(nm.toLowerCase(), key);
     });
 
-    // Rekap: kunci stabil (nis || id) → fallback nama→key
-    const rekap = Object.create(null); // key => { totalJuz, semester?, id, nis, nama? }
+    // Rekap per siswa
+    const rekap = Object.create(null);
     (allData || []).forEach(item => {
-      let id   = normKey(item?.id);
-      let nis  = normKey(item?.nis);
-      let key  = normKey(nis || id);
+      // aggregate mengirim 'key'; kalau tidak ada, fallback id/nis/nama
+      let key = normKey(item?.key);
       if (!key) {
-        const nm = normKey(item?.nama).toLowerCase();
-        if (nm && nameToKey.has(nm)) key = nameToKey.get(nm);
+        const id = normKey(item?.nis) || normKey(item?.id);
+        key = id;
+        if (!key) {
+          const nm = normKey(item?.nama).toLowerCase();
+          if (nm && nameToKey.has(nm)) key = nameToKey.get(nm);
+        }
       }
       if (!key) return;
-      if (!rekap[key]) rekap[key] = { totalJuz: 0, semester: item?.semester ?? null, id, nis, nama: item?.nama ?? "" };
-      rekap[key].totalJuz += parseNum(item?.totalJuz);
+
+      if (!rekap[key]) rekap[key] = { totalJuz: 0, semester: item?.semester ?? null, id: item?.id ?? "", nis: item?.nis ?? "" };
+      rekap[key].totalJuz += readTotalJuzField(item);
     });
 
     // Batas ketuntasan per semester
@@ -6682,44 +6714,36 @@ async function hitungTotalAllJuzFromTable() {
       const cell = row.querySelector(".total-all-juz");
       if (!cell) return;
 
-      // ambil dari rekap; kalau kosong, fallback baca dari sel .total-juz
-      let totalJuzNum = rekap[key] ? parseNum(rekap[key].totalJuz) : 0;
-      let archSem = rekap[key]?.semester ?? null;
+      // pilih nilai: jika ada entri rekap (meski 0) → pakai itu; jika TIDAK ada entri → fallback ke sel baris
+      const hasRekap   = Object.prototype.hasOwnProperty.call(rekap, key);
+      let totalJuzNum  = hasRekap ? parseNum(rekap[key].totalJuz) : getTotalJuzFromRow(row);
+      const archSem    = hasRekap ? (rekap[key]?.semester ?? null) : null;
 
-      if (!totalJuzNum) {
-        const fallbackRowVal = getTotalJuzFromRow(row);
-        if (fallbackRowVal) totalJuzNum = fallbackRowVal; // pakai isi kolom kalau ada
+      if (Number.isNaN(totalJuzNum)) totalJuzNum = 0;
+
+      const semester = getSemesterForKey(key, row, archSem);
+      const batas    = batasSemester[semester] || 0;
+      const totalJuzStr = totalJuzNum.toFixed(2);
+
+      let label, warna;
+      if (totalJuzNum >= 30) { label = "KHATAM"; warna = "green"; }
+      else {
+        let prosentase = batas > 0 ? Math.floor((totalJuzNum / batas) * 100) : 0;
+        if (prosentase > 100) prosentase = 100;
+        if (prosentase >= 100) { label = "TUNTAS"; warna = "green"; }
+        else { label = `${prosentase}%`; warna = "red"; }
       }
 
-      if (totalJuzNum) {
-        const semester = getSemesterForKey(key, row, archSem);
-        const batas    = batasSemester[semester] || 0;
-        const totalJuzStr = totalJuzNum.toFixed(2);
+      cell.innerHTML = `${totalJuzStr}&nbsp;juz <span style="color:${warna}; font-size:12px;">${label}</span>`;
 
-        let label, warna;
-        if (totalJuzNum >= 30) { label = "KHATAM"; warna = "green"; }
-        else {
-          let prosentase = batas > 0 ? Math.floor((totalJuzNum / batas) * 100) : 0;
-          if (prosentase > 100) prosentase = 100;
-          if (prosentase >= 100) { label = "TUNTAS"; warna = "green"; }
-          else { label = `${prosentase}%`; warna = "red"; }
-        }
-
-        // ← tambah "juz"
-        cell.innerHTML = `${totalJuzStr}&nbsp;juz <span style="color:${warna}; font-size:12px;">${label}</span>`;
-
-        dataToSave.push({
-          key,
-          id: rekap[key]?.id || "",
-          nis: rekap[key]?.nis || "",
-          totalJuz: Number(totalJuzStr),
-          semester: semester || null,
-          isKhatam: totalJuzNum >= 30
-        });
-      } else {
-        // ← tambah "juz"
-        cell.innerHTML = `0.00&nbsp;juz <span style="color:red; font-size:10px">0%</span>`;
-      }
+      dataToSave.push({
+        key,
+        id: rekap[key]?.id || "",
+        nis: rekap[key]?.nis || "",
+        totalJuz: Number(totalJuzStr),
+        semester: semester || null,
+        isKhatam: totalJuzNum >= 30
+      });
     });
 
     // Simpan hasil rekap ke backend
@@ -6768,7 +6792,18 @@ function bukaOverlayTotalAllJuz() {
   document.getElementById("juzOverlay").style.display = "flex";
 }
 
-document.getElementById("btnHitungTotalJuz").addEventListener("click", hitungTotalAllJuzFromTable);
+// Pastikan listener tombol aman dipasang
+(function ensureBtnListener(){
+  function bind(){
+    const btn = document.getElementById("btnHitungTotalJuz");
+    if (btn && !btn.dataset._bound) {
+      btn.addEventListener("click", hitungTotalAllJuzFromTable);
+      btn.dataset._bound = "1";
+    }
+  }
+  bind();
+  window.addEventListener("DOMContentLoaded", bind);
+})();
 
 // ==================================
 // HITUNG OTOMATIS (setelah render)
@@ -6807,7 +6842,7 @@ async function hitungTotalAllJuzOtomatis() {
     await ensureSemesterMap(kelas);
 
     const resAbs = await fetch(
-      `/api/getAbsensiRange?kelas=${encodeURIComponent(kelas)}&start=${encodeURIComponent(dari)}&end=${encodeURIComponent(sampai)}&t=${Date.now()}`
+      `/api/getAbsensiRange?kelas=${encodeURIComponent(kelas)}&start=${encodeURIComponent(dari)}&end=${encodeURIComponent(sampai)}&aggregate=1&t=${Date.now()}`
     );
     if (!resAbs.ok) throw new Error("Gagal ambil data absensi.");
     const payload = await resAbs.json();
@@ -6822,19 +6857,21 @@ async function hitungTotalAllJuzOtomatis() {
       if (key && nm) nameToKey.set(nm.toLowerCase(), key);
     });
 
-    // Rekap by key (nis || id → fallback nama)
+    // Rekap by key
     const rekap = Object.create(null);
     (allData || []).forEach(item => {
-      let id  = normKey(item?.id);
-      let nis = normKey(item?.nis);
-      let key = normKey(nis || id);
+      let key = normKey(item?.key);
       if (!key) {
-        const nm = normKey(item?.nama).toLowerCase();
-        if (nm && nameToKey.has(nm)) key = nameToKey.get(nm);
+        const id = normKey(item?.nis) || normKey(item?.id);
+        key = id;
+        if (!key) {
+          const nm = normKey(item?.nama).toLowerCase();
+          if (nm && nameToKey.has(nm)) key = nameToKey.get(nm);
+        }
       }
       if (!key) return;
       if (!rekap[key]) rekap[key] = { totalJuz: 0, semester: item?.semester ?? null };
-      rekap[key].totalJuz += parseNum(item?.totalJuz);
+      rekap[key].totalJuz += readTotalJuzField(item);
     });
 
     const batasSemester = {1: 8, 2: 13, 3: 18, 4: 23, 5: 28, 6: 30};
@@ -6844,32 +6881,24 @@ async function hitungTotalAllJuzOtomatis() {
       const cell = row.querySelector(".total-all-juz");
       if (!cell) return;
 
-      let totalJuzNum = rekap[key] ? parseNum(rekap[key].totalJuz) : 0;
-      if (!totalJuzNum) {
-        // fallback baca langsung dari tabel kolom harian
-        totalJuzNum = getTotalJuzFromRow(row);
+      const hasRekap  = Object.prototype.hasOwnProperty.call(rekap, key);
+      let totalJuzNum = hasRekap ? parseNum(rekap[key].totalJuz) : getTotalJuzFromRow(row);
+      if (Number.isNaN(totalJuzNum)) totalJuzNum = 0;
+
+      const semester   = getSemesterForKey(key, row, rekap[key]?.semester);
+      const target     = batasSemester[semester] || 0;
+      const totalJuzStr = totalJuzNum.toFixed(2);
+
+      let label, warna;
+      if (totalJuzNum >= 30) { label = "KHATAM";  warna = "purple"; }
+      else {
+        let prosentase = target > 0 ? Math.floor((totalJuzNum / target) * 100) : 0;
+        if (prosentase > 100) prosentase = 100;
+        if (prosentase >= 100) { label = "TUNTAS"; warna = "green"; }
+        else { label = `${prosentase}%`; warna = "red"; }
       }
 
-      if (totalJuzNum) {
-        const semester = getSemesterForKey(key, row, rekap[key]?.semester);
-        const target   = batasSemester[semester] || 0;
-        const totalJuzStr = totalJuzNum.toFixed(2);
-
-        let label, warna;
-        if (totalJuzNum >= 30) { label = "KHATAM";  warna = "purple"; }
-        else {
-          let prosentase = target > 0 ? Math.floor((totalJuzNum / target) * 100) : 0;
-          if (prosentase > 100) prosentase = 100;
-          if (prosentase >= 100) { label = "TUNTAS"; warna = "green"; }
-          else { label = `${prosentase}%`; warna = "red"; }
-        }
-
-        // ← tambah "juz"
-        cell.innerHTML = `${totalJuzStr}&nbsp;juz <span style="color:${warna}; font-size:14px">${label}</span>`;
-      } else {
-        // ← tambah "juz"
-        cell.innerHTML = `0.00&nbsp;juz <span style="color:red; font-size:16px">0%</span>`;
-      }
+      cell.innerHTML = `${totalJuzStr}&nbsp;juz <span style="color:${warna}; font-size:14px">${label}</span>`;
     });
   } catch (err) {
     console.error("Gagal ambil data absensi:", err);
