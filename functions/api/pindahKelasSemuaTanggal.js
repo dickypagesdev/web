@@ -27,14 +27,43 @@ export async function onRequestPost(ctx){
     const totalMoved = details.reduce((a,b)=>a+b.moved,0);
     const now = nowIso();
 
-    // Transaksi via db.batch()
+    // ====== ANTI-UNIQUE CONFLICT (semua tanggal) ======
     const stmts = [
+      // 1) attendance_snapshots: hapus duplikat di kelasTujuan utk pasangan (tanggal, student_key) yg juga ada di kelasAsal (semua tanggal)
+      db.prepare(
+        `DELETE FROM attendance_snapshots AS t
+          WHERE t.class_name = ?
+            AND t.student_key IN (${ph(nises.length)})
+            AND EXISTS (
+              SELECT 1 FROM attendance_snapshots s
+               WHERE s.class_name = ?
+                 AND s.tanggal    = t.tanggal
+                 AND s.student_key= t.student_key
+            )`
+      ).bind(kelasTujuan, ...nises, kelasAsal),
+
+      // 2) attendance_snapshots: pindahkan kelasAsal -> kelasTujuan (semua tanggal)
       db.prepare(
         `UPDATE attendance_snapshots
             SET class_name=?, updated_at=?
           WHERE class_name=? AND student_key IN (${ph(nises.length)})`
       ).bind(kelasTujuan, now, kelasAsal, ...nises),
 
+      // 3) totals_store: hapus target yg bentrok (match start_date,end_date,student_key) di kelasTujuan
+      db.prepare(
+        `DELETE FROM totals_store AS t
+          WHERE t.kelas = ?
+            AND t.student_key IN (${ph(nises.length)})
+            AND EXISTS (
+              SELECT 1 FROM totals_store s
+               WHERE s.kelas = ?
+                 AND s.student_key = t.student_key
+                 AND s.start_date  = t.start_date
+                 AND s.end_date    = t.end_date
+            )`
+      ).bind(kelasTujuan, ...nises, kelasAsal),
+
+      // 4) totals_store: pindahkan kelasAsal -> kelasTujuan (semua periode)
       db.prepare(
         `UPDATE totals_store
             SET kelas=?, updated_at=?
