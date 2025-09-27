@@ -7068,54 +7068,63 @@ kelasSelect?.addEventListener("change", () => loadSantriData());
     }
 
     rows.forEach(tr=>{
-      const cell=tr.querySelector('.murajaah-cell'); if(!cell) return;
-      const nis = String(tr.dataset?.nis||'').trim();
-      const id  = String(tr.children?.[0]?.textContent||'').trim();
-      const rec = (nis && byNis.get(nis)) || (id && byId.get(id)) || null;
+  const cell = tr.querySelector('.murajaah-cell');
+  if (!cell) return;
 
-      // ====== DISPLAY TOTAL MURAJAAH (per-sesi dijumlah) ======
-      const total = rec ? murTotal(rec) : 0;
-      const valEl = cell.querySelector('.mur-val');
-      if(valEl) valEl.textContent = `${total.toFixed(2)} juz`;
-      cell.dataset.murtotal = total.toFixed(2);
+  // HANYA proses baris yang tanggalnya sama dengan 'tgl'
+  const rowTgl = String(tr.dataset?.tanggal || '').trim();
+  if (rowTgl && rowTgl !== tgl) return;
 
-      // ====== legacy FROM/TO/PAGES agar modal bisa preload ======
-      const legacyFrom = rec?.murFrom || '';
-      const legacyTo   = rec?.murTo   || '';
-      const legacyPg   = rec?.murPages|| '';
-      setSA(cell, legacyFrom, 'sf', 'af');
-      setSA(cell, legacyTo,   'st', 'at');
-      setPages(cell, legacyPg, 'pf', 'pt');
+  const nis = String(tr.dataset?.nis || '').trim();
+  const id  = String(tr.children?.[0]?.textContent || '').trim();
+  const rec = (nis && byNis.get(nis)) || (id && byId.get(id)) || null;
 
-      const takeNonEmpty = (...xs) => { for (const x of xs){ if(x!==undefined && x!==null && String(x)!=='') return x; } return ''; };
-      function getSessionFrom(rec, i){
-        const arr = Array.isArray(rec?.murSessions) ? rec.murSessions : null;
-        const ses = arr && arr[i-1] ? arr[i-1] : null;
-        const fromStr  = takeNonEmpty(rec?.[`murFrom${i}`],  ses?.from,  rec?.murFrom);
-        const toStr    = takeNonEmpty(rec?.[`murTo${i}`],    ses?.to,    rec?.murTo);
-        const pagesStr = takeNonEmpty(rec?.[`murPages${i}`], ses?.pages, rec?.murPages);
-        const juzVal   = takeNonEmpty(rec?.[`juzmur${i}`], rec?.[`juzSesi${i}`], ses?.juz); // hanya mur
-        const jFrom    = (rec?.[`jFrom${i}`] ?? ses?.jFrom);
-        const jTo      = (rec?.[`jTo${i}`]   ?? ses?.jTo);
-        const score    = (rec?.[`murScore${i}`]     ?? ses?.score);
-        const pText    = (rec?.[`murPredText${i}`]  ?? ses?.predikatText);
-        const pHuruf   = (rec?.[`murPredHuruf${i}`] ?? ses?.predikatHuruf);
-        return { fromStr, toStr, pagesStr, juzVal, jFrom, jTo, score, pText, pHuruf };
-      }
+  // Jika record tgl ini tidak ada, JANGAN timpa nilai yg sudah ada
+  if (!rec) return;
 
-      for (let i = 1; i <= 3; i++) {
-        const ses = getSessionFrom(rec, i);
-        setSA(cell, ses.fromStr, `sf${i}`, `af${i}`);
-        setSA(cell, ses.toStr,   `st${i}`, `at${i}`);
-        setPages(cell, ses.pagesStr, `pf${i}`, `pt${i}`);
-        if (ses.jFrom != null && ses.jFrom !== '') cell.dataset[`jfrom${i}`] = String(ses.jFrom); else delete cell.dataset[`jfrom${i}`];
-        if (ses.jTo   != null && ses.jTo   !== '') cell.dataset[`jto${i}`]   = String(ses.jTo);   else delete cell.dataset[`jto${i}`];
-        cell.dataset[`juz${i}`] = num(ses.juzVal || 0).toFixed(2);
-        if (ses.score  != null) cell.dataset[`score${i}`] = String(ses.score); else delete cell.dataset[`score${i}`];
-        if (ses.pText  != null) cell.dataset[`ptext${i}`] = String(ses.pText); else delete cell.dataset[`ptext${i}`];
-        if (ses.pHuruf != null) cell.dataset[`phuruf${i}`]= String(ses.pHuruf); else delete cell.dataset[`phuruf${i}`];
-      }
-    });
+  // ====== DISPLAY TOTAL MURAJAAH (per-sesi dijumlah) ======
+  const total = murTotal(rec);
+  const valEl = cell.querySelector('.mur-val');
+  if (valEl) valEl.textContent = `${total.toFixed(2)} juz`;
+  cell.dataset.murtotal = total.toFixed(2);
+
+  // ====== legacy FROM/TO/PAGES agar modal bisa preload ======
+  const legacyFrom = rec?.murFrom || '';
+  const legacyTo   = rec?.murTo   || '';
+  const legacyPg   = rec?.murPages|| '';
+  setSA(cell, legacyFrom, 'sf', 'af');
+  setSA(cell, legacyTo,   'st', 'at');
+  setPages(cell, legacyPg, 'pf', 'pt');
+
+  const takeNonEmpty = (...xs) => { for (const x of xs){ if(x!==undefined && x!==null && String(x)!=='') return x; } return ''; };
+  function getSessionFrom(rec, i){
+    const arr = Array.isArray(rec?.murSessions) ? rec.murSessions : null;
+    const ses = arr && arr[i-1] ? arr[i-1] : null;
+    const fromStr  = takeNonEmpty(rec?.[`murFrom${i}`],  ses?.from,  rec?.murFrom);
+    const toStr    = takeNonEmpty(rec?.[`murTo${i}`],    ses?.to,    rec?.murTo);
+    const pagesStr = takeNonEmpty(rec?.[`murPages${i}`], ses?.pages, rec?.murPages);
+    const juzVal   = takeNonEmpty(rec?.[`juzmur${i}`], rec?.[`juzSesi${i}`], ses?.juz);
+    const jFrom    = (rec?.[`jFrom${i}`] ?? ses?.jFrom);
+    const jTo      = (rec?.[`jTo${i}`]   ?? ses?.jTo);
+    const score    = (rec?.[`murScore${i}`]     ?? ses?.score);
+    const pText    = (rec?.[`murPredText${i}`]  ?? ses?.predikatText);
+    const pHuruf   = (rec?.[`murPredHuruf${i}`] ?? ses?.predikatHuruf);
+    return { fromStr, toStr, pagesStr, juzVal, jFrom, jTo, score, pText, pHuruf };
+  }
+
+  for (let i = 1; i <= 3; i++) {
+    const ses = getSessionFrom(rec, i);
+    setSA(cell, ses.fromStr, `sf${i}`, `af${i}`);
+    setSA(cell, ses.toStr,   `st${i}`, `at${i}`);
+    setPages(cell, ses.pagesStr, `pf${i}`, `pt${i}`);
+    if (ses.jFrom != null && ses.jFrom !== '') cell.dataset[`jfrom${i}`] = String(ses.jFrom); else delete cell.dataset[`jfrom${i}`];
+    if (ses.jTo   != null && ses.jTo   !== '') cell.dataset[`jto${i}`]   = String(ses.jTo);   else delete cell.dataset[`jto${i}`];
+    cell.dataset[`juz${i}`] = num(ses.juzVal || 0).toFixed(2);
+    if (ses.score  != null) cell.dataset[`score${i}`] = String(ses.score); else delete cell.dataset[`score${i}`];
+    if (ses.pText  != null) cell.dataset[`ptext${i}`] = String(ses.pText); else delete cell.dataset[`ptext${i}`];
+    if (ses.pHuruf != null) cell.dataset[`phuruf${i}`]= String(ses.pHuruf); else delete cell.dataset[`phuruf${i}`];
+  }
+});
   }
 }
 
