@@ -3185,6 +3185,23 @@ async function loadSantriData() {
     return m;
   };
 
+	 // --- Normalisasi tanggal dari berbagai kemungkinan nama properti
+function pickTanggal(obj) {
+  const raw =
+    obj?.tanggal ??
+    obj?.date ??
+    obj?.tgl ??
+    obj?.created_at ??
+    obj?.createdAt ??
+    obj?.Tanggal ?? // kalau ada variasi kapitalisasi
+    null;
+  if (!raw) return null;
+  const s = String(raw);
+  // potong ke YYYY-MM-DD bila ada waktu
+  return s.length >= 10 ? s.slice(0,10) : s;
+}
+
+
   function setButtonsDisabled(disabled) {
     const targets = [
       document.getElementById("save-btn-modal"),
@@ -3262,65 +3279,16 @@ async function loadSantriData() {
   // expose untuk dipakai ulang setelah SAVE
   window.__makeSurahOptions = makeSurahOptions;
 
-  // AYAT dropdown bertanda ✓/★ — panggil implementasi Tahap 2
+  // AYAT dropdown bertanda ✓/★ — implementasi aslinya ada di Tahap 2 (dipanggil di sini)
   function fillAyatOptionsMarked(selectEl, surahId, selectedAyat = "") {
     if (typeof window.fillAyatOptionsMarked === "function") {
       window.fillAyatOptionsMarked(selectEl, surahId, selectedAyat);
     } else {
+      // fallback aman
       if (!selectEl) return;
       selectEl.innerHTML = `<option value="">— Ayat —</option>`;
       selectEl.value = selectedAyat ? String(selectedAyat) : "";
     }
-  }
-
-  // ===== helper normalisasi untuk respons range =====
-  const normDate = v => String(v||"").slice(0,10); // YYYY-MM-DD saja
-  function normalizeAbsensiRange(payload) {
-    // bentuk: array grup [{tanggal, items:[...] }] / [{tanggal, records:[...]}]
-    if (Array.isArray(payload)) {
-      const grouped = payload.length && (payload[0]?.items || payload[0]?.records);
-      if (grouped) {
-        const out = [];
-        for (const grp of payload) {
-          const tgl = normDate(grp?.tanggal || grp?.date || grp?.tgl || "");
-          const arr = Array.isArray(grp.items) ? grp.items
-                    : (Array.isArray(grp.records) ? grp.records : []);
-          for (const rec of arr) {
-            out.push({ ...rec, tanggal: rec?.tanggal ? normDate(rec.tanggal) : tgl });
-          }
-        }
-        return out;
-      }
-      // sudah flat → pastikan tanggal ada/ternormalisasi
-      return payload.map(it => {
-        if (it && !it.tanggal && (it.date || it.tgl)) it.tanggal = normDate(it.date || it.tgl);
-        if (it && it.tanggal) it.tanggal = normDate(it.tanggal);
-        return it;
-      });
-    }
-    // bentuk: { list: [...] } (bisa flat atau grouped)
-    const list = Array.isArray(payload?.list) ? payload.list : [];
-    if (!list.length) return [];
-
-    const grouped = list.length && (list[0]?.items || list[0]?.records);
-    if (grouped) {
-      const out = [];
-      for (const grp of list) {
-        const tgl = normDate(grp?.tanggal || grp?.date || grp?.tgl || "");
-        const arr = Array.isArray(grp.items) ? grp.items
-                  : (Array.isArray(grp.records) ? grp.records : []);
-        for (const rec of arr) {
-          out.push({ ...rec, tanggal: rec?.tanggal ? normDate(rec.tanggal) : tgl });
-        }
-      }
-      return out;
-    }
-    // flat
-    return list.map(it => {
-      if (it && !it.tanggal && (it.date || it.tgl)) it.tanggal = normDate(it.date || it.tgl);
-      if (it && it.tanggal) it.tanggal = normDate(it.tanggal);
-      return it;
-    });
   }
 
   try {
@@ -3351,25 +3319,14 @@ async function loadSantriData() {
     const endFilter = window.tanggalFilterAkhir ? window.tanggalFilterAkhir.value : "";
 
     if (endFilter && endFilter !== tanggal) {
-      const resAbsensiRange = await fetch(
-        `/api/getAbsensiRange?kelas=${encodeURIComponent(kelas)}&start=${encodeURIComponent(tanggal)}&end=${encodeURIComponent(endFilter)}&t=${Date.now()}`,
-        { credentials:'include' }
-      );
-      const payload = await resAbsensiRange.json().catch(()=>({}));
-      absensiRaw = normalizeAbsensiRange(payload);
+      const resAbsensiRange = await fetch(`/api/getAbsensiRange?kelas=${encodeURIComponent(kelas)}&start=${encodeURIComponent(tanggal)}&end=${encodeURIComponent(endFilter)}&t=${Date.now()}`, { credentials:'include' });
+      let d = await resAbsensiRange.json().catch(()=>({}));
+      absensiRaw = Array.isArray(d) ? d : (d?.list || []);
+      if (!Array.isArray(absensiRaw)) absensiRaw = [];
     } else {
-      const resAbsensi = await fetch(
-        `/api/getAbsensi?kelas=${encodeURIComponent(kelas)}&tanggal=${encodeURIComponent(tanggal)}&t=${Date.now()}`,
-        { credentials:'include' }
-      );
+      const resAbsensi = await fetch(`/api/getAbsensi?kelas=${encodeURIComponent(kelas)}&tanggal=${encodeURIComponent(tanggal)}&t=${Date.now()}`, { credentials:'include' });
       let d = await resAbsensi.json().catch(()=>({}));
       absensiRaw = Array.isArray(d) ? d : (d?.list || []);
-      // normalisasi tanggal juga (jaga-jaga server kirim 'date/tgl')
-      absensiRaw = absensiRaw.map(it => {
-        if (it && !it.tanggal && (it.date || it.tgl)) it.tanggal = normDate(it.date || it.tgl);
-        if (it && it.tanggal) it.tanggal = normDate(it.tanggal);
-        return it;
-      });
     }
 
     // Normalisasi absensi (lengkapi id/nis/nama dari roster)
@@ -3446,12 +3403,11 @@ async function loadSantriData() {
         const aid  = keyId(a?.id);
         const anis = keyNis(a?.nis);
         const anm  = keyName(a?.nama);
-        if (a && a.tanggal) a.tanggal = normDate(a.tanggal);
         if (aid)  (absensiById[aid]  ||= []).push(a);
         if (anis) (absensiByNis[anis] ||= []).push(a);
         if (anm)  (absensiByName[anm] ||= []).push(a);
       }
-      const sorter = arr => arr.sort((x,y) => normDate(x.tanggal).localeCompare(normDate(y.tanggal)));
+      const sorter = arr => arr.sort((x,y) => String(x.tanggal||"").localeCompare(String(y.tanggal||"")));
       Object.values(absensiById).forEach(sorter);
       Object.values(absensiByNis).forEach(sorter);
       Object.values(absensiByName).forEach(sorter);
@@ -3480,7 +3436,7 @@ async function loadSantriData() {
         const seen = new Set();
         rowsForSantri = [];
         for (const r of [...fromNis, ...fromId, ...fromName]) {
-          const k = normDate(r.tanggal || "__");
+          const k = pickTanggal(r) || "__";
           if (!seen.has(k)) { rowsForSantri.push(r); seen.add(k); }
         }
       } else {
@@ -3501,9 +3457,10 @@ async function loadSantriData() {
         const dari   = dariRaw   ? dariRaw.split(":")   : ["",""];
         const sampai = sampaiRaw ? sampaiRaw.split(":") : ["",""];
 
-        const rowDate = (isRange && dataAbsensi?.tanggal) ? normDate(dataAbsensi.tanggal) : tanggal;
-        const subTanggal = isRange && dataAbsensi?.tanggal
-          ? `<div style="font-size:12px;opacity:.65">${normDate(dataAbsensi.tanggal)}</div>` : "";
+        const absDate = pickTanggal(dataAbsensi);
+		const rowDate = (isRange && absDate) ? absDate : tanggal;
+		const subTanggal = (isRange && absDate)
+		? `<div style="font-size:12px;opacity:.65">${absDate}</div>` : "";
 
         const keyMaster = (snis || sid || "");
         const semNow = (window.semesterMap?.[keyMaster])   ?? santri.semester   ?? "1";
@@ -3581,7 +3538,7 @@ async function loadSantriData() {
         row.dataset.nis       = dsNis;
         row.dataset.key       = (dsNis || dsId || "");
         row.dataset.tanggal   = rowDate;
-        row.dataset.kelas     = kelas;   // penting untuk scoping
+        row.dataset.kelas     = kelas;   // <=== penting untuk scoping
         row.dataset.jenjang   = jenNow || "";
         row.dataset.keterangan= ketNow || "";
 
@@ -3615,6 +3572,7 @@ async function loadSantriData() {
           const tj = Number(dataAbsensi.tilawahTotalJuz);
           if (!Number.isNaN(tj)) row.querySelector(".total-juz").textContent = tj.toFixed(2);
         } else {
+          // jika dari:sampai lengkap → hitung sekali untuk tampilan
           if (dariArr[0] && dariArr[1] && sampaiArr[0] && sampaiArr[1]) {
             updateTotalJuz(row);
           }
@@ -3622,6 +3580,7 @@ async function loadSantriData() {
 
         // events
         surahDari.addEventListener("change", () => {
+          // regenerate label surah (tanda ✓/★) setelah user ganti
           surahDari.innerHTML = makeSurahOptions(kelas, dsNis || dsId || "", 'dari', surahDari.value);
           fillAyatOptionsMarked(ayatDari, surahDari.value || "", "");
           if (surahDari.value) {
