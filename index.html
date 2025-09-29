@@ -3866,6 +3866,64 @@ function fillAyatOptionsMarked(selectEl, surahId, selectedAyat = "") {
   selectEl.value = selectedAyat ? String(selectedAyat) : "";
 }
 
+	 // === Guard mobile untuk mencegah pemilihan option yang disabled ===
+const __ayatGuarded = new WeakSet();
+function attachAyatMobileGuard(selectEl){
+  if (!selectEl || __ayatGuarded.has(selectEl)) return;
+  __ayatGuarded.add(selectEl);
+
+  let lastValid = selectEl.value || "";
+
+  const remember = () => { lastValid = selectEl.value || ""; };
+  selectEl.addEventListener("focus", remember, { passive:true });
+  selectEl.addEventListener("mousedown", remember, { passive:true });
+  selectEl.addEventListener("touchstart", remember, { passive:true });
+
+  selectEl.addEventListener("change", () => {
+    const opt = selectEl.options[selectEl.selectedIndex];
+    if (opt && (opt.disabled || opt.getAttribute("data-disabled")==="1")) {
+      // kembalikan ke nilai sebelumnya
+      selectEl.value = lastValid;
+      // sinkronkan UI beberapa browser
+      selectEl.dispatchEvent(new Event("input",  { bubbles:true }));
+      selectEl.dispatchEvent(new Event("change", { bubbles:true }));
+      try { if (navigator.vibrate) navigator.vibrate(35); } catch {}
+    } else {
+      lastValid = selectEl.value || "";
+    }
+  });
+
+  // Sembunyikan opsi yang disabled agar tidak muncul di wheel/picker mobile
+  const hideDisabled = () => {
+    [...selectEl.options].forEach(o => {
+      if (o.disabled || o.getAttribute("data-disabled")==="1"){
+        o.hidden = true;
+        o.setAttribute("aria-disabled","true");
+      } else {
+        o.hidden = false;
+        o.removeAttribute("aria-disabled");
+      }
+    });
+  };
+  hideDisabled();
+
+  // Jika daftar option berubah (refill), jalankan lagi
+  const mo = new MutationObserver(hideDisabled);
+  mo.observe(selectEl, { childList:true });
+}
+
+// Pastikan opsi terlarang ikut disembunyikan untuk mobile picker
+[...selectEl.options].forEach(o=>{
+  if (o.disabled || o.getAttribute("data-disabled")==="1") {
+    o.hidden = true;
+    o.setAttribute("aria-disabled","true");
+  }
+});
+
+// Pasang guard anti-pilih-disabled (khusus mobile, aman di desktop)
+attachAyatMobileGuard(selectEl);
+
+
 // (Opsional) wrapper agar kompatibel dengan pemanggilan lama:
 function fillAyatOptions(selectEl, surahId, selectedAyat = "") {
   fillAyatOptionsMarked(selectEl, surahId, selectedAyat);
