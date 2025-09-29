@@ -3750,13 +3750,41 @@ async function loadSantriData() {
 }
 
 
-// ====== Dropdown Ayat (REVISI LANJUT): "★" memanjang sampai sebelum "✓" berikutnya ======
-// ====== Dropdown Ayat (REVISI LAGI): ★ membentang s/d sebelum ✓ ======
+// ====== Dropdown Ayat (REVISI): ✓ dari riwayat, ★ untuk seluruh rentang pilihan aktif ======
 function fillAyatOptionsMarked(selectEl, surahId, selectedAyat = "") {
   if (!selectEl) return;
 
   const nis  = selectEl.dataset?.nis  || "";   // <select ... data-nis="...">
   const kind = selectEl.dataset?.kind || "";   // 'dari' | 'sampai'
+  const row  = selectEl.closest('tr');
+
+  // Indeks riwayat (sudah diisi di Tahap 1 / saat save)
+  const usedSet =
+    (window.__usedAyatIndex
+      && window.__usedAyatIndex[nis]
+      && window.__usedAyatIndex[nis][String(surahId)]
+      && window.__usedAyatIndex[nis][String(surahId)] instanceof Set)
+      ? window.__usedAyatIndex[nis][String(surahId)]
+      : new Set();
+
+  // Ambil konteks rentang yang SEDANG dipilih di baris ini
+  const sD = Number(row?.querySelector('.surah-dari')?.value || 0);
+  const aD = Number(row?.querySelector('.ayat-dari')?.value  || 0);
+  const sS = Number(row?.querySelector('.surah-sampai')?.value || 0);
+  const aS = Number(row?.querySelector('.ayat-sampai')?.value  || 0);
+
+  // Fungsi: apakah (surahId, ayat) termasuk rentang aktif di baris ini
+  function isInActiveRange(surahIdNum, ay) {
+    if (!sD || !sS || !aD || !aS) return false;              // belum lengkap → belum ada “★”
+    if (sD === sS) {
+      if (surahIdNum !== sD) return false;
+      return ay >= aD && ay <= aS;
+    } else {
+      if (surahIdNum === sD) return ay >= aD;                // dari surah: mulai aD → akhir surah
+      if (surahIdNum === sS) return ay <= aS;                // sampai surah: awal surah → aS
+      return (surahIdNum > sD && surahIdNum < sS);           // surah di tengah rentang
+    }
+  }
 
   // Jika surah belum dipilih → hanya opsi kosong
   if (!surahId) {
@@ -3772,52 +3800,22 @@ function fillAyatOptionsMarked(selectEl, surahId, selectedAyat = "") {
     return;
   }
 
-  // Kumpulan ayat yang pernah dipilih (✓) untuk NIS+surah ini
-  const usedSet =
-    (window.__usedAyatIndex
-      && window.__usedAyatIndex[nis]
-      && window.__usedAyatIndex[nis][String(surahId)]
-      && window.__usedAyatIndex[nis][String(surahId)] instanceof Set)
-      ? window.__usedAyatIndex[nis][String(surahId)]
-      : new Set();
-
-  // Ambil nilai terpilih saat ini (jika pemanggil tidak memberi selectedAyat)
-  const selAyat = Number(selectedAyat || selectEl.value || 0) || 0;
-
-  // Tentukan rentang ★:
-  // start = selAyat (jika ada), end = ayat pertama yang sudah ✓ setelah start (exclusive)
-  let starStart = selAyat > 0 ? selAyat : 0;
-  let starEnd   = 0;
-  if (starStart > 0) {
-    // cari ayat ✓ pertama setelah start
-    let firstUsedAfter = 0;
-    for (let i = starStart + 1; i <= surah.jumlah_ayat; i++) {
-      if (usedSet.has(i) || usedSet.has(String(i))) { firstUsedAfter = i; break; }
-    }
-    starEnd = firstUsedAfter ? (firstUsedAfter - 1) : surah.jumlah_ayat;
-    if (starEnd < starStart) starEnd = 0; // guard
-  }
-
+  const surahNum = Number(surahId);
   const frag = document.createDocumentFragment();
 
-  // Opsi kosong
+  // Opsi kosong di paling atas
   const blank = document.createElement("option");
   blank.value = "";
   blank.textContent = "— Ayat —";
   frag.appendChild(blank);
 
   for (let i = 1; i <= surah.jumlah_ayat; i++) {
-    const isUsed   = usedSet.has(i) || usedSet.has(String(i));      // ✓ selalu menang
-    const inStarRange = starStart > 0 && i >= starStart && i <= starEnd;
+    const used    = usedSet.has(i) || usedSet.has(String(i));       // sudah pernah dipakai → “✓”
+    const starred = !used && isInActiveRange(surahNum, i);          // bagian dari rentang aktif & belum ✓ → “★”
 
-    // Urutan prioritas label:
-    // 1) ✓ kalau pernah dipakai
-    // 2) ★ kalau masuk rentang bintang
-    // 3) angka biasa
-    let label;
-    if (isUsed)      label = `✓ ${i}`;
-    else if (inStarRange) label = `★ ${i}`;
-    else             label = String(i);
+    let label = String(i);
+    if (used)      label = `✓ ${label}`;
+    else if (starred) label = `★ ${label}`;
 
     const opt = document.createElement("option");
     opt.value = String(i);
@@ -3827,12 +3825,9 @@ function fillAyatOptionsMarked(selectEl, surahId, selectedAyat = "") {
 
   selectEl.innerHTML = "";
   selectEl.appendChild(frag);
-
-  // restore pilihan
-  if (selAyat > 0) selectEl.value = String(selAyat);
-  else if (selectedAyat) selectEl.value = String(selectedAyat);
-  else selectEl.value = "";
+  selectEl.value = selectedAyat ? String(selectedAyat) : "";
 }
+
 
 // (Wrapper kompatibel nama lama)
 function fillAyatOptions(selectEl, surahId, selectedAyat = "") {
