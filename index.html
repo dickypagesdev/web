@@ -3750,24 +3750,26 @@ async function loadSantriData() {
 }
 
 
-// ====== Dropdown Ayat (REVISI): default kosong + penanda per KELAS+NIS ======
+// ====== Dropdown Ayat (REVISI LANJUT): "★" memanjang sampai sebelum "✓" berikutnya ======
 function fillAyatOptionsMarked(selectEl, surahId, selectedAyat = "") {
   if (!selectEl) return;
 
-  const nis    = selectEl.dataset?.nis   || "";
-  const kind   = selectEl.dataset?.kind  || "";   // 'dari' | 'sampai'
-  const kelas  = selectEl.dataset?.kelas || "";
+  const nis  = selectEl.dataset?.nis  || "";     // <select ... data-nis="...">
+  const kind = selectEl.dataset?.kind || "";     // 'dari' | 'sampai'
 
-  // bucket global
-  const usedBucket   = (window.__ayatIndex  && window.__ayatIndex[kelas])  ? window.__ayatIndex[kelas]  : {};
-  const latestBucket = (window.__ayatLatest && window.__ayatLatest[kelas]) ? window.__ayatLatest[kelas] : {};
-
+  // Ambil indeks riwayat yang sudah dibangun di Tahap 1 / diperbarui di Tahap 3
   const usedSet =
-    (usedBucket[nis] && usedBucket[nis][String(surahId)] instanceof Set)
-      ? usedBucket[nis][String(surahId)]
+    (window.__usedAyatIndex
+      && window.__usedAyatIndex[nis]
+      && window.__usedAyatIndex[nis][String(surahId)]
+      && window.__usedAyatIndex[nis][String(surahId)] instanceof Set)
+      ? window.__usedAyatIndex[nis][String(surahId)]
       : new Set();
 
-  const latestObj = (latestBucket[nis] && latestBucket[nis][kind]) ? latestBucket[nis][kind] : null;
+  const latestObj =
+    (window.__latestAyat && window.__latestAyat[nis] && window.__latestAyat[nis][kind])
+      ? window.__latestAyat[nis][kind]
+      : null;
 
   // Jika surah belum dipilih → hanya opsi kosong
   if (!surahId) {
@@ -3783,6 +3785,34 @@ function fillAyatOptionsMarked(selectEl, surahId, selectedAyat = "") {
     return;
   }
 
+  // --- Hitung rentang "★":
+  //    mulai dari latest.ayat (pada surah yang sama) hingga sebelum ayat "✓" terdekat di atasnya.
+  let starStart = null;
+  let starEndExclusive = null; // batas atas eksklusif (sebelum ✓ berikutnya)
+  if (latestObj && String(latestObj.surah) === String(surahId) && Number(latestObj.ayat) >= 1) {
+    starStart = Number(latestObj.ayat);
+
+    // cari "used" (✓) terdekat yang > starStart
+    if (usedSet && usedSet.size) {
+      const bigger = [...usedSet]
+        .map(x => Number(x))
+        .filter(n => Number.isFinite(n) && n > starStart)
+        .sort((a,b)=>a-b);
+      if (bigger.length) {
+        starEndExclusive = bigger[0]; // ★ sampai sebelum ini
+      } else {
+        starEndExclusive = null; // tidak ada ✓ di atasnya → ★ sampai akhir surah
+      }
+    }
+  }
+
+  function isStar(ayahNum){
+    if (!starStart) return false;
+    if (ayahNum < starStart) return false;
+    if (starEndExclusive && ayahNum >= starEndExclusive) return false;
+    return true;
+  }
+
   const frag = document.createDocumentFragment();
 
   // Opsi kosong di paling atas
@@ -3792,15 +3822,13 @@ function fillAyatOptionsMarked(selectEl, surahId, selectedAyat = "") {
   frag.appendChild(blank);
 
   for (let i = 1; i <= surah.jumlah_ayat; i++) {
-    const isUsed   = usedSet.has(i) || usedSet.has(String(i));
-    const isLatest = !!(latestObj
-                     && String(latestObj.surah) === String(surahId)
-                     && Number(latestObj.ayat) === i);
+    const used = usedSet.has(i) || usedSet.has(String(i)); // "✓"
+    const star = isStar(i);                                // "★" memanjang
 
-    // Label: "✓ 12 ★" bila keduanya benar
+    // Tampilkan keduanya bila perlu (misal ayat latest sendiri: ✓ dan ★)
     let label = String(i);
-    if (isUsed)   label = `✓ ${label}`;
-    if (isLatest) label = `${label} ★`;
+    if (used) label = `✓ ${label}`;
+    if (star) label = `${label} ★`;
 
     const opt = document.createElement("option");
     opt.value = String(i);
