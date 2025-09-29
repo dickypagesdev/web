@@ -3223,67 +3223,63 @@ async function loadSantriData() {
   }
 
   // === bangun index dari list absensi (baca 'dari' / 'sampai') + USED BY DATE
-  // === bangun index dari list absensi (baca 'dari'/'sampai') + USED BY DATE (rentang penuh)
+  // === bangun index dari list absensi (baca rentang 'dari'..'sampai') + USED BY DATE untuk SELURUH AYAT DALAM RENTANG
 function buildAyatIndexFromList(kelasKey, absList) {
-  const usedBucket   = getIndexBucket(kelasKey);
-  const latestBucket = getLatestBucket(kelasKey);
-  const usedByDate   = getUsedByDateBucket(kelasKey);
+  const usedBucket   = getIndexBucket(kelasKey);    // ✓
+  const latestBucket = getLatestBucket(kelasKey);   // ★
+  const usedByDate   = getUsedByDateBucket(kelasKey); // disable
 
-  const pushEndpoint = (nis, kind, surahAyat, tanggal) => {
-    if (!nis || !surahAyat || !/^\d+:\d+$/.test(surahAyat)) return;
-    const [s,a] = surahAyat.split(":").map(Number);
-
-    // ✓ + ★ (tetap seperti semula, hanya endpoint)
-    usedBucket[nis] ??= {};
-    usedBucket[nis][String(s)] ??= new Set();
-    usedBucket[nis][String(s)].add(a);
-
-    latestBucket[nis] ??= {};
-    const prev = latestBucket[nis][kind];
-    if (!prev || String(tanggal).localeCompare(String(prev.tanggal)) > 0) {
-      latestBucket[nis][kind] = { surah: String(s), ayat: Number(a), tanggal: String(tanggal||"") };
-    }
-  };
-
-  // tambahkan seluruh ayat dalam rentang ke __ayatUsedByDate (untuk DISABLE)
-  const pushRangeByDate = (nis, dariStr, sampaiStr, tanggal) => {
-    if (!nis || !/^\d+:\d+$/.test(dariStr) || !/^\d+:\d+$/.test(sampaiStr)) return;
-    let [s1,a1] = dariStr.split(":").map(Number);
-    let [s2,a2] = sampaiStr.split(":").map(Number);
-    if (s2 < s1 || (s1 === s2 && a2 < a1)) { // pastikan ascending
-      [s1,s2] = [s2,s1]; [a1,a2] = [a2,a1];
-    }
-    for (let s = s1; s <= s2; s++) {
-      const surah = surahList.find(x => Number(x.id) === Number(s));
+  // helper: iterasi semua (surah, ayat) di antara rentang
+  function* iterAyatRange(sFrom, aFrom, sTo, aTo) {
+    const fromS = Number(sFrom), toS = Number(sTo);
+    for (let s = fromS; s <= toS; s++) {
+      const surah = surahList.find(x => Number(x.id) === s);
       if (!surah) continue;
-      const startAyat = (s === s1) ? a1 : 1;
-      const endAyat   = (s === s2) ? a2 : Number(surah.jumlah_ayat||0);
-      for (let i = startAyat; i <= endAyat; i++) {
-        usedByDate[nis] ??= {};
-        usedByDate[nis][String(s)] ??= {};
-        usedByDate[nis][String(s)][String(i)] ??= new Set();
-        usedByDate[nis][String(s)][String(i)].add(String(tanggal||""));
-      }
+      const startA = (s === fromS) ? Number(aFrom) : 1;
+      const endA   = (s === toS)   ? Number(aTo)   : Number(surah.jumlah_ayat);
+      for (let a = startA; a <= endA; a++) yield [String(s), Number(a)];
     }
-  };
+  }
+
+  function pushRange(nis, dariStr, sampaiStr, tanggal) {
+    if (!nis || !dariStr || !sampaiStr) return;
+    const m1 = /^(\d+):(\d+)$/.exec(String(dariStr).trim());
+    const m2 = /^(\d+):(\d+)$/.exec(String(sampaiStr).trim());
+    if (!m1 || !m2) return;
+    const [ , sFrom, aFrom ] = m1;
+    const [ , sTo,   aTo   ] = m2;
+
+    // tandai seluruh ayat dalam rentang
+    for (const [s, a] of iterAyatRange(sFrom, aFrom, sTo, aTo)) {
+      // ✓ pernah
+      usedBucket[nis] ??= {};
+      usedBucket[nis][s] ??= new Set();
+      usedBucket[nis][s].add(a);
+
+      // used-by-date untuk disable
+      usedByDate[nis] ??= {};
+      usedByDate[nis][s] ??= {};
+      usedByDate[nis][s][String(a)] ??= new Set();
+      usedByDate[nis][s][String(a)].add(String(tanggal || ""));
+    }
+
+    // ★ terakhir tetap pakai ujung rentang
+    latestBucket[nis] ??= {};
+    const setLastIfNewer = (kind, s, a) => {
+      const prev = latestBucket[nis][kind];
+      const cand = { surah: String(s), ayat: Number(a), tanggal: String(tanggal||"") };
+      if (!prev || String(cand.tanggal).localeCompare(String(prev.tanggal)) > 0) {
+        latestBucket[nis][kind] = cand;
+      }
+    };
+    setLastIfNewer('dari',   sFrom, aFrom);
+    setLastIfNewer('sampai', sTo,   aTo);
+  }
 
   (absList||[]).forEach(r => {
     const nis = keyNis(r?.nis) || keyId(r?.id) || "";
     const tgl = r?.tanggal || "";
-
-    // endpoint (tetap untuk ✓/★)
-    if (r?.dari)   pushEndpoint(nis, 'dari',   String(r.dari),   tgl);
-    if (r?.sampai) pushEndpoint(nis, 'sampai', String(r.sampai), tgl);
-
-    // RENTANG PENUH untuk DISABLE
-    if (r?.dari && r?.sampai) {
-      pushRangeByDate(nis, String(r.dari), String(r.sampai), tgl);
-    } else if (r?.dari) {
-      // kalau hanya 'dari' yang ada, setidaknya disable 1 ayatnya
-      pushRangeByDate(nis, String(r.dari), String(r.dari), tgl);
-    } else if (r?.sampai) {
-      pushRangeByDate(nis, String(r.sampai), String(r.sampai), tgl);
-    }
+    if (r?.dari && r?.sampai) pushRange(nis, String(r.dari), String(r.sampai), tgl);
   });
 }
 
@@ -4292,7 +4288,8 @@ async function simpanDataMutabaah(saveBtn){
       hasilKirim.push({tanggal, ok:!!result?.success, result});
 
       // ===== perbarui indeks tanda ✓/★ & USED-BY-DATE (per KELAS) utk dropdown tilawah =====
-      (function updateAyatIndexFromRows(){
+      // ===== perbarui indeks ✓/★ & USED-BY-DATE (per KELAS) utk dropdown tilawah — SELURUH AYAT DALAM RENTANG
+(function updateAyatIndexFromRows(){
   window.__ayatIndex       ??= {};
   window.__ayatLatest      ??= {};
   window.__ayatUsedByDate  ??= {};
@@ -4300,64 +4297,55 @@ async function simpanDataMutabaah(saveBtn){
   window.__ayatLatest[kelas]      ??= {};
   window.__ayatUsedByDate[kelas]  ??= {};
 
-  const pushEndpoint = (nis, kind, s, a, tanggal) => {
-    if (!s || !a) return;
-    // ✓
-    window.__ayatIndex[kelas][nis] ??= {};
-    window.__ayatIndex[kelas][nis][String(s)] ??= new Set();
-    window.__ayatIndex[kelas][nis][String(s)].add(Number(a));
-
-    // ★
-    const prev = window.__ayatLatest[kelas][nis]?.[kind];
-    const cand = { surah: String(s), ayat: Number(a), tanggal: String(tanggal) };
-    if (!prev || String(cand.tanggal).localeCompare(String(prev.tanggal)) > 0) {
-      window.__ayatLatest[kelas][nis] ??= {};
-      window.__ayatLatest[kelas][nis][kind] = cand;
-    }
-  };
-
-  const pushRangeByDate = (nis, s1, a1, s2, a2, tanggal) => {
-    // normalisasi ascending
-    s1 = Number(s1); a1 = Number(a1); s2 = Number(s2); a2 = Number(a2);
-    if (s2 < s1 || (s1 === s2 && a2 < a1)) { [s1,s2] = [s2,s1]; [a1,a2] = [a2,a1]; }
-    for (let s = s1; s <= s2; s++) {
-      const surah = surahList.find(x => Number(x.id) === Number(s));
+  // helper: iterasi semua (surah, ayat) di rentang
+  function* iterAyatRange(sFrom, aFrom, sTo, aTo) {
+    const fromS = Number(sFrom), toS = Number(sTo);
+    for (let s = fromS; s <= toS; s++) {
+      const surah = surahList.find(x => Number(x.id) === s);
       if (!surah) continue;
-      const startAyat = (s === s1) ? a1 : 1;
-      const endAyat   = (s === s2) ? a2 : Number(surah.jumlah_ayat||0);
-      for (let i = startAyat; i <= endAyat; i++) {
-        window.__ayatUsedByDate[kelas][nis] ??= {};
-        window.__ayatUsedByDate[kelas][nis][String(s)] ??= {};
-        window.__ayatUsedByDate[kelas][nis][String(s)][String(i)] ??= new Set();
-        window.__ayatUsedByDate[kelas][nis][String(s)][String(i)].add(String(tanggal));
-      }
+      const startA = (s === fromS) ? Number(aFrom) : 1;
+      const endA   = (s === toS)   ? Number(aTo)   : Number(surah.jumlah_ayat);
+      for (let a = startA; a <= endA; a++) yield [String(s), Number(a)];
     }
-  };
+  }
 
   rowsTanggal.forEach(row=>{
     const nis = String(row.dataset?.nis||row.dataset?.id||"").trim();
     if (!nis) return;
+    const sD = (row.querySelector(".surah-dari")?.value||"").trim();
+    const aD = (row.querySelector(".ayat-dari")?.value||"").trim();
+    const sS = (row.querySelector(".surah-sampai")?.value||"").trim();
+    const aS = (row.querySelector(".ayat-sampai")?.value||"").trim();
+    if (!sD || !aD || !sS || !aS) return;
 
-    const surD = (row.querySelector(".surah-dari")?.value||"").trim();
-    const ayD  = Number((row.querySelector(".ayat-dari")?.value||"").trim());
-    const surS = (row.querySelector(".surah-sampai")?.value||"").trim();
-    const ayS  = Number((row.querySelector(".ayat-sampai")?.value||"").trim());
+    for (const [s, a] of iterAyatRange(sD, aD, sS, aS)) {
+      // ✓ pernah
+      window.__ayatIndex[kelas][nis] ??= {};
+      window.__ayatIndex[kelas][nis][s] ??= new Set();
+      window.__ayatIndex[kelas][nis][s].add(a);
 
-    // ✓/★ endpoint (tetap)
-    if (surD && ayD) pushEndpoint(nis, 'dari',   surD, ayD, tanggal);
-    if (surS && ayS) pushEndpoint(nis, 'sampai', surS, ayS, tanggal);
-
-    // RENTANG PENUH untuk DISABLE
-    if (surD && ayD && surS && ayS) {
-      pushRangeByDate(nis, surD, ayD, surS, ayS, tanggal);
-    } else if (surD && ayD) {
-      pushRangeByDate(nis, surD, ayD, surD, ayD, tanggal);
-    } else if (surS && ayS) {
-      pushRangeByDate(nis, surS, ayS, surS, ayS, tanggal);
+      // used-by-date (disable)
+      window.__ayatUsedByDate[kelas][nis] ??= {};
+      window.__ayatUsedByDate[kelas][nis][s] ??= {};
+      window.__ayatUsedByDate[kelas][nis][s][String(a)] ??= new Set();
+      window.__ayatUsedByDate[kelas][nis][s][String(a)].add(String(tanggal));
     }
+
+    // ★ terakhir tetap di ujung rentang
+    const setLast = (kind, s, a) => {
+      const prev = window.__ayatLatest[kelas][nis]?.[kind];
+      const cand = { surah: String(s), ayat: Number(a), tanggal: String(tanggal) };
+      if (!prev || String(cand.tanggal).localeCompare(String(prev.tanggal)) > 0) {
+        window.__ayatLatest[kelas][nis] ??= {};
+        window.__ayatLatest[kelas][nis][kind] = cand;
+      }
+    };
+    setLast('dari',   sD, aD);
+    setLast('sampai', sS, aS);
   });
 })();
-		
+    }
+
     const gagal=hasilKirim.filter(h=>!h.ok);
     if(!gagal.length){
       if(saveBtn) saveBtn.textContent='✅ Tersimpan';
