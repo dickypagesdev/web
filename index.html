@@ -3585,7 +3585,12 @@ function buildAyatIndexFromList(kelasKey, absList) {
         if (sampaiArr[0]) surahSampai.value = sampaiArr[0];
 
         fillAyatOptionsMarked(ayatDari,   surahDari.value || "",   dariArr[1]   || "");
-        fillAyatOptionsMarked(ayatSampai, surahSampai.value || "", sampaiArr[1] || "");
+		fillAyatOptionsMarked(ayatSampai, surahSampai.value || "", sampaiArr[1] || "");
+
+		// Pasang guard (sekali)
+		attachMobileSelectGuard(ayatDari,   () => updateTotalJuz(row));
+		attachMobileSelectGuard(ayatSampai, () => updateTotalJuz(row));
+
 
         if (dataAbsensi?.tilawahTotalJuz) {
           const tj = Number(dataAbsensi.tilawahTotalJuz);
@@ -3866,64 +3871,6 @@ function fillAyatOptionsMarked(selectEl, surahId, selectedAyat = "") {
   selectEl.value = selectedAyat ? String(selectedAyat) : "";
 }
 
-	 // === Guard mobile untuk mencegah pemilihan option yang disabled ===
-const __ayatGuarded = new WeakSet();
-function attachAyatMobileGuard(selectEl){
-  if (!selectEl || __ayatGuarded.has(selectEl)) return;
-  __ayatGuarded.add(selectEl);
-
-  let lastValid = selectEl.value || "";
-
-  const remember = () => { lastValid = selectEl.value || ""; };
-  selectEl.addEventListener("focus", remember, { passive:true });
-  selectEl.addEventListener("mousedown", remember, { passive:true });
-  selectEl.addEventListener("touchstart", remember, { passive:true });
-
-  selectEl.addEventListener("change", () => {
-    const opt = selectEl.options[selectEl.selectedIndex];
-    if (opt && (opt.disabled || opt.getAttribute("data-disabled")==="1")) {
-      // kembalikan ke nilai sebelumnya
-      selectEl.value = lastValid;
-      // sinkronkan UI beberapa browser
-      selectEl.dispatchEvent(new Event("input",  { bubbles:true }));
-      selectEl.dispatchEvent(new Event("change", { bubbles:true }));
-      try { if (navigator.vibrate) navigator.vibrate(35); } catch {}
-    } else {
-      lastValid = selectEl.value || "";
-    }
-  });
-
-  // Sembunyikan opsi yang disabled agar tidak muncul di wheel/picker mobile
-  const hideDisabled = () => {
-    [...selectEl.options].forEach(o => {
-      if (o.disabled || o.getAttribute("data-disabled")==="1"){
-        o.hidden = true;
-        o.setAttribute("aria-disabled","true");
-      } else {
-        o.hidden = false;
-        o.removeAttribute("aria-disabled");
-      }
-    });
-  };
-  hideDisabled();
-
-  // Jika daftar option berubah (refill), jalankan lagi
-  const mo = new MutationObserver(hideDisabled);
-  mo.observe(selectEl, { childList:true });
-}
-
-// Pastikan opsi terlarang ikut disembunyikan untuk mobile picker
-[...selectEl.options].forEach(o=>{
-  if (o.disabled || o.getAttribute("data-disabled")==="1") {
-    o.hidden = true;
-    o.setAttribute("aria-disabled","true");
-  }
-});
-
-// Pasang guard anti-pilih-disabled (khusus mobile, aman di desktop)
-attachAyatMobileGuard(selectEl);
-
-
 // (Opsional) wrapper agar kompatibel dengan pemanggilan lama:
 function fillAyatOptions(selectEl, surahId, selectedAyat = "") {
   fillAyatOptionsMarked(selectEl, surahId, selectedAyat);
@@ -4055,6 +4002,90 @@ function updateTotalJuz(row) {
 // Listener tetap
 kelasSelect.addEventListener("change", loadSantriData);
 tanggalInput.addEventListener("change", loadSantriData);
+
+// ===== Mobile-safe guard untuk select ayat =====
+function __isBlockedOption(opt){
+  return !!(opt && (opt.disabled || opt.dataset.block === "1" || opt.dataset.disabled === "1"));
+}
+
+function attachMobileSelectGuard(selectEl, onValidChange){
+  if (!selectEl) return;
+
+  const rememberPrev = () => { selectEl.dataset.prevValue = selectEl.value || ""; };
+  selectEl.addEventListener('focus',      rememberPrev, {passive:true});
+  selectEl.addEventListener('mousedown',  rememberPrev, {passive:true});
+  selectEl.addEventListener('touchstart', rememberPrev, {passive:true});
+
+  // Interceptor utama
+  selectEl.addEventListener('change', (e)=>{
+    const opt = selectEl.options[selectEl.selectedIndex];
+    if (__isBlockedOption(opt)) {
+      // Revert ke nilai sebelumnya agar benar2 tak bisa dipilih
+      const prev = selectEl.dataset.prevValue || "";
+      selectEl.value = prev;
+      // (opsional) beri feedback ringan
+      try {
+        if (window.toast) toast("Ayat tersebut sudah dipakai di tanggal lain.", {type:"warning"});
+        else console.warn("Ayat diblokir karena sudah dipakai di tanggal lain.");
+      }catch(_){}
+      // jangan teruskan
+      return;
+    }
+    // Jika valid dan caller ingin reaksi lanjutan:
+    if (typeof onValidChange === 'function') onValidChange(e);
+  });
+}
+
+// ===== Global Mobile Guard untuk dropdown ayat (tanpa ubah call sites) =====
+(function(){
+  // select yang kita jaga: kelas .ayat-dari / .ayat-sampai
+  function isAyatSelect(el){
+    return el && el.tagName === 'SELECT' &&
+      (el.classList?.contains('ayat-dari') || el.classList?.contains('ayat-sampai'));
+  }
+  function isBlockedOption(opt){
+    // Browser mobile kadang mengizinkan "disabled" dipilih di UI,
+    // tapi flag-nya tetap ter-set → kita cek di sini.
+    return !!(opt && (opt.disabled || opt.getAttribute('disabled') !== null || opt.dataset.block === '1'));
+  }
+
+  // Simpan nilai sebelumnya per select
+  const prevVal = new WeakMap();
+  function remember(el){ try{ prevVal.set(el, el.value || ''); }catch(_){} }
+
+  // Saat user mulai interaksi, catat nilai awal
+  document.addEventListener('focusin', (e)=>{
+    const el = e.target;
+    if (isAyatSelect(el)) remember(el);
+  }, true);
+  ['mousedown','touchstart'].forEach(evt=>{
+    document.addEventListener(evt, (e)=>{
+      const el = e.target && e.target.closest ? e.target.closest('select') : null;
+      if (isAyatSelect(el)) remember(el);
+    }, {passive:true});
+  });
+
+  // Interceptor utama: cegat pilihan opsi yang diblok & revert
+  document.addEventListener('change', (e)=>{
+    const el = e.target;
+    if (!isAyatSelect(el)) return;
+    const opt = el.options[el.selectedIndex];
+    if (isBlockedOption(opt)) {
+      const back = prevVal.get(el) || '';
+      el.value = back; // revert ke nilai sebelum perubahan
+      try {
+        // (opsional) kasih info lembut; aman kalau nggak ada toast
+        if (window.toast) toast('Ayat tersebut sudah dipakai di tanggal lain.', {type:'warning'});
+      } catch(_){}
+      // hentikan efek lanjutan; handler lama kamu tetap aman
+      return;
+    }
+    // Biarkan handler existing kamu (mis. updateTotalJuz) jalan seperti biasa
+  }, true);
+})();
+
+
+
 
 
 async function simpanDataMutabaah(saveBtn){
