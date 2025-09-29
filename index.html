@@ -3751,27 +3751,14 @@ async function loadSantriData() {
 
 
 // ====== Dropdown Ayat (REVISI LANJUT): "★" memanjang sampai sebelum "✓" berikutnya ======
+// ====== Dropdown Ayat (REVISI LAGI): ★ untuk rentang setelah "terakhir" sampai sebelum ✓ ======
 function fillAyatOptionsMarked(selectEl, surahId, selectedAyat = "") {
   if (!selectEl) return;
 
-  const nis  = selectEl.dataset?.nis  || "";     // <select ... data-nis="...">
-  const kind = selectEl.dataset?.kind || "";     // 'dari' | 'sampai'
+  const nis  = selectEl.dataset?.nis  || "";   // per santri
+  const kind = selectEl.dataset?.kind || "";   // 'dari' | 'sampai'
 
-  // Ambil indeks riwayat yang sudah dibangun di Tahap 1 / diperbarui di Tahap 3
-  const usedSet =
-    (window.__usedAyatIndex
-      && window.__usedAyatIndex[nis]
-      && window.__usedAyatIndex[nis][String(surahId)]
-      && window.__usedAyatIndex[nis][String(surahId)] instanceof Set)
-      ? window.__usedAyatIndex[nis][String(surahId)]
-      : new Set();
-
-  const latestObj =
-    (window.__latestAyat && window.__latestAyat[nis] && window.__latestAyat[nis][kind])
-      ? window.__latestAyat[nis][kind]
-      : null;
-
-  // Jika surah belum dipilih → hanya opsi kosong
+  // Jika belum pilih surah → hanya opsi kosong
   if (!surahId) {
     selectEl.innerHTML = `<option value="">— Ayat —</option>`;
     selectEl.value = "";
@@ -3785,50 +3772,49 @@ function fillAyatOptionsMarked(selectEl, surahId, selectedAyat = "") {
     return;
   }
 
-  // --- Hitung rentang "★":
-  //    mulai dari latest.ayat (pada surah yang sama) hingga sebelum ayat "✓" terdekat di atasnya.
-  let starStart = null;
-  let starEndExclusive = null; // batas atas eksklusif (sebelum ✓ berikutnya)
-  if (latestObj && String(latestObj.surah) === String(surahId) && Number(latestObj.ayat) >= 1) {
-    starStart = Number(latestObj.ayat);
+  // Ambil indeks historis per NIS
+  const usedSetRaw = window.__usedAyatIndex?.[nis]?.[String(surahId)];
+  const usedSet = usedSetRaw instanceof Set ? usedSetRaw : new Set();
+  // urutkan ayat yang pernah dipakai agar bisa cari "cutoff"
+  const usedSorted = [...usedSet]
+    .map(n => Number(n))
+    .filter(n => Number.isFinite(n))
+    .sort((a,b) => a-b);
 
-    // cari "used" (✓) terdekat yang > starStart
-    if (usedSet && usedSet.size) {
-      const bigger = [...usedSet]
-        .map(x => Number(x))
-        .filter(n => Number.isFinite(n) && n > starStart)
-        .sort((a,b)=>a-b);
-      if (bigger.length) {
-        starEndExclusive = bigger[0]; // ★ sampai sebelum ini
-      } else {
-        starEndExclusive = null; // tidak ada ✓ di atasnya → ★ sampai akhir surah
-      }
-    }
-  }
+  // Titik "terakhir dipilih" untuk kind ini (hanya jika masih di surah yang sama)
+  const lastObj = window.__latestAyat?.[nis]?.[kind];
+  const lastAy  = (lastObj && String(lastObj.surah) === String(surahId))
+    ? Number(lastObj.ayat)
+    : null;
 
-  function isStar(ayahNum){
-    if (!starStart) return false;
-    if (ayahNum < starStart) return false;
-    if (starEndExclusive && ayahNum >= starEndExclusive) return false;
-    return true;
+  // Cari ayat terpakai pertama yang > lastAy (batas akhir rentang ★)
+  let nextUsedAfterLast = null;
+  if (lastAy != null) {
+    nextUsedAfterLast = usedSorted.find(n => n > lastAy) ?? null;
   }
 
   const frag = document.createDocumentFragment();
 
-  // Opsi kosong di paling atas
+  // Opsi kosong
   const blank = document.createElement("option");
   blank.value = "";
   blank.textContent = "— Ayat —";
   frag.appendChild(blank);
 
   for (let i = 1; i <= surah.jumlah_ayat; i++) {
-    const used = usedSet.has(i) || usedSet.has(String(i)); // "✓"
-    const star = isStar(i);                                // "★" memanjang
+    const isUsed = usedSet.has(i) || usedSet.has(String(i)); // ✓
+    // ★ untuk rentang [lastAy .. nextUsedAfterLast-1] (atau sampai akhir surah jika tidak ada cutoff),
+    // TAPI jangan timpa ✓
+    const inStarRange = (
+      lastAy != null &&
+      i >= lastAy &&
+      (nextUsedAfterLast == null || i < nextUsedAfterLast) &&
+      !isUsed
+    );
 
-    // Tampilkan keduanya bila perlu (misal ayat latest sendiri: ✓ dan ★)
     let label = String(i);
-    if (used) label = `✓ ${label}`;
-    if (star) label = `${label} ★`;
+    if (isUsed)       label = `✓ ${label}`;
+    else if (inStarRange) label = `★ ${label}`;
 
     const opt = document.createElement("option");
     opt.value = String(i);
@@ -3841,7 +3827,7 @@ function fillAyatOptionsMarked(selectEl, surahId, selectedAyat = "") {
   selectEl.value = selectedAyat ? String(selectedAyat) : "";
 }
 
-// (Opsional) wrapper agar kompatibel dengan pemanggilan lama:
+// Wrapper kompatibel API lama
 function fillAyatOptions(selectEl, surahId, selectedAyat = "") {
   fillAyatOptionsMarked(selectEl, surahId, selectedAyat);
 }
