@@ -3846,7 +3846,7 @@ async function loadSantriData() {
 
 
 // ====== Dropdown Ayat (OWNER-AWARE): ayat terpakai disembunyikan KECUALI jika baris ini adalah owner-nya ======
-// ====== Dropdown Ayat (OWNER-AWARE, STRICT untuk "sampai" + rentang owner tampil penuh) ======
+// ====== Dropdown Ayat (OWNER-AWARE + RENTANG OWNER TETAP TAMPIL) ======
 function fillAyatOptionsMarked(selectEl, surahId, selectedAyat = "") {
   if (!selectEl) return;
 
@@ -3883,54 +3883,50 @@ function fillAyatOptionsMarked(selectEl, surahId, selectedAyat = "") {
     return;
   }
 
-  // --- Ambil pilihan baris (rentang) + bantu cek owner rentang ini ---
+  // ===== Inti perbaikan: hitung RENTANG EDITABLE untuk baris ini =====
+  // Ambil pilihan baris saat ini (dari & sampai)
   const sD = Number(row.querySelector(".surah-dari")?.value || 0);
   const aD = Number(row.querySelector(".ayat-dari")?.value || 0);
   const sS = Number(row.querySelector(".surah-sampai")?.value || 0);
   const aS = Number(row.querySelector(".ayat-sampai")?.value || 0);
   const thisSurah = Number(surahId);
 
-  // Normalisasi batas rentang (surah/ayat)
-  let sFrom = sD, sTo = sS, ayFrom = aD, ayTo = aS;
-  if (sFrom && sTo && (sFrom > sTo || (sFrom === sTo && ayFrom > ayTo))) {
-    [sFrom, sTo] = [sTo, sFrom];
-    [ayFrom, ayTo] = [ayTo, ayFrom];
-  }
-
-  // Range editable pada baris ini (agar owner bisa geser seluruh rentang)
   let editableMin = null, editableMax = null;
-  if (sFrom && sTo) {
+  if (sD && sS) {
+    // Normalisasi urutan
+    let sFrom = sD, sTo = sS, ayFrom = aD, ayTo = aS;
+    if (sFrom > sTo || (sFrom === sTo && ayFrom > ayTo)) {
+      [sFrom, sTo] = [sTo, sFrom];
+      [ayFrom, ayTo] = [ayTo, ayFrom];
+    }
+
     if (thisSurah > sFrom && thisSurah < sTo) {
+      // Surah di tengah rentang → seluruh ayat editable
       editableMin = 1;
       editableMax = surah.jumlah_ayat;
     } else if (thisSurah === sFrom && thisSurah === sTo) {
+      // Rentang di satu surah → dari ayFrom..ayTo
       editableMin = Math.max(1, ayFrom || 1);
       editableMax = Math.min(surah.jumlah_ayat, ayTo || surah.jumlah_ayat);
-    } else if (thisSurah === sFrom) {
+    } else if (thisSurah === sFrom && thisSurah !== sTo) {
+      // Surah awal → dari ayFrom..akhir surah
       editableMin = Math.max(1, ayFrom || 1);
       editableMax = surah.jumlah_ayat;
-    } else if (thisSurah === sTo) {
+    } else if (thisSurah === sTo && thisSurah !== sFrom) {
+      // Surah akhir → dari 1..ayTo
       editableMin = 1;
       editableMax = Math.min(surah.jumlah_ayat, ayTo || surah.jumlah_ayat);
     }
   }
-  const isInEditableRange = (i) =>
-    editableMin !== null && editableMax !== null && i >= editableMin && i <= editableMax;
 
-  // --- Deteksi "row ini owner rentangnya" via endpoint owner date ---
-  const getOwnerDate = (sNum, aNum) => {
-    const m = (ownerBucket[nis] && ownerBucket[nis][String(sNum)]) ? ownerBucket[nis][String(sNum)] : null;
-    return m ? String(m[aNum]) : "";
-  };
-  const ownerFromDate = (sD && aD) ? getOwnerDate(sD, aD) : "";
-  const ownerToDate   = (sS && aS) ? getOwnerDate(sS, aS) : "";
-  const isOwnerRangeHere =
-    (ownerFromDate && ownerFromDate === ownerDateHere) ||
-    (ownerToDate   && ownerToDate   === ownerDateHere);
+  // Helper cek apakah ayat i berada dalam rentang editable baris ini
+  const isInEditableRange = (i) => (
+    editableMin !== null && editableMax !== null && i >= editableMin && i <= editableMax
+  );
 
-  // === Render opsi ===
   const frag = document.createDocumentFragment();
 
+  // Opsi kosong di paling atas
   const blank = document.createElement("option");
   blank.value = "";
   blank.textContent = "— Ayat —";
@@ -3941,36 +3937,22 @@ function fillAyatOptionsMarked(selectEl, surahId, selectedAyat = "") {
   for (let i = 1; i <= surah.jumlah_ayat; i++) {
     const iStr = String(i);
     const isUsed      = usedSet.has(i) || usedSet.has(iStr);
-    const isOwnerHere = String(ownerMap[i]) === String(ownerDateHere); // owner per-ayat (jika dicatat)
-    const isLatest    = !!(latestObj && String(latestObj.surah) === String(surahId) && Number(latestObj.ayat) === i);
+    const isOwnerHere = String(ownerMap[i]) === String(ownerDateHere);
+    const isLatest    = !!(latestObj
+                        && String(latestObj.surah) === String(surahId)
+                        && Number(latestObj.ayat) === i);
 
-    // ===== RULE REVISI =====
-    // 'sampai':
-    //   - Owner: SELURUH rentang harus tampil (pakai isOwnerHere ATAU isOwnerRangeHere+isInEditableRange).
-    //   - Non-owner: ayat terpakai disembunyikan (kecuali sedang selected).
-    // 'dari':
-    //   - Sama seperti sebelumnya: non-owner boleh kalau dalam rentang baris ini atau sedang selected.
-    let allow = true;
-    if (isUsed) {
-      if (kind === 'sampai') {
-        if (isOwnerHere || (isOwnerRangeHere && isInEditableRange(i))) {
-          allow = true; // owner melihat semuanya dalam rentang
-        } else {
-          allow = (selectedStr === iStr); // non-owner: hide kecuali current value
-        }
-      } else { // 'dari'
-        if (isOwnerHere) {
-          allow = true;
-        } else {
-          allow = isInEditableRange(i) || (selectedStr === iStr);
-        }
-      }
+    // ===== RULE BARU =====
+    // Ayat terpakai di-hide KECUALI:
+    // 1) baris ini adalah OWNER ayat tsb, atau
+    // 2) ayat berada di RENTANG EDITABLE (karena baris ini pemilik rentangnya), atau
+    // 3) ini adalah nilai yang sedang terpilih di dropdown (agar tidak "hilang" tiba-tiba).
+    if (isUsed && !isOwnerHere && !isInEditableRange(i) && selectedStr !== iStr) {
+      continue;
     }
 
-    if (!allow) continue;
-
     let label = iStr;
-    if (isUsed)   label = `✓ ${label}`;
+    if (isUsed)   label = `✓ ${label}`;   // tetap beri tanda, meski ditampilkan
     if (isLatest) label = `${label} ★`;
 
     const opt = document.createElement("option");
