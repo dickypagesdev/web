@@ -3297,32 +3297,69 @@ async function loadSantriData() {
     });
   }
 
-  // === bangun index dari list absensi (hanya baca 'dari' / 'sampai')
-  function buildAyatIndexFromList(kelasKey, absList) {
-    const usedBucket   = getIndexBucket(kelasKey);
-    const latestBucket = getLatestBucket(kelasKey);
+  // === bangun index dari list absensi (sekarang full rentang, bukan hanya titik)
+function buildAyatIndexFromList(kelasKey, absList) {
+  const usedBucket   = getIndexBucket(kelasKey);
+  const latestBucket = getLatestBucket(kelasKey);
 
-    const push = (nis, kind, surahAyat, tanggal) => {
-      if (!nis || !surahAyat || !/^\d+:\d+$/.test(surahAyat)) return;
-      const [s,a] = surahAyat.split(":").map(Number);
-      usedBucket[nis] ??= {};
-      usedBucket[nis][String(s)] ??= new Set();
-      usedBucket[nis][String(s)].add(a);
+  const pushPoint = (nis, kind, surahAyat, tanggal) => {
+    if (!nis || !surahAyat || !/^\d+:\d+$/.test(surahAyat)) return;
+    const [s,a] = surahAyat.split(":").map(Number);
+    usedBucket[nis] ??= {};
+    usedBucket[nis][String(s)] ??= new Set();
+    usedBucket[nis][String(s)].add(a);
 
-      latestBucket[nis] ??= {};
-      const prev = latestBucket[nis][kind];
-      if (!prev || String(tanggal).localeCompare(String(prev.tanggal)) > 0) {
-        latestBucket[nis][kind] = { surah: String(s), ayat: Number(a), tanggal: String(tanggal||"") };
-      }
-    };
+    latestBucket[nis] ??= {};
+    const prev = latestBucket[nis][kind];
+    if (!prev || String(tanggal).localeCompare(String(prev.tanggal)) > 0) {
+      latestBucket[nis][kind] = { surah: String(s), ayat: Number(a), tanggal: String(tanggal||"") };
+    }
+  };
 
-    (absList||[]).forEach(r => {
-      const nis = keyNis(r?.nis) || keyId(r?.id) || "";
-      const tgl = r?.tanggal || "";
-      if (r?.dari)   push(nis, 'dari',   String(r.dari),   tgl);
-      if (r?.sampai) push(nis, 'sampai', String(r.sampai), tgl);
-    });
-  }
+  const pushRange = (nis, dariStr, sampaiStr) => {
+    if (!nis || !dariStr || !sampaiStr) return;
+    const m1 = /^(\d+):(\d+)$/.exec(String(dariStr).trim());
+    const m2 = /^(\d+):(\d+)$/.exec(String(sampaiStr).trim());
+    if (!m1 || !m2) return;
+
+    let sFrom = Number(m1[1]), aFrom = Number(m1[2]);
+    let sTo   = Number(m2[1]), aTo   = Number(m2[2]);
+    if (!Number.isFinite(sFrom) || !Number.isFinite(aFrom) || !Number.isFinite(sTo) || !Number.isFinite(aTo)) return;
+
+    if (sFrom > sTo || (sFrom === sTo && aFrom > aTo)) {
+      // swap kalau user terlanjur input kebalik
+      [sFrom, sTo] = [sTo, sFrom];
+      [aFrom, aTo] = [aTo, aFrom];
+    }
+
+    usedBucket[nis] ??= {};
+
+    for (let s = sFrom; s <= sTo; s++) {
+      const surah = surahList.find(x => Number(x.id) === s);
+      if (!surah) continue;
+      const totalAy = Number(surah.jumlah_ayat || 0);
+      const startAy = (s === sFrom) ? aFrom : 1;
+      const endAy   = (s === sTo)   ? aTo   : totalAy;
+
+      const set = (usedBucket[nis][String(s)] ??= new Set());
+      for (let a = startAy; a <= endAy; a++) set.add(a);
+    }
+  };
+
+  (absList||[]).forEach(r => {
+    const nis = keyNis(r?.nis) || keyId(r?.id) || "";
+    const tgl = r?.tanggal || "";
+    const dari   = r?.dari   ? String(r.dari)   : "";
+    const sampai = r?.sampai ? String(r.sampai) : "";
+
+    // 1) titik tetap (agar ★ bekerja seperti biasa)
+    if (dari)   pushPoint(nis, 'dari',   dari,   tgl);
+    if (sampai) pushPoint(nis, 'sampai', sampai, tgl);
+
+    // 2) RENTANG penuh (ini yang bikin seluruh ayat kehapus)
+    if (dari && sampai) pushRange(nis, dari, sampai);
+  });
+}
 
   // generator opsi surah dengan tanda ✓ (pernah) / ★ (terakhir)
   // + filter: sembunyikan surah full-used kecuali jika sedang selected
@@ -4337,37 +4374,62 @@ async function simpanDataMutabaah(saveBtn){
       hasilKirim.push({tanggal, ok:!!result?.success, result});
 
       // ===== perbarui indeks tanda ✓/★ (per KELAS) utk dropdown tilawah =====
-      (function updateAyatIndexFromRows(){
-        window.__ayatIndex  ??= {};
-        window.__ayatLatest ??= {};
-        window.__ayatIndex[kelas]  ??= {};
-        window.__ayatLatest[kelas] ??= {};
-        rowsTanggal.forEach(row=>{
-          const nis = String(row.dataset?.nis||row.dataset?.id||"").trim();
-          if (!nis) return;
-          const surD = (row.querySelector(".surah-dari")?.value||"").trim();
-          const ayD  = Number((row.querySelector(".ayat-dari")?.value||"").trim());
-          const surS = (row.querySelector(".surah-sampai")?.value||"").trim();
-          const ayS  = Number((row.querySelector(".ayat-sampai")?.value||"").trim());
+(function updateAyatIndexFromRows(){
+  window.__ayatIndex  ??= {};
+  window.__ayatLatest ??= {};
+  window.__ayatIndex[kelas]  ??= {};
+  window.__ayatLatest[kelas] ??= {};
 
-          const push = (kind, s, a) => {
-            if (!s || !a) return;
-            window.__ayatIndex[kelas][nis] ??= {};
-            window.__ayatIndex[kelas][nis][s] ??= new Set();
-            window.__ayatIndex[kelas][nis][s].add(a);
+  const addPoint = (nis, kind, s, a, tanggal) => {
+    if (!nis || !s || !a) return;
+    window.__ayatIndex[kelas][nis] ??= {};
+    window.__ayatIndex[kelas][nis][s] ??= new Set();
+    window.__ayatIndex[kelas][nis][s].add(Number(a));
 
-            const prev = window.__ayatLatest[kelas][nis]?.[kind];
-            const cand = { surah: String(s), ayat: Number(a), tanggal: String(tanggal) };
-            if (!prev || String(cand.tanggal).localeCompare(String(prev.tanggal)) > 0) {
-              window.__ayatLatest[kelas][nis] ??= {};
-              window.__ayatLatest[kelas][nis][kind] = cand;
-            }
-          };
-          push('dari',   surD, ayD);
-          push('sampai', surS, ayS);
-        });
-      })();
+    const prev = window.__ayatLatest[kelas][nis]?.[kind];
+    const cand = { surah: String(s), ayat: Number(a), tanggal: String(tanggal) };
+    if (!prev || String(cand.tanggal).localeCompare(String(prev.tanggal)) > 0) {
+      window.__ayatLatest[kelas][nis] ??= {};
+      window.__ayatLatest[kelas][nis][kind] = cand;
     }
+  };
+
+  const addRange = (nis, sFrom, aFrom, sTo, aTo) => {
+    if (!nis || !sFrom || !aFrom || !sTo || !aTo) return;
+    if (sFrom > sTo || (sFrom === sTo && aFrom > aTo)) {
+      [sFrom, sTo] = [sTo, sFrom];
+      [aFrom, aTo] = [aTo, aFrom];
+    }
+    window.__ayatIndex[kelas][nis] ??= {};
+    for (let s = Number(sFrom); s <= Number(sTo); s++) {
+      const surah = surahList.find(x => Number(x.id) === s);
+      if (!surah) continue;
+      const totalAy = Number(surah.jumlah_ayat || 0);
+      const startAy = (s === Number(sFrom)) ? Number(aFrom) : 1;
+      const endAy   = (s === Number(sTo))   ? Number(aTo)   : totalAy;
+
+      const set = (window.__ayatIndex[kelas][nis][String(s)] ??= new Set());
+      for (let a = startAy; a <= endAy; a++) set.add(a);
+    }
+  };
+
+  rowsTanggal.forEach(row=>{
+    const nis = String(row.dataset?.nis||row.dataset?.id||"").trim();
+    if (!nis) return;
+    const surD = (row.querySelector(".surah-dari")?.value||"").trim();
+    const ayD  = Number((row.querySelector(".ayat-dari")?.value||"").trim());
+    const surS = (row.querySelector(".surah-sampai")?.value||"").trim();
+    const ayS  = Number((row.querySelector(".ayat-sampai")?.value||"").trim());
+
+    // titik untuk “terakhir” ★
+    if (surD && ayD) addPoint(nis, 'dari',   String(surD), ayD, tanggal);
+    if (surS && ayS) addPoint(nis, 'sampai', String(surS), ayS, tanggal);
+
+    // RENTANG penuh untuk penghapusan ayat di dropdown lain
+    if (surD && ayD && surS && ayS) addRange(nis, Number(surD), Number(ayD), Number(surS), Number(ayS));
+  });
+})();
+}
 
     const gagal=hasilKirim.filter(h=>!h.ok);
     if(!gagal.length){
