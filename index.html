@@ -3159,16 +3159,15 @@ async function loadSantriData() {
   window.keteranganMap ??= {};
 
   // ===== index riwayat tilawah PER KELAS -> PER NIS -> PER SURAH =====
-  // __ayatIndex[kelas][nis][surahId] = Set(ayat)    // semua ayat yang pernah dipakai (rentang di-expand)
+  // __ayatIndex[kelas][nis][surahId] = Set(ayat)
   // __ayatLatest[kelas][nis] = { dari:{surah,ayat,tanggal}, sampai:{...} }
-  // __ayatOwner[kelas][nis][surahId][ayat] = tanggal_owner  // siapa pemilik pertama ayat tsb
+  // __ayatOwner[kelas][nis][surahId][ayat] = "YYYY-MM-DD" pemilik pertama/terawal
   window.__ayatIndex  ??= {};
   window.__ayatLatest ??= {};
   window.__ayatOwner  ??= {};
-
-  function getIndexBucket(k){ window.__ayatIndex[k]  ??= {}; return window.__ayatIndex[k]; }
+  function getIndexBucket(k){ window.__ayatIndex[k] ??= {}; return window.__ayatIndex[k]; }
   function getLatestBucket(k){ window.__ayatLatest[k] ??= {}; return window.__ayatLatest[k]; }
-  function getOwnerBucket(k){ window.__ayatOwner[k]  ??= {}; return window.__ayatOwner[k]; }
+  function getOwnerBucket(k){ window.__ayatOwner[k] ??= {}; return window.__ayatOwner[k]; }
 
   // Helpers kecil (tetap dengan konsep lama)
   const keyId   = v => (v === 0 || v) ? String(v).trim() : "";
@@ -3222,117 +3221,91 @@ async function loadSantriData() {
     });
   }
 
-  // ========== UTIL: expand rentang dari/sampai ke semua (surah, ayat) ==========
-  function expandRange(sFrom, aFrom, sTo, aTo, cb){
-    if (!cb) return;
-    const nFrom = Number(sFrom), nTo = Number(sTo);
-    if (!Number.isFinite(nFrom) || !Number.isFinite(nTo) || !aFrom || !aTo) return;
-    let startSurah = nFrom, endSurah = nTo, startAyat = Number(aFrom), endAyat = Number(aTo);
-    // normalisasi urutan
-    if (startSurah > endSurah || (startSurah === endSurah && startAyat > endAyat)) {
-      [startSurah, endSurah] = [endSurah, startSurah];
-      [startAyat, endAyat]   = [endAyat, startAyat];
-    }
-    for (let s = startSurah; s <= endSurah; s++){
-      const surah = surahList.find(x => Number(x.id) === s);
-      if (!surah) continue;
-      const ayStart = (s === startSurah) ? startAyat : 1;
-      const ayEnd   = (s === endSurah)   ? endAyat   : surah.jumlah_ayat;
-      for (let a = ayStart; a <= ayEnd; a++) cb(String(s), a);
-    }
-  }
-
-  // === bangun index dari list absensi (baca 'dari' / 'sampai' dan EXPAND rentang)
+  // === bangun index dari list absensi (EKSPANSI RENTANG + OWNER)
   function buildAyatIndexFromList(kelasKey, absList) {
-    const usedBucket   = getIndexBucket(kelasKey);   // Set ayat terpakai
-    const latestBucket = getLatestBucket(kelasKey);  // pointer last
-    const ownerBucket  = getOwnerBucket(kelasKey);   // pemilik ayat
+    const usedBucket   = getIndexBucket(kelasKey);
+    const latestBucket = getLatestBucket(kelasKey);
+    const ownerBucket  = getOwnerBucket(kelasKey);
 
-    const pushPoint = (nis, kind, surahAyat, tanggal) => {
-      if (!nis || !surahAyat || !/^\d+:\d+$/.test(surahAyat)) return;
-      const [s,a] = surahAyat.split(":").map(Number);
+    const addUsed = (nis, s, a) => {
       usedBucket[nis] ??= {};
       usedBucket[nis][String(s)] ??= new Set();
-      usedBucket[nis][String(s)].add(a);
-
-      latestBucket[nis] ??= {};
-      const prev = latestBucket[nis][kind];
-      if (!prev || String(tanggal).localeCompare(String(prev.tanggal)) > 0) {
-        latestBucket[nis][kind] = { surah: String(s), ayat: Number(a), tanggal: String(tanggal||"") };
-      }
-
+      usedBucket[nis][String(s)].add(Number(a));
+    };
+    const setOwner = (nis, s, a, tgl) => {
       ownerBucket[nis] ??= {};
       ownerBucket[nis][String(s)] ??= {};
-      if (!ownerBucket[nis][String(s)][String(a)]) {
-        ownerBucket[nis][String(s)][String(a)] = String(tanggal || "");
+      const k = String(a);
+      if (!ownerBucket[nis][String(s)][k]) {
+        ownerBucket[nis][String(s)][k] = String(tgl||"");
+      } else {
+        const prev = ownerBucket[nis][String(s)][k] || "";
+        if (String(tgl||"").localeCompare(prev) < 0) {
+          ownerBucket[nis][String(s)][k] = String(tgl||"");
+        }
       }
     };
-
-    const pushRange = (nis, dari, sampai, tanggal) => {
-      if (!nis || !dari || !sampai) return;
-      const [sF, aF] = String(dari).split(":").map(Number);
-      const [sT, aT] = String(sampai).split(":").map(Number);
-      if (!sF || !aF || !sT || !aT) return;
-      expandRange(sF, aF, sT, aT, (sid, ay) => {
-        usedBucket[nis] ??= {};
-        usedBucket[nis][sid] ??= new Set();
-        usedBucket[nis][sid].add(ay);
-
-        ownerBucket[nis] ??= {};
-        ownerBucket[nis][sid] ??= {};
-        if (!ownerBucket[nis][sid][String(ay)]) ownerBucket[nis][sid][String(ay)] = String(tanggal||"");
-      });
-
-      // latest pointer tetap pakai titik akhir/awal real
-      pushPoint(nis, 'dari',   `${sF}:${aF}`, tanggal);
-      pushPoint(nis, 'sampai', `${sT}:${aT}`, tanggal);
+    const markLatest = (nis, kind, surah, ayat, tanggal) => {
+      latestBucket[nis] ??= {};
+      const prev = latestBucket[nis][kind];
+      const cand = { surah: String(surah), ayat: Number(ayat), tanggal: String(tanggal||"") };
+      if (!prev || String(cand.tanggal).localeCompare(String(prev.tanggal)) > 0) {
+        latestBucket[nis][kind] = cand;
+      }
+    };
+    const expandRange = (nis, sFrom, aFrom, sTo, aTo, tanggal) => {
+      let S1 = Number(sFrom), S2 = Number(sTo), A1 = Number(aFrom), A2 = Number(aTo);
+      if (!S1 || !S2 || !A1 || !A2) return;
+      if (S1 > S2 || (S1 === S2 && A1 > A2)) { [S1, S2] = [S2, S1]; [A1, A2] = [A2, A1]; }
+      for (let s = S1; s <= S2; s++) {
+        const sur = surahList.find(x => Number(x.id) === s);
+        if (!sur) continue;
+        const startAy = (s === S1) ? Math.max(1, A1 || 1) : 1;
+        const endAy   = (s === S2) ? Math.min(sur.jumlah_ayat, A2 || sur.jumlah_ayat) : sur.jumlah_ayat;
+        for (let a = startAy; a <= endAy; a++) { addUsed(nis, s, a); setOwner(nis, s, a, tanggal); }
+      }
     };
 
     (absList||[]).forEach(r => {
       const nis = keyNis(r?.nis) || keyId(r?.id) || "";
+      if (!nis) return;
       const tgl = r?.tanggal || "";
-      if (r?.dari && r?.sampai) pushRange(nis, String(r.dari), String(r.sampai), tgl);
-      else {
-        if (r?.dari)   pushPoint(nis, 'dari',   String(r.dari),   tgl);
-        if (r?.sampai) pushPoint(nis, 'sampai', String(r.sampai), tgl);
+
+      if (r?.dari && /^\d+:\d+$/.test(r.dari)) {
+        const [sd, ad] = r.dari.split(":").map(Number);
+        markLatest(nis, 'dari', sd, ad, tgl);
+      }
+      if (r?.sampai && /^\d+:\d+$/.test(r.sampai)) {
+        const [ss, as] = r.sampai.split(":").map(Number);
+        markLatest(nis, 'sampai', ss, as, tgl);
+      }
+
+      if (r?.dari && r?.sampai && /^\d+:\d+$/.test(r.dari) && /^\d+:\d+$/.test(r.sampai)) {
+        const [sd, ad] = r.dari.split(":").map(Number);
+        const [ss, as] = r.sampai.split(":").map(Number);
+        expandRange(nis, sd, ad, ss, as, tgl);
+      } else {
+        if (r?.dari && /^\d+:\d+$/.test(r.dari)) {
+          const [sd, ad] = r.dari.split(":").map(Number);
+          addUsed(nis, sd, ad); setOwner(nis, sd, ad, tgl);
+        }
+        if (r?.sampai && /^\d+:\d+$/.test(r.sampai)) {
+          const [ss, as] = r.sampai.split(":").map(Number);
+          addUsed(nis, ss, as); setOwner(nis, ss, as, tgl);
+        }
       }
     });
   }
 
   // generator opsi surah dengan tanda ✓ (pernah) / ★ (terakhir)
-  // + penyembunyian surah yang sudah HABIS dipakai (semua ayat) — non-owner hidden
-  function makeSurahOptions(kelasKey, nis, kind, selectedId="", ownerRow=null) {
-    const used = (getIndexBucket(kelasKey)?.[nis]) || {};
+  function makeSurahOptions(kelasKey, nis, kind, selectedId="") {
+    const u    = (getIndexBucket(kelasKey)?.[nis]) || {};
     const last = (getLatestBucket(kelasKey)?.[nis]?.[kind]);
-
-    const isOwnerWholeSurah = (sid) => {
-      if (!ownerRow) return false;
-      const own = (getOwnerBucket(kelasKey)?.[nis]?.[sid]) || {};
-      const rowDate = ownerRow?.dataset?.tanggal || "";
-      // jika di surah ini ada minimal 1 ayat yang ownerDate == baris ini,
-      // tetap tampilkan surah meski full used
-      return Object.values(own).some(d => String(d) === String(rowDate));
-    };
-
-    const isFullyUsed = (sid) => {
-      const sObj = surahList.find(s => String(s.id) === String(sid));
-      if (!sObj) return false;
-      const total = Number(sObj.jumlah_ayat||0);
-      const set   = used[String(sid)];
-      return set instanceof Set && set.size >= total && total>0;
-    };
-
     let html = `<option value="">— Surah —</option>`;
     for (const s of surahList) {
       const sid    = String(s.id);
-      const hasAny = !!used[sid];
+      const hasAny = !!u[sid];
       const isLast = last && last.surah === sid;
-
-      // sembunyikan kalau FULL used dan baris ini bukan owner
-      if (isFullyUsed(sid) && !isOwnerWholeSurah(sid) && String(selectedId) !== sid) {
-        continue;
-      }
-
       const mark   = isLast ? "★ " : (hasAny ? "✓ " : "");
       const sel    = selectedId && selectedId == sid ? ' selected' : '';
       html += `<option value="${sid}"${sel}>${mark}${s.nama}</option>`;
@@ -3394,7 +3367,7 @@ async function loadSantriData() {
       absensiRaw = Array.isArray(d) ? d : (d?.list || []);
     }
 
-    // Normalisasi absensi (lengkapi id/nis/nama dari roster)
+    // Normalisasi absensi
     let absensiData = absensiRaw.map((r) => {
       let id   = keyId(r?.id ?? "");
       let nis  = keyNis(r?.nis ?? "");
@@ -3417,10 +3390,7 @@ async function loadSantriData() {
       return { ...r, id, nis, nama, semester: semesterFix, jenjang: jenjangFix, keterangan: ketFix };
     });
 
-    // === bangun / merge index tanda ✓/★ dan OWNER + RENTANG
-    window.__ayatIndex[kelas]  = {}; // reset agar sesuai server (anti-ghost saat refresh)
-    window.__ayatLatest[kelas] = {};
-    window.__ayatOwner[kelas]  = {};
+    // === bangun / merge index tanda ✓/★ + OWNER untuk kelas ini
     buildAyatIndexFromList(kelas, absensiData);
 
     // Ambil user login & filter akses santri (tetap)
@@ -3534,11 +3504,9 @@ async function loadSantriData() {
         const jenNow = (window.jenjangMap?.[keyMaster])    ?? santri.jenjang    ?? "";
         const ketNow = (window.keteranganMap?.[keyMaster]) ?? santri.keterangan ?? "";
 
-        const ownerRowRef = row; // dipakai u/ makeSurahOptions owner-aware
-
-        // opsi SURAH dengan tanda ✓/★ + hide full-used (non-owner)
-        const surahOptionsDari   = makeSurahOptions(kelas, snis || sid || "", 'dari',   dari[0]||"", ownerRowRef);
-        const surahOptionsSampai = makeSurahOptions(kelas, snis || sid || "", 'sampai', sampai[0]||"", ownerRowRef);
+        // opsi SURAH dengan tanda ✓/★ per-KELAS & per-NIS
+        const surahOptionsDari   = makeSurahOptions(kelas, snis || sid || "", 'dari',   dari[0]||"");
+        const surahOptionsSampai = makeSurahOptions(kelas, snis || sid || "", 'sampai', sampai[0]||"");
 
         row.innerHTML = `
           <td class="col-nis">${santri.nis ?? santri.id ?? ""}</td>
@@ -3607,7 +3575,7 @@ async function loadSantriData() {
         row.dataset.nis       = dsNis;
         row.dataset.key       = (dsNis || dsId || "");
         row.dataset.tanggal   = rowDate;
-        row.dataset.kelas     = kelas;   // scoping penting untuk index ✓/★/OWNER
+        row.dataset.kelas     = kelas;   // scoping penting untuk index ✓/★
         row.dataset.jenjang   = jenNow || "";
         row.dataset.keterangan= ketNow || "";
 
@@ -3620,7 +3588,7 @@ async function loadSantriData() {
           totalAllJuzTd.innerHTML = `0`;
         }
 
-        // Surah/Ayat init (pakai versi "Marked" owner-aware di Tahap 2)
+        // Surah/Ayat init (pakai versi "Marked" bila ada)
         const surahDari   = row.querySelector(".surah-dari");
         const ayatDari    = row.querySelector(".ayat-dari");
         const surahSampai = row.querySelector(".surah-sampai");
@@ -3644,25 +3612,25 @@ async function loadSantriData() {
           updateTotalJuz(row);
         }
 
-        // events: regenerate label dengan ✓/★/owner-aware setiap ganti SURAH
+        // events: regenerate label dengan ✓/★ setiap ganti SURAH
         surahDari.addEventListener("change", () => {
-          surahDari.innerHTML = makeSurahOptions(kelas, dsNis || dsId || "", 'dari', surahDari.value, row);
+          surahDari.innerHTML = makeSurahOptions(kelas, dsNis || dsId || "", 'dari', surahDari.value);
           fillAyatOptionsMarked(ayatDari, surahDari.value || "", "");
           if (surahDari.value) {
             surahSampai.value = surahDari.value;
-            surahSampai.innerHTML = makeSurahOptions(kelas, dsNis || dsId || "", 'sampai', surahSampai.value, row);
+            surahSampai.innerHTML = makeSurahOptions(kelas, dsNis || dsId || "", 'sampai', surahSampai.value);
             fillAyatOptionsMarked(ayatSampai, surahSampai.value || "", "");
             ayatSampai.value = ayatDari.value || "";
           } else {
             surahSampai.value = "";
-            surahSampai.innerHTML = makeSurahOptions(kelas, dsNis || dsId || "", 'sampai', "", row);
+            surahSampai.innerHTML = makeSurahOptions(kelas, dsNis || dsId || "", 'sampai', "");
             fillAyatOptionsMarked(ayatSampai, "", "");
           }
           updateTotalJuz(row);
         });
 
         surahSampai.addEventListener("change", () => {
-          surahSampai.innerHTML = makeSurahOptions(kelas, dsNis || dsId || "", 'sampai', surahSampai.value, row);
+          surahSampai.innerHTML = makeSurahOptions(kelas, dsNis || dsId || "", 'sampai', surahSampai.value);
           fillAyatOptionsMarked(ayatSampai, surahSampai.value || "", "");
           updateTotalJuz(row);
         });
@@ -3676,7 +3644,7 @@ async function loadSantriData() {
           updateTotalJuz(row);
         });
 
-        // Jenjang ensure + handlers (tetap)
+        // Jenjang ensure + handlers (simpan ke server — tetap)
         const jenSel = row.querySelector(".jenjang");
         ensureJenjangOptions(jenSel, JENJANG_MAX, jenNow);
         if (jenSel) {
@@ -3747,7 +3715,7 @@ async function loadSantriData() {
           });
         }
 
-        // Semester (tetap, fungsi isValidSemester/SEMESTER_MAX assumed global)
+        // Semester (tetap)
         const semSel = row.querySelector(".semester");
         if (semSel) {
           semSel.addEventListener("change", async () => {
@@ -3871,7 +3839,7 @@ function fillAyatOptionsMarked(selectEl, surahId, selectedAyat = "") {
     return;
   }
 
-  // Hitung rentang editable milik baris ini (seluruh rentang pemilik tetap tampil)
+  // ===== Hitung RENTANG EDITABLE untuk baris ini =====
   const sD = Number(row.querySelector(".surah-dari")?.value || 0);
   const aD = Number(row.querySelector(".ayat-dari")?.value || 0);
   const sS = Number(row.querySelector(".surah-sampai")?.value || 0);
@@ -3880,25 +3848,32 @@ function fillAyatOptionsMarked(selectEl, surahId, selectedAyat = "") {
 
   let editableMin = null, editableMax = null;
   if (sD && sS) {
+    // Normalisasi urutan
     let sFrom = sD, sTo = sS, ayFrom = aD, ayTo = aS;
     if (sFrom > sTo || (sFrom === sTo && ayFrom > ayTo)) {
       [sFrom, sTo] = [sTo, sFrom];
       [ayFrom, ayTo] = [ayTo, ayFrom];
     }
+
     if (thisSurah > sFrom && thisSurah < sTo) {
+      // Surah di tengah rentang → seluruh ayat editable
       editableMin = 1;
       editableMax = surah.jumlah_ayat;
     } else if (thisSurah === sFrom && thisSurah === sTo) {
+      // Rentang di satu surah → dari ayFrom..ayTo
       editableMin = Math.max(1, ayFrom || 1);
       editableMax = Math.min(surah.jumlah_ayat, ayTo || surah.jumlah_ayat);
     } else if (thisSurah === sFrom && thisSurah !== sTo) {
+      // Surah awal → dari ayFrom..akhir surah
       editableMin = Math.max(1, ayFrom || 1);
       editableMax = surah.jumlah_ayat;
     } else if (thisSurah === sTo && thisSurah !== sFrom) {
+      // Surah akhir → dari 1..ayTo
       editableMin = 1;
       editableMax = Math.min(surah.jumlah_ayat, ayTo || surah.jumlah_ayat);
     }
   }
+
   const isInEditableRange = (i) => (
     editableMin !== null && editableMax !== null && i >= editableMin && i <= editableMax
   );
@@ -3916,12 +3891,15 @@ function fillAyatOptionsMarked(selectEl, surahId, selectedAyat = "") {
   for (let i = 1; i <= surah.jumlah_ayat; i++) {
     const iStr = String(i);
     const isUsed      = usedSet.has(i) || usedSet.has(iStr);
-    const isOwnerHere = String(ownerMap[i]) === String(ownerDateHere);
+    const isOwnerHere = String(ownerMap?.[iStr]) === String(ownerDateHere);
     const isLatest    = !!(latestObj
                         && String(latestObj.surah) === String(surahId)
                         && Number(latestObj.ayat) === i);
 
-    // Ayat terpakai di-hide KECUALI (owner / dalam rentang editable / sedang terpilih)
+    // Ayat terpakai di-hide KECUALI:
+    // 1) baris ini adalah OWNER ayat tsb, atau
+    // 2) ayat berada di RENTANG EDITABLE baris ini, atau
+    // 3) ini adalah nilai yang sedang terpilih di dropdown.
     if (isUsed && !isOwnerHere && !isInEditableRange(i) && selectedStr !== iStr) {
       continue;
     }
@@ -3946,14 +3924,13 @@ function fillAyatOptionsMarked(selectEl, surahId, selectedAyat = "") {
   }
 }
 
-// (Opsional) wrapper lama:
+// (Opsional) wrapper agar kompatibel dengan pemanggilan lama:
 function fillAyatOptions(selectEl, surahId, selectedAyat = "") {
   fillAyatOptionsMarked(selectEl, surahId, selectedAyat);
 }
 
 // ====== (Contoh) mapping jumlah ayat per halaman — lengkapi sesuai data Anda ======
-const jumlahAyatPerHalaman = {"1":7,"2":5,"3":11,"4":8,"5":5,"6":8,"7":11,"8":9,"9":4,"10":8,"11":7,"12":7,"13":5,"14":5,"15":8,"16":4,"17":7,"18":7,"19":7,"20":8,"21":7,"22":4,"23":8,"24":10,"25":6,"26":7,"27":5,"28":5,"29":4,"30":6,"31":6,"32":8,"33":5,"34":4,"35":5,"36":6,"37":3,"38":4,"39":8,"40":3,"41":4,"42":4,"43":3,"44":5,"45":5,"46":5,"47":7,"48":1,"49":4,"50":9,"51":6,"52":7,"53":7,"54":8,"55":8,"56":7,"57":9,"58":9,"59":7,"60":6,"61":8,"62":9,"63":8,"64":7,"65":6,"66":11,"67":8,"68":8,"69":5,"70":4,"71":8,"72":8,"73":7,"74":6,"75":8,"76":6,"77":6,"78":5,"79":3,"80":5,"81":4,"82":3,"83":7,"84":4,"85":7,"86":7,"87":8,"88":6,"89":9,"90":5,"91":7,"92":5,"93":3,"94":7,"95":4,"96":8,"97":8,"98":6,"99":7,"100":6,"101":7,"102":7,"103":8,"104":8,"105":5,"106":3,"107":3,"108":4,"109":4,"110":4,"111":6,"112":8,"113":5,"114":5,"115":4,"116":5,"117":7,"118":7,"119":6,"120":6,"121":6,"122":7,"123":6,"124":8,"125":5,"126":5,"127":7,"128":8,"129":10,"130":9,"131":8,"132":9,"133":8,"134":7,"135":9,"136":5,"137":8,"138":9,"139":4,"140":7,"141":9,"142":8,"143":6,"144":7,"145":6,"146":5,"147":4,"148":5,"149":6,"150":8,"151":11,"152":11,"153":8,"154":7,"155":6,"156":8,"157":6,"158":10,"159":6,"160":8,"161":6,"162":8,"163":9,"164":16,"165":10,"166":7,"167":6,"168":6,"169":6,"170":4,"171":4,"172":7,"173":8,"174":9,"175":8,"176":11,"177":8,"178":8,"179":9,"180":8,"181":7,"182":5,"183":7,"184":9,"185":8,"186":6,"187":6,"188":7,"189":7,"190":6,"191":5,"192":5,"193":4,"194":7,"195":7,"196":7,"197":7,"198":4,"199":7,"200":7,"201":7,"202":6,"203":7,"204":5,"205":6,"206":5,"207":7,"208":6,"209":8,"210":6,"211":5,"212":8,"213":9,"214":11,"215":8,"216":9,"217":8,"218":10,"219":9,"220":9,"221":8,"222":7,"223":7,"224":9,"225":9,"226":8,"227":8,"228":9,"229":9,"230":10,"231":7,"232":9,"233":11,"234":9,"235":10,"236":10,"237":8,"238":8,"239":7,"240":6,"241":9,"242":11,"243":6,"244":9,"245":8,"246":9,"247":8,"248":8,"249":5,"250":8,"251":5,"252":10,"253":6,"254":8,"255":6,"256":5,"257":8,"258":6,"259":9,"260":9,"261":10,"262":15,"263":16,"264":20,"265":19,"266":20,"267":15,"268":8,"269":12,"270":8,"271":8,"272":12,"273":10,"274":8,"275":7,"276":8,"277":6,"278":9,"279":8,"280":8,"281":10,"282":7,"283":10,"284":10,"285":11,"286":11,"287":9,"288":8,"289":9,"290":11,"291":10,"292":8,"293":11,"294":11,"295":5,"296":7,"297":7,"298":11,"299":8,"300":8,"301":13,"302":9,"303":14,"304":13,"305":11,"306":14,"307":13,"308":13,"309":13,"310":12,"311":19,"312":15,"313":25,"314":14,"315":13,"316":12,"317":11,"318":11,"319":15,"320":12,"321":10,"322":10,"323":14,"324":11,"325":9,"326":13,"327":15,"328":9,"329":9,"330":11,"331":11,"332":5,"333":10,"334":8,"335":7,"336":8,"337":8,"338":9,"339":9,"340":8,"341":6,"342":17,"343":10,"344":15,"345":17,"346":15,"347":15,"348":15,"349":14,"350":10,"351":10,"352":7,"353":4,"354":5,"355":7,"356":10,"357":5,"358":3,"359":5,"360":9,"361":9,"362":12,"363":11,"364":12,"365":12,"366":10,"367":19,"368":20,"369":21,"370":23,"371":28,"372":25,"373":23,"374":24,"375":23,"376":21,"377":13,"378":9,"379":13,"380":9,"381":11,"382":8,"383":13,"384":12,"385":10,"386":8,"387":8,"388":7,"389":7,"390":8,"391":7,"392":9,"393":11,"394":7,"395":7,"396":10,"397":8,"398":9,"399":7,"400":8,"401":7,"402":7,"403":11,"404":11,"405":10,"406":9,"407":8,"408":9,"409":9,"410":10,"411":11,"412":8,"413":9,"414":6,"415":11,"416":9,"417":10,"418":6,"419":9,"420":7,"421":8,"422":5,"423":8,"424":7,"425":4,"426":8,"427":11,"428":7,"429":7,"430":8,"431":9,"432":8,"433":9,"434":9,"435":8,"436":7,"437":12,"438":8,"439":6,"440":13,"441":15,"442":13,"443":14,"444":16,"445":13,"446":24,"447":27,"448":25,"449":26,"450":24,"451":27,"452":29,"453":16,"454":10,"455":16,"456":19,"457":22,"458":10,"459":5,"460":11,"461":10,"462":9,"463":7,"464":9,"465":11,"466":7,"467":8,"468":9,"469":9,"470":8,"471":7,"472":9,"473":9,"474":8,"475":11,"476":8,"477":11,"478":9,"479":9,"480":9,"481":8,"482":8,"483":10,"484":5,"485":7,"486":9,"487":13,"488":7,"489":12,"490":12,"491":11,"492":14,"493":13,"494":13,"495":16,"496":18,"497":21,"498":20,"499":13,"500":9,"501":10,"502":10,"503":9,"504":6,"505":8,"506":7,"507":11,"508":8,"509":10,"510":9,"511":9,"512":6,"513":8,"514":5,"515":5,"516":7,"517":7,"518":15,"519":20,"520":16,"521":24,"522":21,"523":23,"524":17,"525":18,"526":26,"527":18,"528":24,"529":21,"530":22,"531":22,"532":24,"533":27,"534":27,"535":34,"536":26,"537":23,"538":8,"539":7,"540":6,"541":5,"542":6,"543":5,"544":10,"545":4,"546":6,"547":7,"548":8,"549":5,"550":6,"551":7,"552":9,"553":8,"554":7,"555":7,"556":9,"557":9,"558":5,"559":7,"560":7,"561":5,"562":12,"563":14,"564":19,"565":27,"566":18,"567":26,"568":28,"569":29,"570":15,"571":18,"572":13,"573":15,"574":19,"575":18,"576":30,"577":28,"578":26,"579":20,"580":25,"581":31,"582":30,"583":25,"584":31,"585":42,"586":29,"587":25,"588":28,"589":27,"590":22,"591":32,"592":30,"593":23,"594":27,"595":29,"596":26,"597":27,"598":12,"599":18,"600":21,"601":17,"602":14,"603":14,"604":15
-};
+const jumlahAyatPerHalaman = {};
 
 // ====== Hitung Total Juz & Halaman (aman saat dropdown kosong) ======
 function updateTotalJuz(row) {
@@ -4124,7 +4101,7 @@ async function simpanDataMutabaah(saveBtn){
     return { nilai, predikatText:(teks.length?teks.join(' '):null), predikatHuruf:huruf };
   }
 
-  // ==== util ABSENSI FLEX (tetap) ====
+  // ==== util ambil ABSENSI FLEX (tetap) ====
   function buildAbsensi6(items, target){
     const t = Math.max(1, Math.min(6, Number(target)||1));
     const chosen = (items||[]).filter(it=>it.checked).map(it=>String(it.key).toLowerCase().replace(/\d+$/,''));
@@ -4220,25 +4197,6 @@ async function simpanDataMutabaah(saveBtn){
     return out;
   }
 
-  // ===== util expand rentang =====
-  function expandRange(sFrom, aFrom, sTo, aTo, cb){
-    if (!cb) return;
-    const nFrom = Number(sFrom), nTo = Number(sTo);
-    if (!Number.isFinite(nFrom) || !Number.isFinite(nTo) || !aFrom || !aTo) return;
-    let startSurah = nFrom, endSurah = nTo, startAyat = Number(aFrom), endAyat = Number(aTo);
-    if (startSurah > endSurah || (startSurah === endSurah && startAyat > endAyat)) {
-      [startSurah, endSurah] = [endSurah, startSurah];
-      [startAyat, endAyat]   = [endAyat, startAyat];
-    }
-    for (let s = startSurah; s <= endSurah; s++){
-      const surah = surahList.find(x => Number(x.id) === s);
-      if (!surah) continue;
-      const ayStart = (s === startSurah) ? startAyat : 1;
-      const ayEnd   = (s === endSurah)   ? endAyat   : surah.jumlah_ayat;
-      for (let a = ayStart; a <= ayEnd; a++) cb(String(s), a);
-    }
-  }
-
   if (saveBtn){ saveBtn.disabled=true; saveBtn.dataset._old=saveBtn.textContent; saveBtn.textContent='⏳ Menyimpan...'; }
 
   try{
@@ -4285,10 +4243,8 @@ async function simpanDataMutabaah(saveBtn){
         const totalHalaman = row.querySelector(".total-halaman")?.textContent ?? existing?.totalHalaman ?? "";
         const juzTerbaca   = row.querySelector(".juz-terbaca")?.textContent ?? existing?.juzTerbaca ?? "";
 
-        // ==== NEW: tarik Murajaah dari row ====
         const mur = getMurFromRow(row, existing);
 
-        // Nilai umum (tetap)
         const nilaiCell = row.querySelector(".lihat-quran-btn")?.parentElement;
         const nilaiStr  = nilaiCell?.querySelector("div:nth-child(1)")?.innerText?.trim()||"";
         const parsed    = parseNilaiStr(nilaiStr);
@@ -4299,7 +4255,6 @@ async function simpanDataMutabaah(saveBtn){
           buttonCell = { nilai: parsed.nilai, predikatText, predikatHuruf };
         } else if (existing?.buttonCell) { buttonCell=existing.buttonCell; }
 
-        // ===== konstruksi payload =====
         const base = {
           ...existing,
           id, nis, nama, jenjang, semester,
@@ -4312,10 +4267,10 @@ async function simpanDataMutabaah(saveBtn){
           sampai: (surahSampai && ayatSampai) ? `${surahSampai}:${ayatSampai}` : "",
 
           tilawahTotalJuz: Number(parseNum(tilawahTotalJuz).toFixed(2)),
-          totalJuz: Number(parseNum(tilawahTotalJuz).toFixed(2)), // mirror utk kompatibilitas
+          totalJuz: Number(parseNum(tilawahTotalJuz).toFixed(2)),
+
           halaman, totalHalaman, juzTerbaca, keterangan,
 
-          // ==== NEW: simpan Murajaah tiga sesi (+ legacy fields) ====
           murSessions: mur.sessions.map(s => ({
             from: s.from || "",
             to:   s.to   || "",
@@ -4328,7 +4283,7 @@ async function simpanDataMutabaah(saveBtn){
             predikatHuruf: s.predikatHuruf|| ""
           })),
 
-          // sesi 1
+          // legacy mirror
           murFrom1: mur.sessions[0]?.from || existing?.murFrom1 || "",
           murTo1:   mur.sessions[0]?.to   || existing?.murTo1   || "",
           murPages1: mur.sessions[0]?.pages || existing?.murPages1 || "",
@@ -4339,7 +4294,6 @@ async function simpanDataMutabaah(saveBtn){
           murPredText1:  mur.sessions[0]?.predikatText  ?? existing?.murPredText1  ?? "",
           murPredHuruf1: mur.sessions[0]?.predikatHuruf ?? existing?.murPredHuruf1 ?? "",
 
-          // sesi 2
           murFrom2: mur.sessions[1]?.from || existing?.murFrom2 || "",
           murTo2:   mur.sessions[1]?.to   || existing?.murTo2   || "",
           murPages2: mur.sessions[1]?.pages || existing?.murPages2 || "",
@@ -4350,7 +4304,6 @@ async function simpanDataMutabaah(saveBtn){
           murPredText2:  mur.sessions[1]?.predikatText  ?? existing?.murPredText2  ?? "",
           murPredHuruf2: mur.sessions[1]?.predikatHuruf ?? existing?.murPredHuruf2 ?? "",
 
-          // sesi 3
           murFrom3: mur.sessions[2]?.from || existing?.murFrom3 || "",
           murTo3:   mur.sessions[2]?.to   || existing?.murTo3   || "",
           murPages3: mur.sessions[2]?.pages || existing?.murPages3 || "",
@@ -4361,10 +4314,8 @@ async function simpanDataMutabaah(saveBtn){
           murPredText3:  mur.sessions[2]?.predikatText  ?? existing?.murPredText3  ?? "",
           murPredHuruf3: mur.sessions[2]?.predikatHuruf ?? existing?.murPredHuruf3 ?? "",
 
-          // total murajaah
           juzmurajaah: (mur.total!=null ? mur.total : Number(parseNum(existing?.juzmurajaah||0).toFixed?.(2) ?? 0)),
 
-          // marks tetap
           marks: (row.markData && typeof row.markData === 'object') ? row.markData : (existing?.marks || { audio: [] })
         };
 
@@ -4384,7 +4335,7 @@ async function simpanDataMutabaah(saveBtn){
       let result={}; try { result = await res.json(); } catch { result = {}; }
       hasilKirim.push({tanggal, ok:!!result?.success, result});
 
-      // ===== perbarui indeks ✓/★/OWNER + RENTANG (per KELAS) utk dropdown tilawah =====
+      // ===== perbarui INDEX + OWNER (rentang penuh, owner= tanggal paling awal) =====
       (function updateAyatIndexFromRows(){
         window.__ayatIndex  ??= {};
         window.__ayatLatest ??= {};
@@ -4393,6 +4344,55 @@ async function simpanDataMutabaah(saveBtn){
         window.__ayatLatest[kelas] ??= {};
         window.__ayatOwner[kelas]  ??= {};
 
+        const earlier = (a, b) => String(a||"").localeCompare(String(b||"")) < 0;
+
+        const addPoint = (nis, kind, s, a, tanggal) => {
+          if (!nis || !s || !a) return;
+          // index
+          window.__ayatIndex[kelas][nis] ??= {};
+          window.__ayatIndex[kelas][nis][s] ??= new Set();
+          window.__ayatIndex[kelas][nis][s].add(Number(a));
+          // owner (tahan yang paling awal)
+          window.__ayatOwner[kelas][nis] ??= {};
+          window.__ayatOwner[kelas][nis][s] ??= {};
+          const cur = window.__ayatOwner[kelas][nis][s][a];
+          if (!cur || earlier(tanggal, cur)) window.__ayatOwner[kelas][nis][s][a] = String(tanggal);
+
+          // latest
+          const prev = window.__ayatLatest[kelas][nis]?.[kind];
+          const cand = { surah: String(s), ayat: Number(a), tanggal: String(tanggal) };
+          if (!prev || String(cand.tanggal).localeCompare(String(prev.tanggal)) > 0) {
+            window.__ayatLatest[kelas][nis] ??= {};
+            window.__ayatLatest[kelas][nis][kind] = cand;
+          }
+        };
+
+        const addRange = (nis, sFrom, aFrom, sTo, aTo, tanggal) => {
+          if (!nis || !sFrom || !aFrom || !sTo || !aTo) return;
+          if (sFrom > sTo || (sFrom === sTo && aFrom > aTo)) {
+            [sFrom, sTo] = [sTo, sFrom];
+            [aFrom, aTo] = [aTo, aFrom];
+          }
+          window.__ayatIndex[kelas][nis] ??= {};
+          window.__ayatOwner[kelas][nis] ??= {};
+          for (let s = Number(sFrom); s <= Number(sTo); s++) {
+            const surah = surahList.find(x => Number(x.id) === s);
+            if (!surah) continue;
+            const totalAy = Number(surah.jumlah_ayat || 0);
+            const startAy = (s === Number(sFrom)) ? Number(aFrom) : 1;
+            const endAy   = (s === Number(sTo))   ? Number(aTo)   : totalAy;
+
+            const keyS = String(s);
+            const set  = (window.__ayatIndex[kelas][nis][keyS] ??= new Set());
+            const ownS = (window.__ayatOwner[kelas][nis][keyS] ??= {});
+            for (let a = startAy; a <= endAy; a++) {
+              set.add(a);
+              const cur = ownS[a];
+              if (!cur || earlier(tanggal, cur)) ownS[a] = String(tanggal);
+            }
+          }
+        };
+
         rowsTanggal.forEach(row=>{
           const nis = String(row.dataset?.nis||row.dataset?.id||"").trim();
           if (!nis) return;
@@ -4400,33 +4400,10 @@ async function simpanDataMutabaah(saveBtn){
           const ayD  = Number((row.querySelector(".ayat-dari")?.value||"").trim());
           const surS = (row.querySelector(".surah-sampai")?.value||"").trim();
           const ayS  = Number((row.querySelector(".ayat-sampai")?.value||"").trim());
-          if (!surD || !ayD || !surS || !ayS) return;
 
-          // expand semua ayat dalam rentang → tandai used & owner
-          expandRange(Number(surD), ayD, Number(surS), ayS, (sid, a)=>{
-            window.__ayatIndex[kelas][nis] ??= {};
-            window.__ayatIndex[kelas][nis][sid] ??= new Set();
-            window.__ayatIndex[kelas][nis][sid].add(a);
-
-            window.__ayatOwner[kelas][nis] ??= {};
-            window.__ayatOwner[kelas][nis][sid] ??= {};
-            const k = String(a);
-            if (!window.__ayatOwner[kelas][nis][sid][k]) {
-              window.__ayatOwner[kelas][nis][sid][k] = String(tanggal);
-            }
-          });
-
-          // update latest pointer
-          const putPoint = (kind, s, a) => {
-            window.__ayatLatest[kelas][nis] ??= {};
-            const prev = window.__ayatLatest[kelas][nis][kind];
-            const cand = { surah: String(s), ayat: Number(a), tanggal: String(tanggal) };
-            if (!prev || String(cand.tanggal).localeCompare(String(prev.tanggal)) > 0) {
-              window.__ayatLatest[kelas][nis][kind] = cand;
-            }
-          };
-          putPoint('dari',   Number(surD), ayD);
-          putPoint('sampai', Number(surS), ayS);
+          if (surD && ayD) addPoint(nis, 'dari',   String(surD), ayD, tanggal);
+          if (surS && ayS) addPoint(nis, 'sampai', String(surS), ayS, tanggal);
+          if (surD && ayD && surS && ayS) addRange(nis, Number(surD), Number(ayD), Number(surS), Number(ayS), tanggal);
         });
       })();
     }
@@ -4434,14 +4411,14 @@ async function simpanDataMutabaah(saveBtn){
     const gagal=hasilKirim.filter(h=>!h.ok);
     if(!gagal.length){
       if(saveBtn) saveBtn.textContent='✅ Tersimpan';
-      // jika ada modul lain perlu refresh, panggil di sini
       if (window.murajaah && typeof window.murajaah.refreshServer==='function'){
         await window.murajaah.refreshServer();
       }
-      // segarkan semua dropdown (pakai indeks baru)
+      // segarkan dropdown sesuai index + owner baru
       document.querySelectorAll('#santri-table tbody tr').forEach(row=>{
         const kelasRow = row.dataset?.kelas || resolveKelas() || "";
         const key      = String(row.dataset?.nis||row.dataset?.id||"").trim();
+        const rowDate  = row.dataset?.tanggal || "";
         const sd = row.querySelector('.surah-dari');
         const ss = row.querySelector('.surah-sampai');
         const ad = row.querySelector('.ayat-dari');
@@ -4450,13 +4427,13 @@ async function simpanDataMutabaah(saveBtn){
         if (sd) {
           const cur = sd.value || "";
           sd.innerHTML = (typeof window.__makeSurahOptions==='function')
-            ? window.__makeSurahOptions(kelasRow, key, 'dari', cur, row)
+            ? window.__makeSurahOptions(kelasRow, key, 'dari', cur, { ownerDate: rowDate })
             : sd.innerHTML;
         }
         if (ss) {
           const cur = ss.value || "";
           ss.innerHTML = (typeof window.__makeSurahOptions==='function')
-            ? window.__makeSurahOptions(kelasRow, key, 'sampai', cur, row)
+            ? window.__makeSurahOptions(kelasRow, key, 'sampai', cur, { ownerDate: rowDate })
             : ss.innerHTML;
         }
         if (ad) window.fillAyatOptionsMarked(ad, sd?.value||"", ad.value||"");
@@ -4486,15 +4463,6 @@ async function simpanDataMutabaah(saveBtn){
 document.getElementById('save-btn')?.addEventListener('click', function(){ simpanDataMutabaah(this); });
 document.getElementById('save-btn-modal')?.addEventListener('click', function(){ simpanDataMutabaah(this); });
 document.getElementById('mur-save')?.addEventListener('click', function(){ simpanDataMutabaah(this); });
-
-
-
-
-
-
-
-
-	 
 											
 
 // ============================
