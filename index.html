@@ -6731,24 +6731,12 @@ window._pdfSantriDownload = pdfSantriDownload;
 
 
 // ============================
-// hitungTotalAllJuzFromTable (REVISI FINAL)
+// hitungTotalAllJuzFromTable (REVISI FINAL, FIX %)
 // ============================
-// ==== HELPER: baca totalJuz dari berbagai nama field ====
-function readTotalJuz(rec){
-  // Prioritas: totalJuz -> tilawahTotalJuz -> (fallback lain jika ada)
-  return parseNum(
-    (rec && (
-      rec.totalJuz ??
-      rec.tilawahTotalJuz ??
-      rec.juzTotal ??
-      rec.total ??
-      0
-    )) || 0
-  );
-}
 
 // --- util kecil untuk normalisasi kunci & angka ---
 const normKey = (v) => String(v ?? "").trim();
+
 const parseNum = (v) => {
   if (typeof v === "number") return Number.isFinite(v) ? v : 0;
   let s = String(v ?? "").trim();
@@ -6770,6 +6758,35 @@ const parseNum = (v) => {
   return Number.isFinite(n) ? n : 0;
 };
 
+// ==== EKSTRAKTOR SEMESTER ROBUST (ambil angka 1..6 dari string apa pun) ====
+function parseSemester(v, def = 1) {
+  if (v == null) return def;
+  if (typeof v === 'number') {
+    const n = Math.round(v);
+    return (n >= 1 && n <= 6) ? n : def;
+  }
+  const s = String(v).trim();
+  if (!s) return def;
+  const m = s.match(/([1-6])/); // ambil angka semester pertama yang ketemu
+  if (!m) return def;
+  const n = Number(m[1]);
+  return (n >= 1 && n <= 6) ? n : def;
+}
+
+// ==== HELPER: baca totalJuz dari berbagai nama field ====
+function readTotalJuz(rec){
+  // Prioritas: totalJuz -> tilawahTotalJuz -> (fallback lain jika ada)
+  return parseNum(
+    (rec && (
+      rec.totalJuz ??
+      rec.tilawahTotalJuz ??
+      rec.juzTotal ??
+      rec.total ??
+      0
+    )) || 0
+  );
+}
+
 // helper ambil nama murni dari cell
 function getNamaFromCell(cell) {
   if (!cell) return "";
@@ -6787,7 +6804,8 @@ async function ensureSemesterMap(kelas) {
     window.semesterMap = {};
     (santri || []).forEach(s => {
       const k = normKey(s?.nis) || normKey(s?.id);
-      if (k) window.semesterMap[k] = String(s?.semester ?? "1");
+      if (!k) return;
+      window.semesterMap[k] = parseSemester(s?.semester, 1); // simpan sebagai NUMBER 1..6
     });
   } catch (e) {
     console.warn("ensureSemesterMap gagal:", e);
@@ -6797,13 +6815,31 @@ async function ensureSemesterMap(kelas) {
   }
 }
 
-// ambil semester: masterMap → select di baris → arsip → default 1
+// ambil semester: masterMap → dataset.semester → select.semester → arsip → default 1
 function getSemesterForKey(key, row, fallbackFromArchive) {
+  // 1) dari masterMap
   const mapVal = window?.semesterMap ? window.semesterMap[key] : null;
-  if (mapVal != null && mapVal !== "") return Number(mapVal);
-  const selVal = row?.querySelector?.(".semester")?.value;
-  if (selVal != null && selVal !== "") return Number(selVal);
-  if (fallbackFromArchive != null && fallbackFromArchive !== "") return Number(fallbackFromArchive);
+  if (mapVal != null && mapVal !== '') return parseSemester(mapVal, 1);
+
+  // 2) dari dataset di row
+  const ds = row?.dataset || {};
+  if (ds.semester != null && ds.semester !== '') return parseSemester(ds.semester, 1);
+
+  // 3) dari select/teks di baris
+  const sel = row?.querySelector?.('.semester');
+  if (sel) {
+    const fromVal = sel.value ?? '';
+    if (String(fromVal).trim()) return parseSemester(fromVal, 1);
+    const fromText = sel.textContent ?? '';
+    if (String(fromText).trim()) return parseSemester(fromText, 1);
+  }
+
+  // 4) fallback dari arsip (rekap range)
+  if (fallbackFromArchive != null && fallbackFromArchive !== '') {
+    return parseSemester(fallbackFromArchive, 1);
+  }
+
+  // 5) default
   return 1;
 }
 
@@ -6886,7 +6922,13 @@ async function hitungTotalAllJuzFromTable() {
 
       if (totalJuzNum) {
         const semester = getSemesterForKey(key, row, archSem);
-        const batas    = batasSemester[semester] || 0;
+        const defaultTarget = 30; // fallback agar % tidak 0 jika semester gagal terbaca
+        const batas    = batasSemester[semester] ?? defaultTarget;
+        if ((batas === 30) && !window.__alljuzSemWarned1) {
+          console.warn('[AllJuz] Semester tidak terdeteksi akurat (manual); pakai defaultTarget=30.');
+          window.__alljuzSemWarned1 = true;
+        }
+
         const totalJuzStr = totalJuzNum.toFixed(2);
 
         let label, warna;
@@ -6961,7 +7003,7 @@ function bukaOverlayTotalAllJuz() {
   document.getElementById("juzOverlay").style.display = "flex";
 }
 
-document.getElementById("btnHitungTotalJuz").addEventListener("click", hitungTotalAllJuzFromTable);
+document.getElementById("btnHitungTotalJuz")?.addEventListener("click", hitungTotalAllJuzFromTable);
 
 // ==================================
 // HITUNG OTOMATIS (setelah render)
@@ -7045,7 +7087,13 @@ async function hitungTotalAllJuzOtomatis() {
 
       if (totalJuzNum) {
         const semester = getSemesterForKey(key, row, rekap[key]?.semester);
-        const target   = batasSemester[semester] || 0;
+        const defaultTarget = 30;
+        const target   = batasSemester[semester] ?? defaultTarget;
+        if ((target === 30) && !window.__alljuzSemWarned2) {
+          console.warn('[AllJuz] Semester tidak terdeteksi akurat (auto); pakai defaultTarget=30.');
+          window.__alljuzSemWarned2 = true;
+        }
+
         const totalJuzStr = totalJuzNum.toFixed(2);
 
         let label, warna;
@@ -7087,7 +7135,6 @@ window.loadSantriData = async function (...args) {
 // Kalau ganti tanggal atau kelas, otomatis muat ulang tabel & hitung
 tanggalInput?.addEventListener("change", () => loadSantriData());
 kelasSelect?.addEventListener("change", () => loadSantriData());
-	 
 </script>
 
 
