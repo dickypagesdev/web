@@ -7164,6 +7164,7 @@ kelasSelect?.addEventListener("change", () => loadSantriData());
     }
     for(let s=1;s<=114;s++) if(!surahMaxAyah[s]) surahMaxAyah[s]=(s===1?7:(s===9?129:286));
     dataReady=true;
+    // expose flag buat patch reset
     window.dataReady = true;
   }
 
@@ -7311,30 +7312,6 @@ kelasSelect?.addEventListener("change", () => loadSantriData());
         cell.dataset.murtotal = grand.toFixed(2);
         const valEl=cell.querySelector('.mur-val');
         if (valEl) valEl.textContent = `${grand.toFixed(2)} juz`;
-      }
-    }
-  }
-
-  // === KOSONGKAN satu sesi + push ke server (benar-benar nilai kosong) ===
-  async function clearSession(idx, {save=true} = {}){
-    resetSession(idx); // kosongkan UI + state + dataset + total lokal
-
-    // Simpan ke server sebagai kosong
-    if (save){
-      try{
-        if (typeof window.simpanDataMutabaah === 'function'){
-          const saveBtn = document.querySelector('#mur-save') || null;
-          await window.simpanDataMutabaah(saveBtn);
-        }
-        if (typeof window.murajaah?.refreshServer === 'function'){
-          await window.murajaah.refreshServer();
-        }
-        const st = document.querySelector('#mur-save-status');
-        if (st){ st.textContent='✅ Data sesi dikosongkan & tersimpan'; setTimeout(()=>st.textContent='',1500); }
-      }catch(e){
-        console.warn('Gagal push kosong ke server:', e);
-        const st = document.querySelector('#mur-save-status');
-        if (st){ st.textContent='❌ Gagal simpan kosong'; setTimeout(()=>st.textContent='',2000); }
       }
     }
   }
@@ -7679,7 +7656,7 @@ kelasSelect?.addEventListener("change", () => loadSantriData());
     [1,2,3].forEach(resetOne);
     [1,2,3].forEach(loadOne);
 
-    // pastikan tombol reset/kosongkan tampil saat modal dibuka
+    // pastikan tombol reset tampil saat modal dibuka
     ensureResetButtons();
   }
 
@@ -7937,41 +7914,27 @@ kelasSelect?.addEventListener("change", () => loadSantriData());
     }
   }
 
-  // === Buat tombol reset + tombol kosongkan di sebelah #murX-totalJuz (1..3) ===
+  // === Buat tombol reset di sebelah #murX-totalJuz (1..3) → jalankan serverSafeReset ===
   function ensureResetButtons(){
     for (let i=1;i<=3;i++){
       const totalEl = $(`#mur${i}-totalJuz`);
       if (!totalEl) continue;
+      if (document.getElementById(`mur${i}-totalJuz-reset`)) continue;
 
-      // Tombol RESET (jika belum ada)
-      if (!document.getElementById(`mur${i}-totalJuz-reset`)){
-        const btn = document.createElement('button');
-        btn.id = `mur${i}-totalJuz-reset`;
-        btn.type = 'button';
-        btn.textContent = 'Reset';
-        btn.style.marginLeft = '8px';
-        btn.style.padding = '2px 8px';
-        btn.style.fontSize = '12px';
-        if (totalEl.parentNode) totalEl.parentNode.insertBefore(btn, totalEl.nextSibling);
-        else totalEl.after(btn);
-        btn.addEventListener('click', ()=> serverSafeReset(i));
-      }
+      const btn = document.createElement('button');
+      btn.id = `mur${i}-totalJuz-reset`;
+      btn.type = 'button';
+      btn.textContent = 'Reset';
+      btn.style.marginLeft = '8px';
+      btn.style.padding = '2px 8px';
+      btn.style.fontSize = '12px';
 
-      // Tombol KOSONGKAN (jika belum ada)
-      if (!document.getElementById(`mur${i}-totalJuz-clear`)){
-        const clr = document.createElement('button');
-        clr.id = `mur${i}-totalJuz-clear`;
-        clr.type = 'button';
-        // sesuai permintaan teks spesifik:
-        clr.textContent = 'kosongkan-dropdown-seperti-semua-default';
-        clr.style.marginLeft = '8px';
-        clr.style.padding = '2px 8px';
-        clr.style.fontSize = '12px';
-        const resetBtn = document.getElementById(`mur${i}-totalJuz-reset`);
-        if (resetBtn && resetBtn.parentNode) resetBtn.parentNode.insertBefore(clr, resetBtn.nextSibling);
-        else totalEl.after(clr);
-        clr.addEventListener('click', ()=> clearSession(i, {save:true}));
-      }
+      const sesiWrap = document.getElementById(`mur-sesi${i}`);
+      if (totalEl.parentNode) totalEl.parentNode.insertBefore(btn, totalEl.nextSibling);
+      else if (sesiWrap) sesiWrap.appendChild(btn);
+      else totalEl.after(btn);
+
+      btn.addEventListener('click', ()=> serverSafeReset(i));
     }
   }
 
@@ -7991,7 +7954,7 @@ kelasSelect?.addEventListener("change", () => loadSantriData());
     await ensureMap();
     [1,2,3].forEach(bindSession);
 
-    // tombol reset & tombol kosongkan tersedia dari awal
+    // tombol reset sesi tersedia dari awal
     ensureResetButtons();
   })();
 })();
