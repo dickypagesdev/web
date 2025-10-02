@@ -7240,7 +7240,7 @@ kelasSelect?.addEventListener("change", () => loadSantriData());
     return { sFrom:sF, aFrom:aF, sTo:sT, aTo:aT };
   }
 
-  // ---------- UI Fills (tanpa autofill nilai) ----------
+  // ---------- UI Fills ----------
   function fillSurahSelect(sel){
     const N=["Al-Fatihah","Al-Baqarah","Ali 'Imran","An-Nisa'","Al-Ma'idah","Al-An'am","Al-A'raf","Al-Anfal","At-Taubah","Yunus","Hud","Yusuf","Ar-Ra'd","Ibrahim","Al-Hijr","An-Nahl","Al-Isra'","Al-Kahf","Maryam","Ta Ha","Al-Anbiya'","Al-Hajj","Al-Mu'minun","An-Nur","Al-Furqan","Ash-Shu'ara'","An-Naml","Al-Qasas","Al-'Ankabut","Ar-Rum","Luqman","As-Sajdah","Al-Ahzab","Saba'","Fatir","Ya-Sin","As-Saffat","Sad","Az-Zumar","Ghafir","Fussilat","Ash-Shura","Az-Zukhruf","Ad-Dukhan","Al-Jathiyah","Al-Ahqaf","Muhammad","Al-Fath","Al-Hujurat","Qaf","Adz-Dzariyat","At-Tur","An-Najm","Al-Qamar","Ar-Rahman","Al-Waqi'ah","Al-Hadid","Al-Mujadilah","Al-Hashr","Al-Mumtahanah","As-Saff","Al-Jumu'ah","Al-Munafiqun","At-Taghabun","At-Talaq","At-Tahrim","Al-Mulk","Al-Qalam","Al-Haqqah","Al-Ma'arij","Nuh","Al-Jinn","Al-Muzzammil","Al-Muddaththir","Al-Qiyamah","Al-Insan","Al-Mursalat","An-Naba'","An-Nazi'at","'Abasa","At-Takwir","Al-Infitar","Al-Mutaffifin","Al-Inshiqaq","Al-Buruj","At-Tariq","Al-A'la","Al-Ghashiyah","Al-Fajr","Al-Balad","Ash-Shams","Al-Layl","Ad-Duha","Ash-Sharh","At-Tin","Al-'Alaq","Al-Qadr","Al-Bayyinah","Az-Zalzalah","Al-'Adiyat","Al-Qari'ah","At-Takathur","Al-'Asr","Al-Humazah","Al-Fil","Quraysh","Al-Ma'un","Al-Kawthar","Al-Kafirun","An-Nasr","Al-Masad","Al-Ikhlas","Al-Falaq","An-Nas"];
     const el = (typeof sel==='string')?$(sel):sel;
@@ -7249,7 +7249,6 @@ kelasSelect?.addEventListener("change", () => loadSantriData());
       Array.from({length:114},(_,i)=>`<option value="${i+1}">${i+1} — ${N[i]}</option>`).join('');
     el.value = '';
   }
-
   function fillAyahForSurah(sel, surahId, {keep=false, preset=null}={}){
     const el=(typeof sel==='string')?$(sel):sel; if(!el) return;
     if(!surahId){
@@ -7264,7 +7263,6 @@ kelasSelect?.addEventListener("change", () => loadSantriData());
     else if (keep && prev)   el.value = String(Math.min(prev, max));
     else                     el.value = '';
   }
-
   function fillPageSelects(idFrom, idTo){
     const f = (typeof idFrom==='string')?$(idFrom):idFrom;
     const t = (typeof idTo  ==='string')?$(idTo)  :idTo;
@@ -7273,7 +7271,6 @@ kelasSelect?.addEventListener("change", () => loadSantriData());
     f.innerHTML = opts; t.innerHTML = opts;
     f.value = ''; t.value = '';
   }
-
   function fillJuzSelect(id){
     const el = (typeof id === 'string') ? $(id) : id;
     if (!el) return;
@@ -7302,34 +7299,25 @@ kelasSelect?.addEventListener("change", () => loadSantriData());
 
   // === Reset satu sesi ke PRISTINE (untuk tombol reset) ===
   function resetSession(idx){
-    // kosongkan Juz & Page
     $(`#mur${idx}-juzFrom`).value = '';
     $(`#mur${idx}-juzTo`).value   = '';
     $(`#mur${idx}-pageFrom`).value = '';
     $(`#mur${idx}-pageTo`).value   = '';
-
-    // Surah/Ayat kosong (bukan 1:1)
     $(`#mur${idx}-surahFrom`).value = '';
     fillAyahForSurah($(`#mur${idx}-ayahFrom`), '', {});
     $(`#mur${idx}-surahTo`).value   = '';
     fillAyahForSurah($(`#mur${idx}-ayahTo`),   '', {});
-
-    // Nilai & badge
     $(`#mur${idx}-score`).value = '';
     $(`#mur${idx}-predikatBadge`).textContent = '–';
-
-    // Hint & total
     $(`#mur${idx}-pagesHint`).textContent = '';
     $(`#mur${idx}-totalJuz`).textContent  = '0.00';
 
-    // State
     murState[idx] = {
       touched:false, sF:null,aF:null,sT:null,aT:null,
       pFrom:'',pTo:'', jFrom:null,jTo:null,
       total:0, score:null, pText:'', pHuruf:''
     };
 
-    // Bersihkan dataset baris aktif
     if (currentRowEl){
       const cell = currentRowEl.querySelector('.murajaah-cell');
       if (cell){
@@ -7348,7 +7336,6 @@ kelasSelect?.addEventListener("change", () => loadSantriData());
       }
     }
 
-    // Re-kalkulasi total all
     $('#mur-t1').textContent=(murState[1]?.total||0).toFixed(2);
     $('#mur-t2').textContent=(murState[2]?.total||0).toFixed(2);
     $('#mur-t3').textContent=(murState[3]?.total||0).toFixed(2);
@@ -7379,7 +7366,6 @@ kelasSelect?.addEventListener("change", () => loadSantriData());
       btn.style.padding = '2px 8px';
       btn.style.fontSize = '12px';
 
-      // taruh setelah angka total; fallback ke #mur-sesiX kalau ada
       const sesiWrap = document.getElementById(`mur-sesi${i}`);
       if (totalEl.parentNode) totalEl.parentNode.insertBefore(btn, totalEl.nextSibling);
       else if (sesiWrap) sesiWrap.appendChild(btn);
@@ -7452,7 +7438,6 @@ kelasSelect?.addEventListener("change", () => loadSantriData());
       }
     }
 
-    // rekap & sinkron dataset
     $('#mur-t1').textContent=(murState[1]?.total||0).toFixed(2);
     $('#mur-t2').textContent=(murState[2]?.total||0).toFixed(2);
     $('#mur-t3').textContent=(murState[3]?.total||0).toFixed(2);
@@ -7494,7 +7479,7 @@ kelasSelect?.addEventListener("change", () => loadSantriData());
   function onPagesChange(idx){
     const pFv=$(`#mur${idx}-pageFrom`).value;
     const pTv=$(`#mur${idx}-pageTo`).value;
-    if (!pFv || !pTv){ renderSession(idx); return; } // jangan paksa default
+    if (!pFv || !pTv){ renderSession(idx); return; }
 
     let pF=+pFv, pT=+pTv;
     if(pT<pF){ pT=pF; $(`#mur${idx}-pageTo`).value=String(pF); }
@@ -7579,7 +7564,7 @@ kelasSelect?.addEventListener("change", () => loadSantriData());
     return '';
   }
 
-  // === GANTI SELURUH FUNGSI INI ===
+  // === Modal open ===
   async function openModalForRow(row){
     currentRowEl = row;
     $('#murModal').style.display = 'flex';
@@ -7595,7 +7580,6 @@ kelasSelect?.addEventListener("change", () => loadSantriData());
 
     const cell = row.querySelector('.murajaah-cell');
 
-    // --- RESET PRISTINE per sesi: benar2 kosong ---
     function resetOne(i){
       $(`#mur${i}-juzFrom`).value = '';
       $(`#mur${i}-juzTo`).value   = '';
@@ -7656,7 +7640,7 @@ kelasSelect?.addEventListener("change", () => loadSantriData());
       if (kind==='pages')  return pickNonEmpty(rec[`murPages${i}`],  rec.murSessions?.[i-1]?.pages,  i===1?rec.murPages:undefined);
       if (kind==='juz')    return pickNonEmpty(rec[`juzmur${i}`],    rec[`juzSesi${i}`],             rec.murSessions?.[i-1]?.juz);
       if (kind==='jFrom')  return pickNonEmpty(rec[`jFrom${i}`],     rec.murSessions?.[i-1]?.jFrom);
-      if (kind==='jTo')    return pickNonEmpty(rec[`jTo${i}`],       rec.murSessions?.[i-1]?.jTo);
+      if (kind==='jTo`)    return pickNonEmpty(rec[`jTo${i}`],       rec.murSessions?.[i-1]?.jTo);
       if (kind==='score')  return pickNonEmpty(rec[`murScore${i}`],  rec.murSessions?.[i-1]?.score);
       if (kind==='pText')  return pickNonEmpty(rec[`murPredText${i}`],  rec.murSessions?.[i-1]?.predikatText);
       if (kind==='pHuruf') return pickNonEmpty(rec[`murPredHuruf${i}`], rec.murSessions?.[i-1]?.predikatHuruf);
@@ -7739,7 +7723,6 @@ kelasSelect?.addEventListener("change", () => loadSantriData());
     fillPageSelects(`#mur${idx}-pageFrom`, `#mur${idx}-pageTo`);
     fillSurahSelect(`#mur${idx}-surahFrom`);
     fillSurahSelect(`#mur${idx}-surahTo`);
-    // ayat kosong karena surah belum dipilih
     fillAyahForSurah($(`#mur${idx}-ayahFrom`), '', {});
     fillAyahForSurah($(`#mur${idx}-ayahTo`),   '', {});
 
@@ -7777,7 +7760,7 @@ kelasSelect?.addEventListener("change", () => loadSantriData());
     });
   }
 
-  // ---------- Refresh dari server (muat juga skor/predikat jika ada) ----------
+  // ---------- Refresh dari server ----------
   async function refreshMurFromServer(){
     const $ = (s,r=document)=>r.querySelector(s);
     const table = $('#santri-table');
@@ -7921,7 +7904,7 @@ kelasSelect?.addEventListener("change", () => loadSantriData());
     await ensureMap();
     [1,2,3].forEach(bindSession);
 
-    // pastikan tombol reset tersedia dari awal juga
+    // tombol reset siap sejak awal
     ensureResetButtons();
   })();
 })();
@@ -8144,6 +8127,73 @@ kelasSelect?.addEventListener("change", () => loadSantriData());
 
   window.bukaOverlayTotalMurRange = bukaOverlayTotalMurRange;
   $('#btnHitungTotalMur')?.addEventListener('click', hitungTotalMurRangeFromTable);
+
+  // ====== PATCH: tombol Reset/Save overlay → hapus di server & local ======
+  async function resetRangeServer(kelas){
+    try{
+      await fetch('/api/aksesAutoUpdateAllJuzMur', {
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ kelas, delete:true })
+      });
+    }catch(e){ console.warn('resetRangeServer fail:', e); }
+  }
+  function resetRangeLocal(kelas){
+    try{ localStorage.removeItem(LS_KEY(kelas)); }catch{}
+  }
+  function clearRangeBadgesInTable(){
+    const table = (typeof getSantriTable === 'function') ? getSantriTable() : null;
+    const rows = table?.tBodies?.[0]?.rows || [];
+    [...rows].forEach(tr=>{
+      const td = tr.querySelector('.total-mur-range');
+      if (!td) return;
+      td.innerHTML = `0.00&nbsp;juz <span class="mur-range-badge" style="color:#999; font-size:12px">total 0%</span> <small class="mur-range-count" style="color:#6b7280">(0)</small>`;
+      td.dataset.murRangeTotal = "0.00";
+      td.dataset.murRangePsum  = "0";
+      td.dataset.murRangePavg  = "0";
+    });
+  }
+  document.getElementById('murRangeReset')?.addEventListener('click', async ()=>{
+    const kelas = (typeof kelasNow==='function'? kelasNow() : '') || '';
+    const dari  = document.getElementById('murRangeDari');
+    const smp   = document.getElementById('murRangeSampai');
+    if (dari) dari.value = '';
+    if (smp)  smp.value  = '';
+    clearRangeBadgesInTable();
+    const st = document.getElementById('murRangeStatus');
+    if (st) st.textContent = '⏳ Reset lokal…';
+    if (kelas) resetRangeLocal(kelas);
+    if (st) st.textContent = '⏳ Menghapus di server…';
+    if (kelas) await resetRangeServer(kelas);
+    if (st) st.textContent = '✅ Sudah di-reset. Klik Save untuk menyimpan kondisi kosong.';
+  });
+  document.getElementById('murRangeSave')?.addEventListener('click', async ()=>{
+    const kelas  = (typeof kelasNow==='function'? kelasNow() : '') || '';
+    const dariEl = document.getElementById('murRangeDari');
+    const smpEl  = document.getElementById('murRangeSampai');
+    const st     = document.getElementById('murRangeStatus');
+    if (!kelas){ alert('Mohon pilih kelas.'); return; }
+    const fromDate = (dariEl?.value||'').trim();
+    const toDate   = (smpEl?.value||'').trim();
+    try{
+      if (!fromDate && !toDate){
+        if (st) st.textContent = '⏳ Menyimpan penghapusan…';
+        await resetRangeServer(kelas);
+        resetRangeLocal(kelas);
+        clearRangeBadgesInTable();
+        if (st) st.textContent = '✅ Tersimpan: setelan dihapus.';
+        return;
+      }
+      if (st) st.textContent = '⏳ Menyimpan setelan…';
+      await saveRangeServer(kelas, fromDate, toDate, 0);
+      saveRangeLocal(kelas, fromDate, toDate);
+      if (st) st.textContent = '✅ Tersimpan.';
+    }catch(e){
+      console.error(e);
+      if (st) st.textContent = '❌ Gagal menyimpan.';
+      alert('❌ Gagal menyimpan setelan.');
+    }
+  });
 
   // ===== Scheduler & Observer =====
   let autoRanForKelas = "";
