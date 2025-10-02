@@ -7300,6 +7300,95 @@ kelasSelect?.addEventListener("change", () => loadSantriData());
     }
   }
 
+  // === Reset satu sesi ke PRISTINE (untuk tombol reset) ===
+  function resetSession(idx){
+    // kosongkan Juz & Page
+    $(`#mur${idx}-juzFrom`).value = '';
+    $(`#mur${idx}-juzTo`).value   = '';
+    $(`#mur${idx}-pageFrom`).value = '';
+    $(`#mur${idx}-pageTo`).value   = '';
+
+    // Surah/Ayat kosong (bukan 1:1)
+    $(`#mur${idx}-surahFrom`).value = '';
+    fillAyahForSurah($(`#mur${idx}-ayahFrom`), '', {});
+    $(`#mur${idx}-surahTo`).value   = '';
+    fillAyahForSurah($(`#mur${idx}-ayahTo`),   '', {});
+
+    // Nilai & badge
+    $(`#mur${idx}-score`).value = '';
+    $(`#mur${idx}-predikatBadge`).textContent = '–';
+
+    // Hint & total
+    $(`#mur${idx}-pagesHint`).textContent = '';
+    $(`#mur${idx}-totalJuz`).textContent  = '0.00';
+
+    // State
+    murState[idx] = {
+      touched:false, sF:null,aF:null,sT:null,aT:null,
+      pFrom:'',pTo:'', jFrom:null,jTo:null,
+      total:0, score:null, pText:'', pHuruf:''
+    };
+
+    // Bersihkan dataset baris aktif
+    if (currentRowEl){
+      const cell = currentRowEl.querySelector('.murajaah-cell');
+      if (cell){
+        delete cell.dataset[`sf${idx}`];
+        delete cell.dataset[`af${idx}`];
+        delete cell.dataset[`st${idx}`];
+        delete cell.dataset[`at${idx}`];
+        delete cell.dataset[`pf${idx}`];
+        delete cell.dataset[`pt${idx}`];
+        delete cell.dataset[`jfrom${idx}`];
+        delete cell.dataset[`jto${idx}`];
+        delete cell.dataset[`score${idx}`];
+        delete cell.dataset[`ptext${idx}`];
+        delete cell.dataset[`phuruf${idx}`];
+        cell.dataset[`juz${idx}`] = '0.00';
+      }
+    }
+
+    // Re-kalkulasi total all
+    $('#mur-t1').textContent=(murState[1]?.total||0).toFixed(2);
+    $('#mur-t2').textContent=(murState[2]?.total||0).toFixed(2);
+    $('#mur-t3').textContent=(murState[3]?.total||0).toFixed(2);
+    const grand=(murState[1]?.total||0)+(murState[2]?.total||0)+(murState[3]?.total||0);
+    $('#mur-totalJuzAll').textContent=grand.toFixed(2);
+    if (currentRowEl){
+      const cell=currentRowEl.querySelector('.murajaah-cell');
+      if (cell){
+        cell.dataset.murtotal = grand.toFixed(2);
+        const valEl=cell.querySelector('.mur-val');
+        if (valEl) valEl.textContent = `${grand.toFixed(2)} juz`;
+      }
+    }
+  }
+
+  // === Buat tombol reset di sebelah #murX-totalJuz (1..3) ===
+  function ensureResetButtons(){
+    for (let i=1;i<=3;i++){
+      const totalEl = $(`#mur${i}-totalJuz`);
+      if (!totalEl) continue;
+      if (document.getElementById(`mur${i}-totalJuz-reset`)) continue;
+
+      const btn = document.createElement('button');
+      btn.id = `mur${i}-totalJuz-reset`;
+      btn.type = 'button';
+      btn.textContent = 'Reset';
+      btn.style.marginLeft = '8px';
+      btn.style.padding = '2px 8px';
+      btn.style.fontSize = '12px';
+
+      // taruh setelah angka total; fallback ke #mur-sesiX kalau ada
+      const sesiWrap = document.getElementById(`mur-sesi${i}`);
+      if (totalEl.parentNode) totalEl.parentNode.insertBefore(btn, totalEl.nextSibling);
+      else if (sesiWrap) sesiWrap.appendChild(btn);
+      else totalEl.after(btn);
+
+      btn.addEventListener('click', ()=> resetSession(i));
+    }
+  }
+
   function renderSession(idx){
     const sFv = $(`#mur${idx}-surahFrom`).value;
     const aFv = $(`#mur${idx}-ayahFrom`).value;
@@ -7327,7 +7416,6 @@ kelasSelect?.addEventListener("change", () => loadSantriData());
       setPredikatUI(idx);
       murState[idx]={...murState[idx], sF:null,aF:null,sT:null,aT:null,pFrom:'',pTo:'',jFrom:null,jTo:null,total:0};
     } else {
-      // hitung hanya jika input lengkap
       if (sFv && aFv && sTv && aTv){
         const sF=+sFv, aF=+aFv, sT=+sTv, aT=+aTv;
         const pages=ayahRangeToPages(sF,aF,sT,aT);
@@ -7357,7 +7445,6 @@ kelasSelect?.addEventListener("change", () => loadSantriData());
           pFrom:pageFromEl.value||'', pTo:pageToEl.value||'',
           jFrom:jF, jTo:jT, total};
       } else {
-        // input belum lengkap → jangan hitung
         $(`#mur${idx}-pagesHint`).textContent='';
         $(`#mur${idx}-totalJuz`).textContent='0.00';
         setPredikatUI(idx);
@@ -7510,26 +7597,18 @@ kelasSelect?.addEventListener("change", () => loadSantriData());
 
     // --- RESET PRISTINE per sesi: benar2 kosong ---
     function resetOne(i){
-      // kosongkan Juz & Page
       $(`#mur${i}-juzFrom`).value = '';
       $(`#mur${i}-juzTo`).value   = '';
       $(`#mur${i}-pageFrom`).value = '';
       $(`#mur${i}-pageTo`).value   = '';
-
-      // Surah/Ayat KOSONG (bukan 1:1)
       $(`#mur${i}-surahFrom`).value = '';
       fillAyahForSurah($(`#mur${i}-ayahFrom`), '', {});
       $(`#mur${i}-surahTo`).value   = '';
       fillAyahForSurah($(`#mur${i}-ayahTo`),   '', {});
-
-      // Nilai & badge
       $(`#mur${i}-score`).value = '';
       $(`#mur${i}-predikatBadge`).textContent = '–';
-
-      // Hint & total
       $(`#mur${i}-pagesHint`).textContent = '';
       $(`#mur${i}-totalJuz`).textContent = '0.00';
-
       murState[i] = {
         touched:false, sF:null,aF:null,sT:null,aT:null,
         pFrom:'', pTo:'', jFrom:null, jTo:null,
@@ -7644,13 +7723,14 @@ kelasSelect?.addEventListener("change", () => loadSantriData());
           $(`#mur${i}-predikatBadge`).textContent =
             (pText && pHuruf) ? `${pText} (${pHuruf})` : (pText || pHuruf || '–');
         }
-      } else {
-        // tetap kosong (hasil resetOne)
       }
     };
 
     [1,2,3].forEach(resetOne);
     [1,2,3].forEach(loadOne);
+
+    // pastikan tombol reset tampil saat modal dibuka
+    ensureResetButtons();
   }
 
   function fillAllBases(idx){
@@ -7840,9 +7920,13 @@ kelasSelect?.addEventListener("change", () => loadSantriData());
     };
     await ensureMap();
     [1,2,3].forEach(bindSession);
+
+    // pastikan tombol reset tersedia dari awal juga
+    ensureResetButtons();
   })();
 })();
 </script>
+
 <script>
 (function(){
   // ===== util & helpers Murajaah RANGE =====
