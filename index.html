@@ -7120,7 +7120,7 @@ kelasSelect?.addEventListener("change", () => loadSantriData());
     [ 4,148],[ 5, 82],[ 6,111],[ 7, 88],[ 8, 41],
     [ 9, 93],[11,  6],[12, 53],[15,  1],[17,  1],
     [18, 75],[21,  1],[23,  1],[25, 21],[27, 56],
-    [29, 46],[33, 31],[36, 28],[39, 32],[41, 47],
+    [29, 46],[33, 31],[36, 28],[39, 32],[41,  47],
     [46,  1],[51, 31],[58,  1],[67,  1],[78,  1]
   ];
   function getJuzRange(j){
@@ -7242,6 +7242,7 @@ kelasSelect?.addEventListener("change", () => loadSantriData());
   }
 
   const murState = {1:{},2:{},3:{}};
+  const clearedGuard = {1:false,2:false,3:false}; // GUARD: cegah data lama nyusup kembali setelah dikosongkan
 
   function setPredikatUI(idx){
     const sc = Math.max(0, Math.min(100, parseInt($(`#mur${idx}-score`).value||'0',10)||0));
@@ -7260,6 +7261,9 @@ kelasSelect?.addEventListener("change", () => loadSantriData());
 
   // === Reset satu sesi ke kondisi awal (lokal, tanpa save) ===
   function resetSession(idx){
+    // aktifkan guard agar loader/server tidak mengisi balik
+    clearedGuard[idx]=true;
+
     $(`#mur${idx}-juzFrom`).value = '';
     $(`#mur${idx}-juzTo`).value   = '';
     $(`#mur${idx}-pageFrom`).value = '';
@@ -7338,7 +7342,12 @@ kelasSelect?.addEventListener("change", () => loadSantriData());
                        !pageFromEl.value && !pageToEl.value &&
                        !murState[idx]?.touched;
 
-    if (isPristine){
+    if (clearedGuard[idx]) {
+      // paksa tetap kosong walau ada dataset/server datang
+      $(`#mur${idx}-pagesHint`).textContent='';
+      $(`#mur${idx}-totalJuz`).textContent='0.00';
+      $(`#mur${idx}-predikatBadge`).textContent='–';
+    } else if (isPristine){
       $(`#mur${idx}-pagesHint`).textContent='';
       $(`#mur${idx}-totalJuz`).textContent='0.00';
       setPredikatUI(idx);
@@ -7392,6 +7401,16 @@ kelasSelect?.addEventListener("change", () => loadSantriData());
         cell.dataset.murtotal=String(grand.toFixed(2));
         [1,2,3].forEach(i=>{
           const st=murState[i]||{};
+          if (clearedGuard[i]) {
+            // kosongkan paksa di dataset supaya tidak ter-restore
+            cell.dataset[`sf${i}`]=''; cell.dataset[`af${i}`]='';
+            cell.dataset[`st${i}`]=''; cell.dataset[`at${i}`]='';
+            cell.dataset[`pf${i}`]=''; cell.dataset[`pt${i}`]='';
+            cell.dataset[`jfrom${i}`]=''; cell.dataset[`jto${i}`]='';
+            cell.dataset[`juz${i}`]='0.00';
+            delete cell.dataset[`score${i}`]; delete cell.dataset[`ptext${i}`]; delete cell.dataset[`phuruf${i}`];
+            return;
+          }
           cell.dataset[`sf${i}`]=st.sF||''; cell.dataset[`af${i}`]=st.aF||'';
           cell.dataset[`st${i}`]=st.sT||''; cell.dataset[`at${i}`]=st.aT||'';
           cell.dataset[`pf${i}`]=st.pFrom||''; cell.dataset[`pt${i}`]=st.pTo||'';
@@ -7455,6 +7474,7 @@ kelasSelect?.addEventListener("change", () => loadSantriData());
       }
     }
     murState[idx].touched = true;
+    clearedGuard[idx]=false; // mulai isi lagi → guard mati
     renderSession(idx);
   }
 
@@ -7472,6 +7492,7 @@ kelasSelect?.addEventListener("change", () => loadSantriData());
       }
     }
     murState[idx].touched = true;
+    clearedGuard[idx]=false; // mulai isi lagi → guard mati
     renderSession(idx);
   }
 
@@ -7510,6 +7531,9 @@ kelasSelect?.addEventListener("change", () => loadSantriData());
   // === Modal ===
   async function openModalForRow(row){
     currentRowEl = row;
+    // setiap buka modal → guard dimatikan (fresh)
+    clearedGuard[1]=clearedGuard[2]=clearedGuard[3]=false;
+
     $('#murModal').style.display = 'flex';
 
     if (!dataReady){
@@ -7582,8 +7606,8 @@ kelasSelect?.addEventListener("change", () => loadSantriData());
       if (kind==='to')     return pickNonEmpty(rec[`murTo${i}`],     rec.murSessions?.[i-1]?.to,     i===1?rec.murTo:undefined);
       if (kind==='pages')  return pickNonEmpty(rec[`murPages${i}`],  rec.murSessions?.[i-1]?.pages,  i===1?rec.murPages:undefined);
       if (kind==='juz')    return pickNonEmpty(rec[`juzmur${i}`],    rec[`juzSesi${i}`],             rec.murSessions?.[i-1]?.juz);
-      if (kind==='jFrom')  return pickNonEmpty(rec[`jFrom${i}`],     rec.murSessions?.[i-1]?.jFrom);
-      if (kind==='jTo')    return pickNonEmpty(rec[`jTo${i}`],       rec.murSessions?.[i-1]?.jTo);
+      if (kind==='jFrom`)  return pickNonEmpty(rec[`jFrom${i}`],     rec.murSessions?.[i-1]?.jFrom);
+      if (kind==='jTo`)    return pickNonEmpty(rec[`jTo${i}`],       rec.murSessions?.[i-1]?.jTo);
       if (kind==='score')  return pickNonEmpty(rec[`murScore${i}`],  rec.murSessions?.[i-1]?.score);
       if (kind==='pText')  return pickNonEmpty(rec[`murPredText${i}`],  rec.murSessions?.[i-1]?.predikatText);
       if (kind==='pHuruf') return pickNonEmpty(rec[`murPredHuruf${i}`], rec.murSessions?.[i-1]?.predikatHuruf);
@@ -7592,6 +7616,8 @@ kelasSelect?.addEventListener("change", () => loadSantriData());
     const applyPages = (i, str)=>{ if(!str) return; const [pf,pt]=String(str).split('-'); $(`#mur${i}-pageFrom`).value=pf||''; $(`#mur${i}-pageTo`).value=pt||''; };
 
     const loadOne = (i) => {
+      if (clearedGuard[i]) return; // jika baru dikosongkan → skip load apa pun
+
       const fromStr  = pickNonEmpty(
         (()=>{
           const sf=getDS(ds,i,`sf${i}`,'sf'), af=getDS(ds,i,`af${i}`,'af');
@@ -7674,10 +7700,10 @@ kelasSelect?.addEventListener("change", () => loadSantriData());
     $(`#mur${idx}-pageFrom`)?.addEventListener('change', ()=>onPagesChange(idx));
     $(`#mur${idx}-pageTo`)  ?.addEventListener('change', ()=>onPagesChange(idx));
 
-    $(`#mur${idx}-surahFrom`)?.addEventListener('change', ()=>{ murState[idx].touched = true; onSurahChange(idx,'from'); });
-    $(`#mur${idx}-surahTo`)  ?.addEventListener('change', ()=>{ murState[idx].touched = true; onSurahChange(idx,'to');   });
-    $(`#mur${idx}-ayahFrom`) ?.addEventListener('change', ()=>{ murState[idx].touched = true; onAyahChange(idx);         });
-    $(`#mur${idx}-ayahTo`)   ?.addEventListener('change', ()=>{ murState[idx].touched = true; onAyahChange(idx);         });
+    $(`#mur${idx}-surahFrom`)?.addEventListener('change', ()=>{ murState[idx].touched = true; clearedGuard[idx]=false; onSurahChange(idx,'from'); });
+    $(`#mur${idx}-surahTo`)  ?.addEventListener('change', ()=>{ murState[idx].touched = true; clearedGuard[idx]=false; onSurahChange(idx,'to');   });
+    $(`#mur${idx}-ayahFrom`) ?.addEventListener('change', ()=>{ murState[idx].touched = true; clearedGuard[idx]=false; onAyahChange(idx);         });
+    $(`#mur${idx}-ayahTo`)   ?.addEventListener('change', ()=>{ murState[idx].touched = true; clearedGuard[idx]=false; onAyahChange(idx);         });
 
     $(`#mur${idx}-score`)    ?.addEventListener('input',  ()=>{ setPredikatUI(idx); renderSession(idx); });
   }
@@ -7788,6 +7814,9 @@ kelasSelect?.addEventListener("change", () => loadSantriData());
         }
 
         for (let i = 1; i <= 3; i++) {
+          // jika baris yang sedang dibuka & sesi i sedang dalam keadaan "cleared", jangan overwrite
+          if (currentRowEl===tr && clearedGuard[i]) continue;
+
           const ses = getSessionFrom(rec, i);
           setSA(cell, ses.fromStr, `sf${i}`, `af${i}`);
           setSA(cell, ses.toStr,   `st${i}`, `at${i}`);
@@ -7999,7 +8028,7 @@ kelasSelect?.addEventListener("change", () => loadSantriData());
       if (r.ok){
         const arr = await r.json();
         const it  = (arr||[]).find(x=>String(x.kelas||"")===String(kelas));
-        if (it && (it.fromDate || it.toDate)) return { fromDate: it.fromDate||"", toDate: it.toDate||"" };
+        if (it dan (it.fromDate || it.toDate)) return { fromDate: it.fromDate||"", toDate: it.toDate||"" };
       }
     }catch(_){}
     try{
@@ -8049,7 +8078,7 @@ kelasSelect?.addEventListener("change", () => loadSantriData());
       rows.forEach(row=>{
         const key = normKey(row.dataset?.nis || row.dataset?.id || row.dataset?.key);
         const nm  = (row.children?.[1] ? (row.children[1].childNodes?.[0]?.textContent || row.children[1].textContent) : "") || "";
-        if (key && nm) nameToKey.set(nm.trim().toLowerCase(), key);
+        if (key dan nm) nameToKey.set(nm.trim().toLowerCase(), key);
       });
 
       const extract3 = (item)=>{
@@ -8068,7 +8097,7 @@ kelasSelect?.addEventListener("change", () => loadSantriData());
         let key = normKey(nis || id);
         if (!key){
           const nm = normKey(item?.nama).toLowerCase();
-          if (nm && nameToKey.has(nm)) key = nameToKey.get(nm);
+          if (nm dan nameToKey.has(nm)) key = nameToKey.get(nm);
         }
         if (!key) return;
         const [v1,v2,v3] = extract3(item);
@@ -8180,7 +8209,7 @@ kelasSelect?.addEventListener("change", () => loadSantriData());
     const toDate   = (smpEl?.value||'').trim();
 
     try{
-      if (!fromDate && !toDate){
+      if (!fromDate dan !toDate){
         if (st) st.textContent = '⏳ Menyimpan penghapusan ke server…';
         const ok = await tryResetRangeServer(kelas);
         if (kelas) resetRangeLocal(kelas);
