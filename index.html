@@ -7147,8 +7147,13 @@ kelasSelect?.addEventListener("change", () => loadSantriData());
 
   async function ensureMap(){
     if (dataReady) return;
-    const res=await fetch(MAP_URL);
-    ayahPageMap=await res.json();
+    try{
+      const res=await fetch(MAP_URL);
+      ayahPageMap=await res.json();
+    }catch(e){
+      console.error('Gagal memuat MAP_URL', e);
+      ayahPageMap={};
+    }
     pageAyahCount={}; surahMaxAyah={};
     for (const [key,page] of Object.entries(ayahPageMap)){
       if(!page) continue;
@@ -7941,14 +7946,48 @@ kelasSelect?.addEventListener("change", () => loadSantriData());
 
   // ===== persist range (server + local) =====
   async function saveRangeServer(kelas, fromDate, toDate, count){
-    try{
-      await fetch('/api/aksesAutoUpdateAllJuzMur', {
-        method:'POST',
-        headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({ fromDate, toDate, kelas, data: [{ meta:true, count: Number(count||0) }] })
-      });
-    }catch(e){}
+    const r = await fetch('/api/aksesAutoUpdateAllJuzMur', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({
+        kelas,
+        fromDate,
+        toDate,
+        data: [{ meta:true, count: Number(count||0) }]
+      })
+    });
+    if (!r.ok) throw new Error('saveRangeServer: HTTP '+r.status);
   }
+
+  // Multi-strategy penghapusan range di server (agar kompatibel berbagai backend)
+  async function tryResetRangeServer(kelas){
+    const attempts = [
+      { url: '/api/aksesAutoUpdateAllJuzMur', method:'POST',   body:{ kelas, delete:true } },
+      { url: '/api/aksesAutoUpdateAllJuzMur', method:'DELETE', body:{ kelas } },
+      { url: '/api/aksesAutoUpdateAllJuzMur', method:'POST',   body:{ kelas, fromDate:'', toDate:'', data:[] } },
+      { url: '/api/aksesAutoUpdateAllJuzMur', method:'POST',   body:{ kelas, fromDate:null, toDate:null, data:[{meta:true, count:0, delete:true}] } },
+      { url: '/api/resetAutoUpdateAllJuzMur', method:'POST',   body:{ kelas } },
+      { url: '/api/aksesAutoUpdateAllJuzMur?delete=1', method:'POST', body:{ kelas } },
+    ];
+
+    for (const att of attempts){
+      try{
+        const r = await fetch(att.url, {
+          method: att.method,
+          headers:{'Content-Type':'application/json'},
+          body: JSON.stringify(att.body||{})
+        });
+        let j=null; try{ j = await r.clone().json(); }catch(_){}
+        const okFlag = r.ok || r.status===204 || (j && (j.ok||j.success||j.removed||j.deleted));
+        if (okFlag) { console.info('[murRange] reset OK via', att); return true; }
+        console.warn('[murRange] reset attempt fail', att, r.status, j||await r.text());
+      }catch(e){
+        console.warn('[murRange] reset attempt error', att, e);
+      }
+    }
+    return false;
+  }
+
   function saveRangeLocal(kelas, fromDate, toDate){
     try{ localStorage.setItem(LS_KEY(kelas), JSON.stringify({ fromDate, toDate, t: Date.now() })); }catch{}
   }
@@ -8086,16 +8125,7 @@ kelasSelect?.addEventListener("change", () => loadSantriData());
   window.bukaOverlayTotalMurRange = bukaOverlayTotalMurRange;
   $('#btnHitungTotalMur')?.addEventListener('click', hitungTotalMurRangeFromTable);
 
-  // ====== PATCH: tombol Reset/Save overlay → hapus di DB & local ======
-  async function resetRangeServer(kelas){
-    try{
-      await fetch('/api/aksesAutoUpdateAllJuzMur', {
-        method:'POST',
-        headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({ kelas, delete:true })
-      });
-    }catch(e){ console.warn('resetRangeServer fail:', e); }
-  }
+  // ====== RESET/SAVE overlay → hapus di DB & local (robust) ======
   function resetRangeLocal(kelas){
     try{ localStorage.removeItem(LS_KEY(kelas)); }catch{}
   }
@@ -8116,15 +8146,24 @@ kelasSelect?.addEventListener("change", () => loadSantriData());
     const kelas = (typeof kelasNow==='function'? kelasNow() : '') || '';
     const dari  = document.getElementById('murRangeDari');
     const smp   = document.getElementById('murRangeSampai');
+    const st    = document.getElementById('murRangeStatus');
+
     if (dari) dari.value = '';
     if (smp)  smp.value  = '';
     clearRangeBadgesInTable();
-    const st = document.getElementById('murRangeStatus');
-    if (st) st.textContent = '⏳ Reset lokal…';
+    if (st) st.textContent = '⏳ Menghapus setelan di server…';
+
+    let ok = true;
+    if (kelas) ok = await tryResetRangeServer(kelas);
+
     if (kelas) resetRangeLocal(kelas);
-    if (st) st.textContent = '⏳ Menghapus di server…';
-    if (kelas) await resetRangeServer(kelas);
-    if (st) st.textContent = '✅ Sudah di-reset. Klik Save untuk menyimpan kondisi kosong.';
+
+    if (ok){
+      if (st) st.textContent = '✅ Sudah di-reset (server & lokal). Klik Save untuk memastikan tersimpan kosong.';
+    } else {
+      if (st) st.textContent = '❌ Gagal hapus di server. Lihat Console.';
+      alert('❌ Gagal reset di server. Cek Network/Console untuk detail.');
+    }
   });
 
   document.getElementById('murRangeSave')?.addEventListener('click', async ()=>{
@@ -8132,21 +8171,26 @@ kelasSelect?.addEventListener("change", () => loadSantriData());
     const dariEl = document.getElementById('murRangeDari');
     const smpEl  = document.getElementById('murRangeSampai');
     const st     = document.getElementById('murRangeStatus');
+
     if (!kelas){ alert('Mohon pilih kelas.'); return; }
+
     const fromDate = (dariEl?.value||'').trim();
     const toDate   = (smpEl?.value||'').trim();
+
     try{
       if (!fromDate && !toDate){
-        if (st) st.textContent = '⏳ Menyimpan penghapusan…';
-        await resetRangeServer(kelas);
-        resetRangeLocal(kelas);
+        if (st) st.textContent = '⏳ Menyimpan penghapusan ke server…';
+        const ok = await tryResetRangeServer(kelas);
+        if (kelas) resetRangeLocal(kelas);
         clearRangeBadgesInTable();
-        if (st) st.textContent = '✅ Tersimpan: setelan dihapus.';
+        if (!ok) throw new Error('reset server gagal');
+        if (st) st.textContent = '✅ Tersimpan: setelan dihapus (server & lokal).';
         return;
       }
+
       if (st) st.textContent = '⏳ Menyimpan setelan…';
       await saveRangeServer(kelas, fromDate, toDate, 0);
-      saveRangeLocal(kelas, fromDate, toDate);
+      try{ localStorage.setItem(LS_KEY(kelas), JSON.stringify({ fromDate, toDate, t: Date.now() })); }catch{}
       if (st) st.textContent = '✅ Tersimpan.';
     }catch(e){
       console.error(e);
@@ -8280,7 +8324,6 @@ kelasSelect?.addEventListener("change", () => loadSantriData());
   window.hitungTotalMurRangeFromTable = hitungTotalMurRangeFromTable;
 })();
 </script>
-
 
 
 <script>
