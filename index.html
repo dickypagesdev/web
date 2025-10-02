@@ -7089,7 +7089,6 @@ kelasSelect?.addEventListener("change", () => loadSantriData());
 
 
 
-
 <script>
 // ---------- Murajaah (3 sesi, Juz Range + Nilai per sesi) ----------
 (function(){
@@ -7149,7 +7148,7 @@ kelasSelect?.addEventListener("change", () => loadSantriData());
   async function ensureMap(){
     if (dataReady) return;
     try{
-      const res=await fetch(MAP_URL);
+      const res=await fetch(MAP_URL,{cache:'no-store',headers:{'Cache-Control':'no-cache','Pragma':'no-cache'}});
       ayahPageMap=await res.json();
     }catch(e){
       console.error('Gagal memuat MAP_URL', e);
@@ -7258,6 +7257,57 @@ kelasSelect?.addEventListener("change", () => loadSantriData());
     }
   }
 
+  // --- helper identitas baris + anti balik ---
+  const recentlyCleared = new Map(); // key: `${kelas}|${tanggal}|${nis||id}|${idx}` => ts
+  function getRowIdentity(row){
+    const kelas = (typeof resolveKelas==='function'? resolveKelas() : '') ||
+                  String(row.closest('table')?.dataset?.kelas || document.body?.dataset?.kelas || '');
+    const tanggal = String(row.dataset?.tanggal || '') ||
+                    (typeof resolveTanggalGlobal==='function' ? resolveTanggalGlobal() : '');
+    const id  = String(row.dataset?.id  || row.children?.[0]?.textContent || '').trim();
+    const nis = String(row.dataset?.nis || '').trim();
+    const nm  = (row.children?.[1]?.childNodes?.[0]?.textContent || row.children?.[1]?.textContent || '').trim();
+    return { kelas, tanggal, id, nis, nama:nm };
+  }
+
+  async function clearMurOnServer(row, idx){
+    const {kelas, tanggal, id, nis} = getRowIdentity(row);
+    if(!kelas || !tanggal || (!nis && !id)) throw new Error('Identitas baris tidak lengkap');
+
+    const empty = {
+      kelas, tanggal, id, nis, session: idx,
+      [`murFrom${idx}`]:'', [`murTo${idx}`]:'', [`murPages${idx}`]:'',
+      [`jFrom${idx}`]: null, [`jTo${idx}`]: null, [`juzmur${idx}`]: 0,
+      [`murScore${idx}`]: null, [`murPredText${idx}`]:'', [`murPredHuruf${idx}`]:''
+    };
+
+    const attempts = [
+      { url:'/api/clearMurajaah',       method:'POST', body: empty },
+      { url:'/api/updateAbsensiMur',    method:'POST', body: empty },
+      { url:'/api/simpanDataMutabaah',  method:'POST', body: {...empty, action:'clear'} },
+      { url:'/api/updateAbsensi',       method:'POST', body: {...empty, onlyMur:true} },
+    ];
+
+    for(const att of attempts){
+      try{
+        const r = await fetch(att.url+'?t='+Date.now(),{
+          method:att.method,
+          headers:{'Content-Type':'application/json','Cache-Control':'no-cache','Pragma':'no-cache'},
+          cache:'no-store',
+          body:JSON.stringify(att.body)
+        });
+        let j=null; try{ j=await r.clone().json(); }catch(_){}
+        const ok = r.ok || r.status===204 || (j && (j.ok||j.success||j.updated||j.cleared));
+        if(ok){
+          const key = `${kelas}|${tanggal}|${nis||id}|${idx}`;
+          recentlyCleared.set(key, Date.now());
+          return true;
+        }
+      }catch(e){ /* coba berikutnya */ }
+    }
+    return false;
+  }
+
   // === Reset satu sesi ke kondisi awal (lokal, tanpa save) ===
   function resetSession(idx){
     $(`#mur${idx}-juzFrom`).value = '';
@@ -7293,7 +7343,7 @@ kelasSelect?.addEventListener("change", () => loadSantriData());
         delete cell.dataset[`pt${idx}`];
         delete cell.dataset[`jfrom${idx}`];
         delete cell.dataset[`jto${idx}`];
-        delete cell.dataset[`score${idx}`];
+        delete cell.dataset[`score${idx}`]];
         delete cell.dataset[`ptext${idx}`];
         delete cell.dataset[`phuruf${idx}`];
         cell.dataset[`juz${idx}`] = '0.00';
@@ -7517,9 +7567,11 @@ kelasSelect?.addEventListener("change", () => loadSantriData());
       [1,2,3].forEach(bindSession);
     }
 
-    try { if (typeof window.murajaah?.refreshServer === 'function') {
-      await window.murajaah.refreshServer();
-    }} catch(_){}
+    try {
+      if (typeof window.murajaah?.refreshServer === 'function') {
+        await window.murajaah.refreshServer();
+      }
+    } catch(_){}
 
     const cell = row.querySelector('.murajaah-cell');
 
@@ -7558,7 +7610,7 @@ kelasSelect?.addEventListener("change", () => loadSantriData());
                       (typeof resolveTanggalGlobal==='function' ? resolveTanggalGlobal() : '');
       if (!kelas || !tanggal) return null;
       try{
-        const res = await fetch(`/api/getAbsensi?kelas=${encodeURIComponent(kelas)}&tanggal=${encodeURIComponent(tanggal)}&t=${Date.now()}`);
+        const res = await fetch(`/api/getAbsensi?kelas=${encodeURIComponent(kelas)}&tanggal=${encodeURIComponent(tanggal)}&t=${Date.now()}`, {cache:'no-store', headers:{'Cache-Control':'no-cache','Pragma':'no-cache'}});
         if (!res.ok) return null;
         const arr = await res.json().catch(()=>[]) || [];
         const id  = String(row.dataset?.id  || row.children?.[0]?.textContent || '').trim();
@@ -7591,28 +7643,31 @@ kelasSelect?.addEventListener("change", () => loadSantriData());
     const splitSA = (s)=>{ if(!s) return []; const a=String(s).split(':'); return [Number(a[0])||null, Number(a[1])||null]; };
     const applyPages = (i, str)=>{ if(!str) return; const [pf,pt]=String(str).split('-'); $(`#mur${i}-pageFrom`).value=pf||''; $(`#mur${i}-pageTo`).value=pt||''; };
 
+    function shouldIgnore(i, srcStr){
+      const {kelas, tanggal, id, nis} = getRowIdentity(currentRowEl);
+      const key = `${kelas}|${tanggal}|${nis||id}|${i}`;
+      const ts  = recentlyCleared.get(key);
+      if (!ts) return false;
+      return (Date.now() - ts) < 6000 && (!srcStr || String(srcStr).trim()!=='');
+    }
+
     const loadOne = (i) => {
-      const fromStr  = pickNonEmpty(
-        (()=>{
-          const sf=getDS(ds,i,`sf${i}`,'sf'), af=getDS(ds,i,`af${i}`,'af');
-          return (sf||af) ? `${sf||''}:${af||''}` : undefined;
-        })(),
+      let fromStr  = pickNonEmpty(
+        (()=>{ const sf=getDS(ds,i,`sf${i}`,'sf'), af=getDS(ds,i,`af${i}`,'af'); return (sf||af) ? `${sf||''}:${af||''}` : undefined; })(),
         fromRec(i,'from')
       );
-      const toStr    = pickNonEmpty(
-        (()=>{
-          const st=getDS(ds,i,`st${i}`,'st'), at=getDS(ds,i,`at${i}`,'at');
-          return (st||at) ? `${st||''}:${at||''}` : undefined;
-        })(),
+      let toStr    = pickNonEmpty(
+        (()=>{ const st=getDS(ds,i,`st${i}`,'st'), at=getDS(ds,i,`at${i}`,'at'); return (st||at) ? `${st||''}:${at||''}` : undefined; })(),
         fromRec(i,'to')
       );
-      const pagesStr = pickNonEmpty(
-        (()=>{
-          const pf=getDS(ds,i,`pf${i}`,'pf'), pt=getDS(ds,i,`pt${i}`,'pt');
-          return (pf||pt) ? `${pf||''}-${pt||''}` : undefined;
-        })(),
+      let pagesStr = pickNonEmpty(
+        (()=>{ const pf=getDS(ds,i,`pf${i}`,'pf'), pt=getDS(ds,i,`pt${i}`,'pt'); return (pf||pt) ? `${pf||''}-${pt||''}` : undefined; })(),
         fromRec(i,'pages')
       );
+
+      if (shouldIgnore(i, fromStr))  fromStr  = undefined;
+      if (shouldIgnore(i, toStr))    toStr    = undefined;
+      if (shouldIgnore(i, pagesStr)) pagesStr = undefined;
 
       const hasAny = !!(fromStr || toStr || pagesStr || ds[`juz${i}`] || fromRec(i,'juz'));
 
@@ -7647,8 +7702,7 @@ kelasSelect?.addEventListener("change", () => loadSantriData());
         const pText  = pickNonEmpty(ds[`ptext${i}`],  fromRec(i,'pText'));
         const pHuruf = pickNonEmpty(ds[`phuruf${i}`], fromRec(i,'pHuruf'));
         if (pText !== undefined || pHuruf !== undefined){
-          $(`#mur${i}-predikatBadge`).textContent =
-            (pText && pHuruf) ? `${pText} (${pHuruf})` : (pText || pHuruf || '–');
+          $(`#mur${i}-predikatBadge`).textContent = (pText && pHuruf) ? `${pText} (${pHuruf})` : (pText || pHuruf || '–');
         }
       }
     };
@@ -7687,6 +7741,13 @@ kelasSelect?.addEventListener("change", () => loadSantriData());
   function bindSession(idx){ fillAllBases(idx); }
 
   function ensureMurColumn(){
+    const table=$('#santri-table'); if(!table) return;
+    const theadRow=table.tHead?.rows?.[0];
+    if(theadRow && !theadRow.querySelector('th.mur-header')){
+      const th=document.createElement('th'); th.className='mur-header'; th.textContent='Murajaah'; theadRow.appendChild(th
+
+
+function ensureMurColumn(){
     const table=$('#santri-table'); if(!table) return;
     const theadRow=table.tHead?.rows?.[0];
     if(theadRow && !theadRow.querySelector('th.mur-header')){
