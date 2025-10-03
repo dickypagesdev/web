@@ -10121,7 +10121,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
 		
 <!-- ===== MODE FILTER NIS ===== -->
-<!-- ===== MODE FILTER NIS (card layout mobile, ramah sentuh) ===== -->
+<!-- ===== MODE FILTER NIS (final) ===== -->
 <style>
   /* Kolom NIS interaktif */
   #santri-table td.col-nis {
@@ -10142,23 +10142,32 @@ document.addEventListener("DOMContentLoaded", () => {
     display: none !important;
   }
 
-  /* Scroll khusus mobile saat filter aktif */
+  /* ===== WRAPPER MOBILE: tinggi FIX & stabil saat filter aktif ===== */
   @media (max-width: 768px) {
     .santri-scrollwrap.scroll-on {
-      max-height: 72vh;
+      /* Tinggi stabil (fallback → terbaik) */
+      height: 72vh;                               /* fallback */
+      height: 72dvh;                              /* viewport dinamis */
+      height: calc(var(--vh, 1vh) * 72);          /* paling stabil via JS helper */
+      min-height: 320px;
+      max-height: 80dvh;
+
       overflow-y: auto;
+      overflow-x: hidden;
       -webkit-overflow-scrolling: touch;
+      overscroll-behavior: contain;               /* cegah scroll menular ke body */
+      touch-action: pan-y;
+
       border: 1px solid #eaecef;
       border-radius: 12px;
-      scroll-behavior: smooth;
-      padding: 4px 0;
-      overflow-x: hidden; /* stop geser kiri-kanan */
       background: #fafbfc;
+      padding: 4px 0;
+      scroll-behavior: smooth;
     }
     .santri-scrollwrap.scroll-on table { width: 100%; }
   }
 
-  /* Bar kontrol filter */
+  /* Bar kontrol filter (di atas wrapper) */
   .nis-filter-bar {
     display: none;
     margin: 10px 0 8px;
@@ -10182,7 +10191,6 @@ document.addEventListener("DOMContentLoaded", () => {
 
   /* ===== CARD LAYOUT MOBILE (saat filtered) ===== */
   @media (max-width: 768px) {
-    /* aktif jika table punya class berikut */
     #santri-table.filtered-compact.card-mobile {
       border-collapse: separate;
       border-spacing: 0;
@@ -10222,8 +10230,7 @@ document.addEventListener("DOMContentLoaded", () => {
       max-width: 100%;
     }
 
-    /* ===== SECTION HEADER-STYLE untuk kolom yang jadi "bagian" ===== */
-    /* Kolom: Setor Dari / Setor Sampai / Nilai / Setting THMS / Murajaah / Setting Murajaah */
+    /* ===== SECTION HEADER-STYLE untuk “bagian” ===== */
     #santri-table.filtered-compact.card-mobile tbody
     td[data-label="Setor Dari"],
     #santri-table.filtered-compact.card-mobile tbody
@@ -10236,7 +10243,7 @@ document.addEventListener("DOMContentLoaded", () => {
     td[data-label="Murajaah"],
     #santri-table.filtered-compact.card-mobile tbody
     td[data-label="Setting Murajaah"]{
-      display: block;           /* ubah dari flex → block */
+      display: block;           /* override flex → block */
       padding: 12px 0 8px;
     }
     /* Header biru di atas konten */
@@ -10254,7 +10261,6 @@ document.addEventListener("DOMContentLoaded", () => {
     td[data-label="Setting Murajaah"]::before{
       display: block;
       content: attr(data-label);
-      flex: initial;
       background: #1E88E5;
       color: #fff;
       text-align: center;
@@ -10265,7 +10271,7 @@ document.addEventListener("DOMContentLoaded", () => {
       letter-spacing: .2px;
     }
 
-    /* Konten di bagian "Setor" rapi & vertikal, select besar dan full width */
+    /* Konten “Setor” rapi & vertikal, select besar & full width */
     #santri-table.filtered-compact.card-mobile tbody
     td[data-label="Setor Dari"] select,
     #santri-table.filtered-compact.card-mobile tbody
@@ -10287,7 +10293,7 @@ document.addEventListener("DOMContentLoaded", () => {
       margin-top: 10px;
     }
 
-    /* Tombol-tombol jadi ramah sentuh */
+    /* Tombol ramah sentuh */
     #santri-table.filtered-compact.card-mobile .btn-absensi-flex,
     #santri-table.filtered-compact.card-mobile .lihat-quran-btn,
     .nis-filter-bar .btn-clear{
@@ -10297,7 +10303,7 @@ document.addEventListener("DOMContentLoaded", () => {
       font-weight: 600;
     }
 
-    /* Spasi ekstra antar bagian */
+    /* Spasi antar bagian */
     #santri-table.filtered-compact.card-mobile tbody
     td[data-label="Setting THMS"],
     #santri-table.filtered-compact.card-mobile tbody
@@ -10310,6 +10316,9 @@ document.addEventListener("DOMContentLoaded", () => {
 
   /* offset kalau ada header sticky (opsional) */
   .santri-scrollwrap { scroll-margin-top: 64px; }
+
+  /* Kunci body saat box aktif (biar yang scroll hanya box) */
+  body.nis-locked { position: fixed; width: 100%; overflow: hidden; }
 </style>
 
 <script>
@@ -10391,8 +10400,8 @@ document.addEventListener("DOMContentLoaded", () => {
     ths.forEach((th, idx) => {
       const label = th.textContent.trim().toLowerCase();
       const isWantedByLabel   = wantedLabels.has(label);
-      const isSettingMurById  = th.id === 'murRangeHeader';         // header injeksi "Setting Murajaah"
-      const isMurajaahByClass = th.classList.contains('mur-header'); // header "Murajaah"
+      const isSettingMurById  = th.id === 'murRangeHeader';         // "Setting Murajaah"
+      const isMurajaahByClass = th.classList.contains('mur-header'); // "Murajaah"
       const isTHMSById        = th.id === 'totalAllJuzHeader';      // "Setting THMS"
       if (isWantedByLabel || isSettingMurById || isMurajaahByClass || isTHMSById){
         keepIdx.add(idx);
@@ -10496,6 +10505,9 @@ document.addEventListener("DOMContentLoaded", () => {
     // sembunyikan bar kontrol
     const bar = ensureFilterBar();
     if (bar){ bar.classList.remove('show'); bar.querySelector('.nis').textContent = ''; }
+
+    // lepas kunci body
+    document.body.classList.remove('nis-locked');
   }
 
   function applyNISFilter(tbl, nisText){
@@ -10513,6 +10525,7 @@ document.addEventListener("DOMContentLoaded", () => {
       tr.style.display = match ? '' : 'none';
       if (match && cell){
         if (!cell.dataset.originalNis) cell.dataset.originalNis = val;
+        // teks tombol kembali
         cell.textContent = 'Tampilkan Semua Santri';
         cell.classList.add('show-all');
         found = true;
@@ -10535,6 +10548,9 @@ document.addEventListener("DOMContentLoaded", () => {
         bar.classList.add('show');
         bar.querySelector('.nis').textContent = nisText;
       }
+
+      // kunci body: hanya box yang scroll
+      document.body.classList.add('nis-locked');
     } else {
       resetNISFilter(tbl);
     }
@@ -10638,6 +10654,13 @@ document.addEventListener("DOMContentLoaded", () => {
   // opsional
   window.resetNISFilter = resetNISFilter;
 })();
+</script>
+
+<!-- Helper: set --vh agar tinggi box stabil di mobile -->
+<script>
+function __setVHUnit(){ document.documentElement.style.setProperty('--vh', (window.innerHeight*0.01)+'px'); }
+let __vhTimer=null; function __onResizeVH(){ if(__vhTimer) cancelAnimationFrame(__vhTimer); __vhTimer=requestAnimationFrame(__setVHUnit); }
+__setVHUnit(); window.addEventListener('resize', __onResizeVH); window.addEventListener('orientationchange', __onResizeVH);
 </script>
 
  
