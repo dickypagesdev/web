@@ -10118,14 +10118,14 @@ document.addEventListener("DOMContentLoaded", () => {
 
 <!-- ===== MODE TAMPILKAN NIS SAJA ===== -->
 <style>
-  /* Interaksi kolom NIS */
+  /* Biar NIS terlihat interaktif */
   #santri-table td.col-nis {
     color: #1E88E5;
     cursor: pointer;
     text-decoration: underline;
     user-select: none;
   }
-  /* Saat menjadi tombol show-all */
+  /* Saat menjadi tombol "Tampilkan Semua Santri" */
   #santri-table td.col-nis.show-all {
     font-weight: 600;
     text-decoration: none;
@@ -10134,55 +10134,54 @@ document.addEventListener("DOMContentLoaded", () => {
 
 <script>
 (function(){
-  const LS_KEY = 'nisFilterState:v1'; // {mode:'filtered'|'all', nis:'...'}
-  let tableObserver = null;
+  // ==== State persistence ====
+  const LS_KEY = 'nisFilterState';
 
-  // ------- Helpers yang cocok dengan strukturmu -------
+  function saveState(state){
+    try { localStorage.setItem(LS_KEY, JSON.stringify(state||{})); } catch {}
+  }
+  function loadState(){
+    try { const v = localStorage.getItem(LS_KEY); if (v) return JSON.parse(v); } catch {}
+    return {};
+  }
+  function clearState(){ saveState({}); }
+
+  // ==== Ambil tabel (pakai util kamu jika ada) ====
   function getTable(){
-    if (typeof getSantriTable === 'function') return getSantriTable();
+    if (typeof getSantriTable === 'function') return getSantriTable(); // :contentReference[oaicite:3]{index=3}
     return document.getElementById('santri-table')
         || document.querySelector('table[data-role="santri-table"]')
         || document.querySelector('table.santri-table')
         || null;
   }
 
-  function loadState(){
-    try { return JSON.parse(localStorage.getItem(LS_KEY) || '{}'); }
-    catch { return {}; }
-  }
-  function saveState(st){ try{ localStorage.setItem(LS_KEY, JSON.stringify(st||{})); }catch{} }
-  function clearState(){ try{ localStorage.removeItem(LS_KEY); }catch{} }
+  // ==== Core filter ====
+  function resetNISFilter(tbl){
+    if (!tbl) tbl = getTable();
+    if (!tbl) return;
+    const tbody = tbl.tBodies && tbl.tBodies[0];
+    if (!tbody) return;
 
-  // ------- Aksi tampilan -------
-  function resetToAll(tbl, pivotNis){
-    const tbody = tbl?.tBodies?.[0]; if (!tbody) return;
     [...tbody.rows].forEach(tr=>{
       tr.style.display = '';
       const cell = tr.querySelector('td.col-nis');
-      if (!cell) return;
-      // Pulihkan teks NIS asli kalau sebelumnya disimpan
-      if (cell.dataset.originalNis) {
-        cell.textContent = cell.dataset.originalNis;
-        delete cell.dataset.originalNis;
+      if (cell){
+        if (cell.dataset.originalNis) {
+          cell.textContent = cell.dataset.originalNis;
+          delete cell.dataset.originalNis;
+        }
+        cell.classList.remove('show-all');
       }
-      cell.classList.remove('show-all');
     });
-
-    // Tetapkan label "Tampilkan Semua Santri" pada baris pivot (jika ada di tabel)
-    if (pivotNis){
-      const target = [...tbody.querySelectorAll('td.col-nis')].find(td => String(td.textContent).trim() === pivotNis);
-      if (target){
-        target.dataset.originalNis = pivotNis;
-        target.textContent = 'Tampilkan Semua Santri';
-        target.classList.add('show-all');
-      }
-    }
-
     delete tbl.dataset.nisFilter;
+    clearState();
   }
 
-  function applyFilter(tbl, nisText){
-    const tbody = tbl?.tBodies?.[0]; if (!tbody) return;
+  function applyNISFilter(tbl, nisText){
+    if (!tbl) return;
+    const tbody = tbl.tBodies && tbl.tBodies[0];
+    if (!tbody) return;
+
     tbl.dataset.nisFilter = nisText;
 
     [...tbody.rows].forEach(tr=>{
@@ -10190,93 +10189,94 @@ document.addEventListener("DOMContentLoaded", () => {
       const val  = cell ? String(cell.textContent).trim() : '';
       const match = (val === nisText);
       tr.style.display = match ? '' : 'none';
-
       if (match && cell){
         if (!cell.dataset.originalNis) cell.dataset.originalNis = val;
         cell.textContent = 'Tampilkan Semua Santri';
         cell.classList.add('show-all');
-      } else if (cell){
-        // baris non-target dibersihkan dari status khusus
-        if (cell.dataset.originalNis){
-          cell.textContent = cell.dataset.originalNis;
-          delete cell.dataset.originalNis;
-        }
-        cell.classList.remove('show-all');
       }
     });
+
+    // Simpan state agar persist setelah refresh/ubah tanggal/range
+    saveState({ active:true, nis: String(nisText||'') });
   }
 
-  // ------- Terapkan state (dipanggil saat render ulang tabel) -------
-  function applyStateToTable(){
+  // ==== Terapkan dari state (dipanggil saat load/observer) ====
+  function ensureFilterApplied(){
     const tbl = getTable(); if (!tbl) return;
-    const state = loadState();
-
-    if (state.mode === 'filtered' && state.nis){
-      applyFilter(tbl, state.nis);
-    } else if (state.mode === 'all'){
-      // Tampilkan semua baris, tapi pertahankan label "Tampilkan Semua Santri" di NIS pivot
-      resetToAll(tbl, state.nis || '');
+    const st = loadState();
+    if (st && st.active && st.nis){
+      // Cek apakah baris NIS sudah ada; kalau belum, observer berikut akan menerapkan saat rows muncul
+      applyIfRowReady(tbl, st.nis);
     } else {
-      // Tidak ada state: tampilkan normal
-      resetToAll(tbl, '');
+      // tidak ada filter tersimpan → pastikan tabel full
+      if (tbl.dataset.nisFilter) resetNISFilter(tbl);
     }
   }
 
-  // ------- Observe perubahan isi tabel (refresh data / ganti tanggal / rentang) -------
-  function ensureObserver(){
-    if (tableObserver) tableObserver.disconnect();
-    const tbl = getTable(); if (!tbl) return;
-    const target = tbl.tBodies?.[0] || tbl;
-
-    tableObserver = new MutationObserver(() => {
-      // setiap perubahan struktur baris, re-apply state
-      applyStateToTable();
+  // Jika render tabel belum selesai (baris belum ada), tunggu sejenak
+  function applyIfRowReady(tbl, nis){
+    const hasRow = !![...(tbl.tBodies?.[0]?.rows||[])].find(tr=>{
+      const c = tr.querySelector('td.col-nis');
+      return c && String(c.textContent).trim() === String(nis);
     });
-    tableObserver.observe(target, { childList: true, subtree: true });
+    if (hasRow) { applyNISFilter(tbl, nis); return; }
+    // fallback: coba lagi setelah microtask
+    setTimeout(()=>{ 
+      const t = getTable(); if (t) applyNISFilter(t, nis);
+    }, 0);
   }
 
-  // ------- Delegasi klik kolom NIS -------
-  document.addEventListener('click', (e)=>{
-    const cell = e.target?.closest?.('td.col-nis');
+  // ==== Event delegation klik NIS ====
+  document.addEventListener('click', function(e){
+    const cell = e.target && e.target.closest && e.target.closest('td.col-nis');
     if (!cell) return;
-    const tbl = cell.closest('table') || getTable(); if (!tbl) return;
 
-    const currentFilter = tbl.dataset.nisFilter || '';
-    const cellShowsAll = cell.classList.contains('show-all');
+    const tbl = cell.closest('table') || getTable();
+    if (!tbl) return;
 
-    // Jika sedang filtered & klik label "Tampilkan Semua Santri" -> reset ke ALL (tetap label show-all saat dirender ulang)
-    if (currentFilter && cellShowsAll){
-      const pivotNis = cell.dataset.originalNis || currentFilter;
-      resetToAll(tbl, pivotNis);
-      saveState({ mode:'all', nis: String(pivotNis||'') });
+    const isFiltered = !!tbl.dataset.nisFilter;
+    if (isFiltered && cell.classList.contains('show-all')) {
+      // User klik "Tampilkan Semua Santri" → reset & simpan state kosong
+      resetNISFilter(tbl);
       return;
     }
 
-    // Jika belum filtered -> filter berdasarkan NIS yang diklik
-    // catatan: kalau cell saat ini bertuliskan "Tampilkan Semua Santri" (persisten),
-    // pivot NIS tersimpan di data-originalNis
-    const nisText = cell.dataset.originalNis || String(cell.textContent).trim();
+    const nisText = String(cell.dataset.originalNis || cell.textContent).trim();
     if (!nisText) return;
-
-    applyFilter(tbl, nisText);
-    saveState({ mode:'filtered', nis: nisText });
+    applyNISFilter(tbl, nisText);
   });
 
-  // ------- Hook global opsional untuk dipanggil dari kode render-mu -------
-  // Panggil ini setiap selesai render tabel agar state langsung nempel
-  window.applyNISPersistState = function(){
-    ensureObserver();
-    applyStateToTable();
-  };
+  // ==== Observer: re-apply saat tabel berubah (refresh data/ganti tanggal/range) ====
+  let tableObserver = null;
+  function observeTable(){
+    const tbl = getTable(); if (!tbl) return;
+    const tbody = tbl.tBodies && tbl.tBodies[0]; if (!tbody) return;
 
-  // Jalankan saat halaman siap
-  document.addEventListener('DOMContentLoaded', ()=>{
-    ensureObserver();
-    applyStateToTable();
+    if (tableObserver) tableObserver.disconnect();
+    tableObserver = new MutationObserver(()=> {
+      // setiap ada perubahan baris/sel, pastikan state diterapkan
+      const st = loadState();
+      if (st && st.active && st.nis){
+        applyIfRowReady(tbl, st.nis);
+      }
+    });
+    tableObserver.observe(tbody, { childList:true, subtree:true });
+  }
+
+  // ==== Bootstrap on load & juga setelah kemungkinan render ulang ====
+  document.addEventListener('DOMContentLoaded', () => {
+    observeTable();
+    ensureFilterApplied();
   });
 
-  // Untuk skenario di mana kamu punya tombol "Reload/Render" khusus,
-  // kamu bisa panggil window.applyNISPersistState() setelah render selesai.
+  // Beberapa aplikasi memuat ulang bagian tabel tanpa reload full:
+  // jalankan pengaman berkala yang ringan untuk memastikan observer nempel di tbody yang baru.
+  setInterval(()=>{ observeTable(); }, 1000);
+
+  // Ekspor util kalau mau dipanggil dari skrip lain
+  window.resetNISFilter = resetNISFilter;
+  window.applyNISFilter = (nis)=>applyNISFilter(getTable(), String(nis||'').trim());
+  window.ensureNISFilter = ensureFilterApplied;
 })();
 </script>
 
