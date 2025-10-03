@@ -10121,7 +10121,6 @@ document.addEventListener("DOMContentLoaded", () => {
 
 		
 <!-- ===== MODE FILTER NIS ===== -->
-<!-- ===== MODE FILTER NIS (dengan card layout mobile + ayat ditumpuk) ===== -->
 <style>
   /* Kolom NIS interaktif */
   #santri-table td.col-nis {
@@ -10151,18 +10150,21 @@ document.addEventListener("DOMContentLoaded", () => {
       border: 1px solid #eee;
       border-radius: 10px;
       scroll-behavior: smooth;
+      /* padding agak lega supaya center enak dilihat */
       padding: 8px 10px;
+      /* hentikan scroll kiri-kanan */
       overflow-x: hidden;
 
-      /* pusatkan table di dalam wrapper */
+      /* === PUSATKAN ISI (TABLE) DI DALAM WRAPPER === */
       display: flex;
-      justify-content: center;
-      align-items: flex-start;
+      justify-content: center; /* center horizontal */
+      align-items: flex-start; /* biar konten mulai dari atas */
       background: #fff;
     }
+    /* Tabel dibatasi agar rapi di tengah */
     .santri-scrollwrap.scroll-on > table {
-      width: min(720px, 100%);
-      margin: 0 auto;
+      width: min(720px, 100%); /* maksimal lebar, tapi tetap responsif */
+      margin: 0 auto;          /* center fallback */
     }
   }
 
@@ -10206,80 +10208,50 @@ document.addEventListener("DOMContentLoaded", () => {
       border-bottom: 1px solid #eee;
       background: #fff;
     }
-    /* kv-row default (label kiri : nilai kanan) */
+    /* sel yang tampil jadi kv-row (label: nilai) */
     #santri-table.filtered-compact.card-mobile tbody td:not(.hidden-col) {
       display: flex;
       align-items: flex-start;
       gap: 10px;
       padding: 6px 0;
-      white-space: normal;
+      white-space: normal; /* biar wrap */
     }
+    /* label dari header */
     #santri-table.filtered-compact.card-mobile tbody td:not(.hidden-col)::before {
       content: attr(data-label) ":";
       flex: 0 0 44%;
       font-weight: 600;
       opacity: .85;
     }
+    /* nilai */
     #santri-table.filtered-compact.card-mobile tbody td:not(.hidden-col) > * {
       max-width: 100%;
     }
 
-    /* ===== BAGIAN (section) yang tampil sebagai kotak kiri (BUKAN full width) ===== */
-    #santri-table.filtered-compact.card-mobile tbody
-    td[data-label="Setor Dari"],
-    #santri-table.filtered-compact.card-mobile tbody
-    td[data-label="Setor Sampai"],
-    #santri-table.filtered-compact.card-mobile tbody
-    td[data-label="Nilai"],
-    #santri-table.filtered-compact.card-mobile tbody
-    td[data-label="Setting THMS"],
-    #santri-table.filtered-compact.card-mobile tbody
-    td[data-label="Murajaah"],
-    #santri-table.filtered-compact.card-mobile tbody
-    td[data-label="Setting Murajaah"]{
-      display: block;            /* jadikan satu section penuh */
-      padding: 10px 0 8px;
+    /* ===== TUMPUK 'AYAT' DI BAWAH 'SURAH' untuk 2 kolom setor ===== */
+    #santri-table.filtered-compact.card-mobile tbody td[data-label="Setor Dari"],
+    #santri-table.filtered-compact.card-mobile tbody td[data-label="Setor Sampai"]{
+      display: block;         /* override dari flex → block */
+      padding: 8px 0;
     }
-    /* Label section menjadi "tombol kotak" di pinggir kiri (inline) */
-    #santri-table.filtered-compact.card-mobile tbody
-    td[data-label="Setor Dari"]::before,
-    #santri-table.filtered-compact.card-mobile tbody
-    td[data-label="Setor Sampai"]::before,
-    #santri-table.filtered-compact.card-mobile tbody
-    td[data-label="Nilai"]::before,
-    #santri-table.filtered-compact.card-mobile tbody
-    td[data-label="Setting THMS"]::before,
-    #santri-table.filtered-compact.card-mobile tbody
-    td[data-label="Murajaah"]::before,
-    #santri-table.filtered-compact.card-mobile tbody
-    td[data-label="Setting Murajaah"]::before{
-      display: inline-block;     /* tetap nempel kiri */
-      content: attr(data-label); /* TANPA ":" */
-      margin: 6px 0 10px 0;
-      padding: 10px 12px;
-      font-weight: 700;
-      letter-spacing: .2px;
-      text-align: left;
-
-      /* gaya kotak */
-      background: #f3f4f6;
-      color: #111827;
-      border: 1px solid #d1d5db;
-      border-radius: 0;          /* tanpa rounded */
+    /* label header tetap tampil di atas */
+    #santri-table.filtered-compact.card-mobile tbody td[data-label="Setor Dari"]::before,
+    #santri-table.filtered-compact.card-mobile tbody td[data-label="Setor Sampai"]::before{
+      display: block;
+      margin-bottom: 6px;
+      font-weight: 600;
+      opacity: .85;
+      content: attr(data-label) ":";
     }
-
-    /* ===== SETOR: tumpuk AYAT di bawah SURAH + full width ===== */
-    #santri-table.filtered-compact.card-mobile tbody
-    td[data-label="Setor Dari"] select,
-    #santri-table.filtered-compact.card-mobile tbody
-    td[data-label="Setor Sampai"] select{
+    /* semua select di kolom itu full width dan bertumpuk */
+    #santri-table.filtered-compact.card-mobile tbody td[data-label="Setor Dari"] select,
+    #santri-table.filtered-compact.card-mobile tbody td[data-label="Setor Sampai"] select{
       display: block;
       width: 100%;
     }
-    #santri-table.filtered-compact.card-mobile tbody
-    td[data-label="Setor Dari"] select.ayat-dari,
-    #santri-table.filtered-compact.card-mobile tbody
-    td[data-label="Setor Sampai"] select.ayat-sampai{
+    /* khusus AYAT dikasih jarak atas agar rapi di bawah SURAH */
+    #santri-table.filtered-compact.card-mobile tbody td[data-label="Setor Dari"] select.ayat-dari,
+    #santri-table.filtered-compact.card-mobile tbody td[data-label="Setor Sampai"] select.ayat-sampai{
       margin-top: 8px;
     }
   }
@@ -10489,7 +10461,8 @@ document.addEventListener("DOMContentLoaded", () => {
       tr.style.display = match ? '' : 'none';
       if (match && cell){
         if (!cell.dataset.originalNis) cell.dataset.originalNis = val;
-        /* kolom NIS disembunyikan saat compact → ubah teksnya */
+        /* kolom NIS disembunyikan saat compact → ubah teksnya
+           agar bila suatu saat terlihat, menjadi tombol 'Tampilkan Semua Santri' */
         cell.textContent = 'Tampilkan Semua Santri';
         cell.classList.add('show-all');
         found = true;
@@ -10631,6 +10604,7 @@ document.addEventListener("DOMContentLoaded", () => {
   window.resetNISFilter = resetNISFilter;
 })();
 </script>
+
 
 
 
