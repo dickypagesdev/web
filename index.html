@@ -7391,11 +7391,14 @@ function juzOfAyah(s,a){
     const hasDataset = !!(cell?.dataset?.[`pf${idx}`] || cell?.dataset?.[`pt${idx}`]
                        || cell?.dataset?.[`sf${idx}`] || cell?.dataset?.[`st${idx}`]);
 
-    const isPristine = (!sFv || !aFv || !sTv || !aTv) &&
-                       !hasDataset &&
-                       !juzFromVal && !juzToVal &&
-                       !pageFromEl.value && !pageToEl.value &&
-                       !murState[idx]?.touched;
+    const empty = v => v == null || v === '';
+const isPristine =
+  (empty(sFv) && empty(aFv) && empty(sTv) && empty(aTv)) &&
+  !hasDataset &&
+  empty(juzFromVal) && empty(juzToVal) &&
+  empty(pageFromEl?.value) && empty(pageToEl?.value) &&
+  !murState[idx]?.touched;
+
 
     if (isPristine){
       $(`#mur${idx}-pagesHint`).textContent='';
@@ -7913,132 +7916,195 @@ if (jF===30 && jT===30){
 
   function afterTableRendered(){ ensureMurColumn(); refreshMurFromServer(); }
 
-  // ============ PATCH: Reset aman server (Al-Fatihah 1→1, 0.01 juz) ============
-  async function serverSafeReset(idx){
-    try{ if (!window.dataReady) await ensureMap(); }catch(_){}
-    const sF=1,aF=1,sT=1,aT=1;
-    const sel = q => document.querySelector(q);
+  // ============ RESET BERSIH: kosongkan semua input & dataset, total = 0.00 ============
+async function serverSafeReset(idx){
+  const sel = q => document.querySelector(q);
 
-    sel(`#mur${idx}-surahFrom`).value = String(sF);
-    fillAyahForSurah(sel(`#mur${idx}-ayahFrom`), sF, { preset:aF });
+  // 1) Kosongkan semua kontrol sesi
+  const jf = sel(`#mur${idx}-juzFrom`);
+  const jt = sel(`#mur${idx}-juzTo`);
+  const pf = sel(`#mur${idx}-pageFrom`);
+  const pt = sel(`#mur${idx}-pageTo`);
+  const sF = sel(`#mur${idx}-surahFrom`);
+  const aF = sel(`#mur${idx}-ayahFrom`);
+  const sT = sel(`#mur${idx}-surahTo`);
+  const aT = sel(`#mur${idx}-ayahTo`);
+  const sc = sel(`#mur${idx}-score`);
 
-    sel(`#mur${idx}-surahTo`).value   = String(sT);
-    fillAyahForSurah(sel(`#mur${idx}-ayahTo`),   sT, { preset:aT });
+  if (jf) jf.value = '';
+  if (jt) jt.value = '';
+  if (pf) pf.value = '';
+  if (pt) pt.value = '';
+  if (sF) sF.value = '';
+  if (aF) { aF.innerHTML = '<option value=""></option>'; aF.value = ''; }
+  if (sT) sT.value = '';
+  if (aT) { aT.innerHTML = '<option value=""></option>'; aT.value = ''; }
+  if (sc) sc.value = '';
 
-    try{
-      const pages = ayahRangeToPages(sF,aF,sT,aT);
-      if (pages){
-        const pf = sel(`#mur${idx}-pageFrom`);
-        const pt = sel(`#mur${idx}-pageTo`);
-        if (pf) pf.value = String(pages.pFrom);
-        if (pt) pt.value = String(pages.pTo);
-        const hint = sel(`#mur${idx}-pagesHint`);
-        if (hint) hint.textContent = `Halaman: ${pages.pFrom}—${pages.pTo}`;
-      }
-    }catch(_){}
+  // 2) UI teks bantu
+  const badge = sel(`#mur${idx}-predikatBadge`);
+  if (badge) badge.textContent = '–';
+  const hint  = sel(`#mur${idx}-pagesHint`);
+  if (hint) hint.textContent = '';
+  const totEl = sel(`#mur${idx}-totalJuz`);
+  if (totEl) totEl.textContent = '0.00';
 
-    renderSession(idx);
-    const tEl = sel(`#mur${idx}-totalJuz`);
-    const cur = parseFloat(tEl?.textContent||"0")||0;
-    const enforced = Math.max(0.01, cur);
-    if (tEl) tEl.textContent = enforced.toFixed(2);
+  // 3) State lokal sesi -> pristine kosong
+  murState[idx] = {
+    touched:false,
+    sF:null, aF:null, sT:null, aT:null,
+    pFrom:'', pTo:'',
+    jFrom:null, jTo:null,
+    total:0,
+    score:null, pText:'', pHuruf:''
+  };
 
-    murState[idx] = {
-      ...(murState[idx]||{}),
-      sF,aF,sT,aT,
-      jFrom: juzOfAyah(sF,aF),
-      jTo:   juzOfAyah(sT,aT),
-      total: enforced,
-      pFrom: sel(`#mur${idx}-pageFrom`)?.value || "",
-      pTo:   sel(`#mur${idx}-pageTo`)?.value   || "",
-    };
-
-    if (window.currentRowEl){
-      const cell = window.currentRowEl.querySelector('.murajaah-cell');
-      if (cell){
-        cell.dataset[`sf${idx}`]=String(sF);
-        cell.dataset[`af${idx}`]=String(aF);
-        cell.dataset[`st${idx}`]=String(sT);
-        cell.dataset[`at${idx}`]=String(aT);
-        const pf = sel(`#mur${idx}-pageFrom`)?.value || "";
-        const pt = sel(`#mur${idx}-pageTo`)?.value   || "";
-        if (pf) cell.dataset[`pf${idx}`]=pf; else delete cell.dataset[`pf${idx}`];
-        if (pt) cell.dataset[`pt${idx}`]=pt; else delete cell.dataset[`pt${idx}`];
-        cell.dataset[`juz${idx}`] = enforced.toFixed(2);
-      }
-    }
-
-    [1,2,3].forEach(renderSession);
-    const g = (murState[1]?.total||0)+(murState[2]?.total||0)+(murState[3]?.total||0);
-    const gEl = document.querySelector('#mur-totalJuzAll');
-    if (gEl) gEl.textContent = g.toFixed(2);
-    if (window.currentRowEl){
-      const cell = window.currentRowEl.querySelector('.murajaah-cell');
-      const valEl = cell?.querySelector('.mur-val');
-      if (cell) cell.dataset.murtotal = g.toFixed(2);
-      if (valEl) valEl.textContent = `${g.toFixed(2)} juz`;
-    }
-
-    const statusEl = document.querySelector('#mur-save-status');
-    try{
-      if (typeof window.simpanDataMutabaah === 'function'){
-        await window.simpanDataMutabaah(document.querySelector(`#mur${idx}-totalJuz-reset`) || null);
-        if (typeof window.murajaah?.refreshServer === 'function'){
-          await window.murajaah.refreshServer();
-        }
-        if (statusEl){ statusEl.textContent='✅ Reset tersimpan: Al-Fatihah 1→1 (0.01)'; setTimeout(()=>statusEl.textContent='',1500); }
-      } else {
-        if (statusEl){ statusEl.textContent='ℹ️ Sudah di-set lokal (fungsi simpan tidak ada).'; setTimeout(()=>statusEl.textContent='',1500); }
-      }
-    }catch(e){
-      console.error(e);
-      if (statusEl){ statusEl.textContent='❌ Gagal simpan ke server'; setTimeout(()=>statusEl.textContent='',2000); }
+  // 4) Bersihkan dataset pada sel tabel untuk sesi ini
+  if (window.currentRowEl){
+    const cell = window.currentRowEl.querySelector('.murajaah-cell');
+    if (cell){
+      delete cell.dataset[`sf${idx}`];
+      delete cell.dataset[`af${idx}`];
+      delete cell.dataset[`st${idx}`];
+      delete cell.dataset[`at${idx}`];
+      delete cell.dataset[`pf${idx}`];
+      delete cell.dataset[`pt${idx}`];
+      delete cell.dataset[`jfrom${idx}`];
+      delete cell.dataset[`jto${idx}`];
+      delete cell.dataset[`score${idx}`];
+      delete cell.dataset[`ptext${idx}`];
+      delete cell.dataset[`phuruf${idx}`];
+      cell.dataset[`juz${idx}`] = '0.00';
     }
   }
+
+  // 5) Render ulang sesi (akan tetap 0.00 karena pristine)
+  renderSession(idx);
+
+  // 6) Re-kap total 3 sesi & label sel
+  const t1 = (murState[1]?.total||0);
+  const t2 = (murState[2]?.total||0);
+  const t3 = (murState[3]?.total||0);
+  const grand = t1 + t2 + t3;
+
+  const t1El = document.querySelector('#mur-t1'); if (t1El) t1El.textContent = t1.toFixed(2);
+  const t2El = document.querySelector('#mur-t2'); if (t2El) t2El.textContent = t2.toFixed(2);
+  const t3El = document.querySelector('#mur-t3'); if (t3El) t3El.textContent = t3.toFixed(2);
+
+  const gEl = document.querySelector('#mur-totalJuzAll');
+  if (gEl) gEl.textContent = grand.toFixed(2);
+
+  if (window.currentRowEl){
+    const cell = window.currentRowEl.querySelector('.murajaah-cell');
+    const valEl = cell?.querySelector('.mur-val');
+    if (cell) cell.dataset.murtotal = grand.toFixed(2);
+    if (valEl) valEl.textContent = `${grand.toFixed(2)} juz`;
+  }
+
+  // 7) Status (optional, tidak auto-save)
+  const statusEl = document.querySelector('#mur-save-status');
+  if (statusEl){
+    statusEl.textContent = '✅ Reset selesai (0.00). Tekan Save untuk menyimpan.';
+    setTimeout(()=>{ statusEl.textContent=''; }, 1500);
+  }
+}
+
+function blankSafeResetAll(){
+  [1,2,3].forEach(blankSafeReset);
+
+  // Rekap grand total 0.00 & label sel
+  const grand = 0;
+  const gtEl = document.querySelector('#mur-totalJuzAll');
+  if (gtEl) gtEl.textContent = grand.toFixed(2);
+
+  if (currentRowEl){
+    const cell = currentRowEl.querySelector('.murajaah-cell');
+    if (cell){
+      cell.dataset.murtotal = grand.toFixed(2);
+      const valEl = cell.querySelector('.mur-val');
+      if (valEl) valEl.textContent = `${grand.toFixed(2)} juz`;
+    }
+  }
+}
+	
 
   // === Buat tombol reset di sebelah #murX-totalJuz (1..3) → jalankan serverSafeReset ===
-  function ensureResetButtons(){
-    for (let i=1;i<=3;i++){
-      const totalEl = $(`#mur${i}-totalJuz`);
-      if (!totalEl) continue;
-      if (document.getElementById(`mur${i}-totalJuz-reset`)) continue;
+function ensureResetButtons(){
+  // Tombol Reset per sesi
+  for (let i = 1; i <= 3; i++){
+    const totalEl = $(`#mur${i}-totalJuz`);
+    if (!totalEl) continue;
+    if (document.getElementById(`mur${i}-totalJuz-reset`)) continue;
 
-      const btn = document.createElement('button');
-      btn.id = `mur${i}-totalJuz-reset`;
-      btn.type = 'button';
-      btn.textContent = 'Reset';
-      btn.style.marginLeft = '8px';
-      btn.style.padding = '2px 8px';
-      btn.style.fontSize = '12px';
+    const btn = document.createElement('button');
+    btn.id = `mur${i}-totalJuz-reset`;
+    btn.type = 'button';
+    btn.textContent = 'Reset';
+    btn.style.marginLeft = '8px';
+    btn.style.padding = '2px 8px';
+    btn.style.fontSize = '12px';
 
-      const sesiWrap = document.getElementById(`mur-sesi${i}`);
-      if (totalEl.parentNode) totalEl.parentNode.insertBefore(btn, totalEl.nextSibling);
-      else if (sesiWrap) sesiWrap.appendChild(btn);
-      else totalEl.after(btn);
+    const sesiWrap = document.getElementById(`mur-sesi${i}`);
+    if (totalEl.parentNode) totalEl.parentNode.insertBefore(btn, totalEl.nextSibling);
+    else if (sesiWrap) sesiWrap.appendChild(btn);
+    else totalEl.after(btn);
 
-      btn.addEventListener('click', ()=> serverSafeReset(i));
-    }
+    btn.addEventListener('click', ()=> {
+      // versi serverSafeReset sudah diganti menjadi reset bersih (0.00) pada BLOK 1
+      serverSafeReset(i);
+    });
   }
 
-  // ekspor
-  window.murajaah = { afterTableRendered: ()=>{ ensureMurColumn(); refreshMurFromServer(); }, refreshServer: refreshMurFromServer };
+  // Tombol Reset 3 Sesi (sekali klik)
+  if (!document.getElementById('mur-reset-all')){
+    const btnAll = document.createElement('button');
+    btnAll.id = 'mur-reset-all';
+    btnAll.type = 'button';
+    btnAll.textContent = 'Reset 3 Sesi';
+    btnAll.style.marginLeft = '8px';
+    btnAll.style.padding = '4px 10px';
+    btnAll.style.fontSize = '12px';
 
-  // init
-  (async function init(){
-    bindModalShell();
-    if (document.readyState==='loading') document.addEventListener('DOMContentLoaded', window.murajaah.afterTableRendered);
-    else window.murajaah.afterTableRendered();
-    const _origLoad=window.loadSantriData;
-    window.loadSantriData=async function(...args){
-      if(typeof _origLoad==='function') await _origLoad.apply(this,args);
-      setTimeout(window.murajaah.afterTableRendered,0);
-    };
-    await ensureMap();
-    [1,2,3].forEach(bindSession);
+    // letakkan di bar tombol utama (dekat Save/Preview) bila ada, fallback ke modal
+    const anchor = document.getElementById('mur-save')
+               || document.getElementById('mur-preview')
+               || document.getElementById('mur-close')
+               || document.querySelector('#murModal .actions');
+    if (anchor && anchor.parentNode) anchor.parentNode.insertBefore(btnAll, anchor);
+    else document.getElementById('murModal')?.appendChild(btnAll);
 
-    // tombol reset sesi tersedia dari awal
-    ensureResetButtons();
-  })();
+    btnAll.addEventListener('click', ()=>{
+      [1,2,3].forEach(i => serverSafeReset(i)); // reset bersih semua sesi
+    });
+  }
+}
+
+// ekspor
+window.murajaah = {
+  afterTableRendered: ()=>{ ensureMurColumn(); refreshMurFromServer(); },
+  refreshServer: refreshMurFromServer
+};
+
+// init
+(async function init(){
+  bindModalShell();
+  if (document.readyState === 'loading')
+    document.addEventListener('DOMContentLoaded', window.murajaah.afterTableRendered);
+  else
+    window.murajaah.afterTableRendered();
+
+  const _origLoad = window.loadSantriData;
+  window.loadSantriData = async function(...args){
+    if (typeof _origLoad === 'function') await _origLoad.apply(this, args);
+    setTimeout(window.murajaah.afterTableRendered, 0);
+  };
+
+  await ensureMap();
+  [1,2,3].forEach(bindSession);
+
+  // tombol reset sesi & reset-all tersedia dari awal
+  ensureResetButtons();
+})();
 })();
 </script>
 
