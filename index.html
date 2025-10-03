@@ -10168,7 +10168,7 @@ document.addEventListener("DOMContentLoaded", () => {
     padding: 6px 10px;
     border: 1px solid #d1d5db;
     border-radius: 8px;
-    background: white;
+    background: #1E88E5;
     cursor: pointer;
   }
 </style>
@@ -10229,31 +10229,41 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   // --- util kolom ringkas ---
-  // Saat mode ringkas, tampilkan HANYA: Nama, Presensi, Setor Dari, Setor Sampai, Nilai, Setting Murajaah
+  // Mode ringkas menampilkan HANYA: Nama, Presensi, Setor Dari, Setor Sampai, Nilai, Murajaah, Setting Murajaah
   function computeCompactColumns(){
     const tbl = getTable();
     const thead = tbl ? tbl.tHead : null;
     if (!thead) return { keepIdx: new Set(), hideIdx: new Set() };
 
-    const wanted = new Set([
+    const wantedLabels = new Set([
       'nama',
       'presensi',
       'setor dari',
       'setor sampai',
       'nilai',
+      'murajaah',
       'setting murajaah'
     ]);
 
-    const keepIdx = new Set();
     const ths = Array.from(thead.rows[0].cells);
+    const keepIdx = new Set();
 
     ths.forEach((th, idx) => {
       const label = th.textContent.trim().toLowerCase();
-      if (wanted.has(label)) keepIdx.add(idx);
+
+      const isWantedByLabel = wantedLabels.has(label);
+      const isSettingMurById = th.id === 'murRangeHeader';     // header injeksi "Setting Murajaah"
+      const isMurajaahByClass = th.classList.contains('mur-header'); // header "Murajaah" lama
+
+      if (isWantedByLabel || isSettingMurById || isMurajaahByClass){
+        keepIdx.add(idx);
+      }
     });
 
+    // Semua selain keep → hide
     const hideIdx = new Set();
     ths.forEach((_, idx) => { if (!keepIdx.has(idx)) hideIdx.add(idx); });
+
     return { keepIdx, hideIdx };
   }
 
@@ -10390,7 +10400,7 @@ document.addEventListener("DOMContentLoaded", () => {
     bodyObserver.observe(tbody, { childList:true });
   }
 
-  // --- observer thead (agar Setting Murajaah yang disisip dinamis ikut dihitung) ---
+  // --- observer thead (agar header injeksi ikut dihitung) ---
   function ensureHeadObserver(){
     const tbl = getTable();
     const thead = tbl && tbl.tHead;
