@@ -10243,6 +10243,7 @@ document.addEventListener("DOMContentLoaded", () => {
       const keepByText = wantedTexts.has(label);
       const keepById    = th.id === 'totalAllJuzHeader';
       const keepByClass = th.classList.contains('mur-header');
+	  const keepById    = th.id === 'murRangeHeader';
       if (keepByText || keepById || keepByClass){
         keepIdx.add(idx);
       }
