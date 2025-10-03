@@ -10142,7 +10142,7 @@ document.addEventListener("DOMContentLoaded", () => {
     display: none !important;
   }
 
-  /* Scroll khusus mobile saat filter aktif */
+  /* Scroll khusus mobile saat filter aktif + center content */
   @media (max-width: 768px) {
     .santri-scrollwrap.scroll-on {
       max-height: 70vh;
@@ -10151,11 +10151,22 @@ document.addEventListener("DOMContentLoaded", () => {
       border: 1px solid #eee;
       border-radius: 10px;
       scroll-behavior: smooth;
-      padding: 4px 0;
+      /* padding agak lega supaya center enak dilihat */
+      padding: 8px 10px;
       /* hentikan scroll kiri-kanan */
       overflow-x: hidden;
+
+      /* === PUSATKAN ISI (TABLE) DI DALAM WRAPPER === */
+      display: flex;
+      justify-content: center; /* center horizontal */
+      align-items: flex-start; /* biar konten mulai dari atas */
+      background: #fff;
     }
-    .santri-scrollwrap.scroll-on table { width: 100%; }
+    /* Tabel dibatasi agar rapi di tengah */
+    .santri-scrollwrap.scroll-on > table {
+      width: min(720px, 100%); /* maksimal lebar, tapi tetap responsif */
+      margin: 0 auto;          /* center fallback */
+    }
   }
 
   /* Bar kontrol filter (muncul saat kolom NIS disembunyikan) */
