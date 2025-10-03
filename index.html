@@ -7113,31 +7113,56 @@ kelasSelect?.addEventListener("change", () => loadSantriData());
     return PREDIKATS.find(p=>s<=p.max) || PREDIKATS[PREDIKATS.length-1];
   }
 
-  // ------ Peta awal Juz ------
-  const JUZ_STARTS = [
-    [ 1,  1],[ 2,142],[ 2,253],[ 3, 93],[ 4, 24],
-    [ 4,148],[ 5, 82],[ 6,111],[ 7, 88],[ 8, 41],
-    [ 9, 93],[11,  6],[12, 53],[15,  1],[17,  1],
-    [18, 75],[21,  1],[23,  1],[25, 21],[27, 56],
-    [29, 46],[33, 31],[36, 28],[39, 32],[41, 47],
-    [46,  1],[51, 31],[58,  1],[67,  1],[78,  1]
-  ];
-  if (jF === 30 && jT === 30) {
-  const pf = $(`#mur${idx}-pageFrom`);
-  const pt = $(`#mur${idx}-pageTo`);
-  if (pf && !pf.value) pf.value = '582';
-  if (pt) pt.value = '604';
-  $(`#mur${idx}-pagesHint`).textContent = 'Halaman: 582—604';
+ // --- META JUZ: surah/ayat & page (akurasi dari mapping kamu) ---
+const JUZ_META = {
+  1:{ sFrom:1,  aFrom:1,   sTo:2,  aTo:141, pFrom:1,   pTo:20  },
+  2:{ sFrom:2,  aFrom:142, sTo:2,  aTo:252, pFrom:22,  pTo:41  },
+  3:{ sFrom:2,  aFrom:253, sTo:3,  aTo:92,  pFrom:42,  pTo:62  },
+  4:{ sFrom:3,  aFrom:93,  sTo:4,  aTo:23,  pFrom:62,  pTo:81  },
+  5:{ sFrom:4,  aFrom:24,  sTo:4,  aTo:147, pFrom:82,  pTo:101 },
+  6:{ sFrom:4,  aFrom:148, sTo:5,  aTo:81,  pFrom:102, pTo:121 },
+  7:{ sFrom:5,  aFrom:82,  sTo:6,  aTo:110, pFrom:121, pTo:141 },
+  8:{ sFrom:6,  aFrom:111, sTo:7,  aTo:87,  pFrom:142, pTo:161 },
+  9:{ sFrom:7,  aFrom:88,  sTo:8,  aTo:40,  pFrom:162, pTo:181 },
+ 10:{ sFrom:8,  aFrom:41,  sTo:9,  aTo:92,  pFrom:182, pTo:201 },
+ 11:{ sFrom:9,  aFrom:93,  sTo:11, aTo:5,   pFrom:201, pTo:221 },
+ 12:{ sFrom:11, aFrom:6,   sTo:12, aTo:52,  pFrom:222, pTo:241 },
+ 13:{ sFrom:12, aFrom:53,  sTo:14, aTo:52,  pFrom:242, pTo:261 },
+ 14:{ sFrom:15, aFrom:1,   sTo:16, aTo:128, pFrom:262, pTo:281 },
+ 15:{ sFrom:17, aFrom:1,   sTo:18, aTo:74,  pFrom:282, pTo:301 },
+ 16:{ sFrom:18, aFrom:75,  sTo:20, aTo:135, pFrom:302, pTo:321 },
+ 17:{ sFrom:21, aFrom:1,   sTo:22, aTo:78,  pFrom:322, pTo:341 },
+ 18:{ sFrom:23, aFrom:1,   sTo:25, aTo:20,  pFrom:342, pTo:361 },
+ 19:{ sFrom:25, aFrom:21,  sTo:27, aTo:55,  pFrom:362, pTo:381 },
+ 20:{ sFrom:27, aFrom:56,  sTo:29, aTo:45,  pFrom:382, pTo:401 },
+ 21:{ sFrom:29, aFrom:46,  sTo:33, aTo:30,  pFrom:402, pTo:421 },
+ 22:{ sFrom:33, aFrom:31,  sTo:36, aTo:27,  pFrom:422, pTo:441 },
+ 23:{ sFrom:36, aFrom:28,  sTo:39, aTo:31,  pFrom:442, pTo:461 },
+ 24:{ sFrom:39, aFrom:32,  sTo:41, aTo:46,  pFrom:462, pTo:481 },
+ 25:{ sFrom:41, aFrom:47,  sTo:45, aTo:37,  pFrom:482, pTo:502 },
+ 26:{ sFrom:46, aFrom:1,   sTo:51, aTo:30,  pFrom:502, pTo:521 },
+ 27:{ sFrom:51, aFrom:31,  sTo:57, aTo:29,  pFrom:522, pTo:541 },
+ 28:{ sFrom:58, aFrom:1,   sTo:66, aTo:12,  pFrom:542, pTo:561 },
+ 29:{ sFrom:67, aFrom:1,   sTo:77, aTo:50,  pFrom:562, pTo:581 },
+ 30:{ sFrom:78, aFrom:1,   sTo:114,aTo:6,   pFrom:582, pTo:601 }, // UI tetap tulis 582–604
+};
+
+// Range Juz by number
+function getJuzRange(j){
+  j = +j;
+  return (j>=1 && j<=30) ? { ...JUZ_META[j] } : null;
 }
 
-  function juzOfAyah(s,a){
-    let j=1;
-    for(let i=0;i<JUZ_STARTS.length;i++){
-      const [ss,aa]=JUZ_STARTS[i];
-      if(s>ss || (s===ss && a>=aa)) j=i+1;
-    }
-    return j;
+// Cari juz untuk (surah, ayat) berdasarkan META
+function juzOfAyah(s,a){
+  const gt = (x1,y1,x2,y2)=> (x1>x2) || (x1===x2 && y1>y2);
+  const ge = (x1,y1,x2,y2)=> (x1>x2) || (x1===x2 && y1>=y2);
+  for (let j=1;j<=30;j++){
+    const m = JUZ_META[j];
+    if (ge(s,a,m.sFrom,m.aFrom) && !gt(s,a,m.sTo,m.aTo)) return j;
   }
+  return 30;
+}
 
   // ---------- Data Mushaf ----------
   let ayahPageMap={}, pageAyahCount={}, surahMaxAyah={}, dataReady=false, currentRowEl=null;
@@ -7356,6 +7381,12 @@ kelasSelect?.addEventListener("change", () => loadSantriData());
         const jF=juzOfAyah(sF,aF), jT=juzOfAyah(sT,aT);
         const total=computeTotalJuz(sF,aF,sT,aT);
         $(`#mur${idx}-totalJuz`).textContent=total.toFixed(2);
+		  // setelah: const jF=..., jT=..., const total=...
+if (jF===30 && jT===30){
+  $(`#mur${idx}-pagesHint`).textContent = 'Halaman: 582—604';
+  if (!$(`#mur${idx}-pageFrom`).value) $(`#mur${idx}-pageFrom`).value = '582';
+  $(`#mur${idx}-pageTo`).value = '604';
+}
 
         const jrF=getJuzRange(jF), jrT=getJuzRange(jT);
         if(jrF && jrT && jrF.sFrom===sF && jrF.aFrom===aF && jrT.sTo===sT && jrT.aTo===aT){
@@ -7400,20 +7431,37 @@ kelasSelect?.addEventListener("change", () => loadSantriData());
     }
   }
 
-  function applyJuzRange(idx){
-    const jf = +($(`#mur${idx}-juzFrom`).value)||0;
-    let jt = +($(`#mur${idx}-juzTo`).value)||jf;
-    if(!jf){ return; }
-    if(jt<jf){ jt=jf; $(`#mur${idx}-juzTo`).value=String(jf); }
-    const rF=getJuzRange(jf), rT=getJuzRange(jt);
-    if(!rF||!rT) return;
-    $(`#mur${idx}-surahFrom`).value=String(rF.sFrom);
-    fillAyahForSurah($(`#mur${idx}-ayahFrom`), rF.sFrom,{preset:rF.aFrom});
-    $(`#mur${idx}-surahTo`).value=String(rT.sTo);
-    const aEnd = rT.aTo && rT.aTo>0 ? rT.aTo : surahMaxAyah[rT.sTo];
-    fillAyahForSurah($(`#mur${idx}-ayahTo`), rT.sTo,{preset:aEnd});
-    renderSession(idx);
+ function applyJuzRange(idx){
+  const jf = +($(`#mur${idx}-juzFrom`).value)||0;
+  let jt = +($(`#mur${idx}-juzTo`).value)||jf;
+  if (!jf) return;
+  if (jt<jf){ jt=jf; $(`#mur${idx}-juzTo`).value=String(jf); }
+
+  const rF = getJuzRange(jf), rT = getJuzRange(jt);
+  if (!rF || !rT) return;
+
+  // set Surah/Ayat dari META
+  $(`#mur${idx}-surahFrom`).value = String(rF.sFrom);
+  fillAyahForSurah($(`#mur${idx}-ayahFrom`), rF.sFrom, { preset:rF.aFrom });
+
+  $(`#mur${idx}-surahTo`).value   = String(rT.sTo);
+  fillAyahForSurah($(`#mur${idx}-ayahTo`),   rT.sTo,   { preset:rT.aTo });
+
+  // set Page dari META (khusus Juz 30: tampil 582–604)
+  const pfEl = $(`#mur${idx}-pageFrom`);
+  const ptEl = $(`#mur${idx}-pageTo`);
+  if (jf===30 && jt===30){
+    if (pfEl) pfEl.value = '582';
+    if (ptEl) ptEl.value = '604';
+    $(`#mur${idx}-pagesHint`).textContent = 'Halaman: 582—604';
+  } else {
+    if (pfEl) pfEl.value = String(rF.pFrom);
+    if (ptEl) ptEl.value = String(rT.pTo);
+    $(`#mur${idx}-pagesHint`).textContent = `Halaman: ${rF.pFrom}—${rT.pTo}`;
   }
+
+  renderSession(idx);
+}
 
   function onPagesChange(idx){
     const pFv=$(`#mur${idx}-pageFrom`).value;
@@ -8407,7 +8455,6 @@ kelasSelect?.addEventListener("change", () => loadSantriData());
   window.hitungTotalMurRangeFromTable = hitungTotalMurRangeFromTable;
 })();
 </script>
-
 
 
 
