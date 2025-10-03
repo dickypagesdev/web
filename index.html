@@ -10121,6 +10121,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
 		
 <!-- ===== MODE FILTER NIS ===== -->
+<!-- ===== MODE FILTER NIS (dengan card layout mobile + ayat ditumpuk) ===== -->
 <style>
   /* Kolom NIS interaktif */
   #santri-table td.col-nis {
@@ -10141,7 +10142,7 @@ document.addEventListener("DOMContentLoaded", () => {
     display: none !important;
   }
 
-  /* Scroll khusus mobile saat filter aktif + center content */
+  /* ===== Wrapper scroll khusus mobile (rapi di pinggir) ===== */
   @media (max-width: 768px) {
     .santri-scrollwrap.scroll-on {
       max-height: 70vh;
@@ -10150,21 +10151,16 @@ document.addEventListener("DOMContentLoaded", () => {
       border: 1px solid #eee;
       border-radius: 10px;
       scroll-behavior: smooth;
-      /* padding agak lega supaya center enak dilihat */
-      padding: 8px 10px;
-      /* hentikan scroll kiri-kanan */
-      overflow-x: hidden;
-
-      /* === PUSATKAN ISI (TABLE) DI DALAM WRAPPER === */
-      display: flex;
-      justify-content: center; /* center horizontal */
-      align-items: flex-start; /* biar konten mulai dari atas */
+      padding: 10px;           /* ruang napas */
+      overflow-x: hidden;      /* stop geser kiri-kanan */
       background: #fff;
+      display: block;          /* TETAP DI PINGGIR, tidak center */
     }
-    /* Tabel dibatasi agar rapi di tengah */
+    /* Tabel full-lebar, rapi di pinggir */
     .santri-scrollwrap.scroll-on > table {
-      width: min(720px, 100%); /* maksimal lebar, tapi tetap responsif */
-      margin: 0 auto;          /* center fallback */
+      width: 100%;
+      margin: 0;
+      table-layout: auto;
     }
   }
 
@@ -10201,21 +10197,32 @@ document.addEventListener("DOMContentLoaded", () => {
     #santri-table.filtered-compact.card-mobile thead {
       display: none !important;
     }
-    /* setiap baris jadi kartu */
+
+    /* setiap baris jadi “kartu” yang rapi berjarak */
     #santri-table.filtered-compact.card-mobile tbody tr {
       display: block;
-      padding: 10px 12px;
-      border-bottom: 1px solid #eee;
+      padding: 12px;
+      margin: 8px 0;                 /* jarak antar kartu */
+      border: 1px solid #eee;
+      border-radius: 10px;
       background: #fff;
     }
+
     /* sel yang tampil jadi kv-row (label: nilai) */
     #santri-table.filtered-compact.card-mobile tbody td:not(.hidden-col) {
       display: flex;
       align-items: flex-start;
       gap: 10px;
-      padding: 6px 0;
-      white-space: normal; /* biar wrap */
+      padding: 8px 0;
+      white-space: normal;           /* biar wrap */
+      border-bottom: 1px solid #f2f2f2;
     }
+    /* hilangkan garis bawah di item terakhir */
+    #santri-table.filtered-compact.card-mobile tbody tr td:not(.hidden-col):last-of-type {
+      border-bottom: 0;
+      padding-bottom: 0;
+    }
+
     /* label dari header */
     #santri-table.filtered-compact.card-mobile tbody td:not(.hidden-col)::before {
       content: attr(data-label) ":";
@@ -10232,7 +10239,7 @@ document.addEventListener("DOMContentLoaded", () => {
     #santri-table.filtered-compact.card-mobile tbody td[data-label="Setor Dari"],
     #santri-table.filtered-compact.card-mobile tbody td[data-label="Setor Sampai"]{
       display: block;         /* override dari flex → block */
-      padding: 8px 0;
+      padding: 10px 0;
     }
     /* label header tetap tampil di atas */
     #santri-table.filtered-compact.card-mobile tbody td[data-label="Setor Dari"]::before,
@@ -10248,6 +10255,7 @@ document.addEventListener("DOMContentLoaded", () => {
     #santri-table.filtered-compact.card-mobile tbody td[data-label="Setor Sampai"] select{
       display: block;
       width: 100%;
+      min-height: 42px;
     }
     /* khusus AYAT dikasih jarak atas agar rapi di bawah SURAH */
     #santri-table.filtered-compact.card-mobile tbody td[data-label="Setor Dari"] select.ayat-dari,
