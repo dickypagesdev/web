@@ -10116,7 +10116,101 @@ document.addEventListener("DOMContentLoaded", () => {
 </script>
 <!-- ===== /Modal Editor Parsial — Single Block ===== -->
 
+<!-- ===== MODE TAMPILKAN NIS SAJA ===== -->
+<style>
+  /* Biar NIS terlihat interaktif */
+  #santri-table td.col-nis {
+    color: #1E88E5;
+    cursor: pointer;
+    text-decoration: underline;
+    user-select: none;
+  }
+  /* Saat menjadi tombol "Tampilkan Semua Santri" */
+  #santri-table td.col-nis.show-all {
+    font-weight: 600;
+    text-decoration: none;
+  }
+</style>
 
+<script>
+(function(){
+  // Ambil tabel utama secara robust (pakai util yang sudah ada jika tersedia)
+  function getTable(){
+    if (typeof getSantriTable === 'function') return getSantriTable(); // :contentReference[oaicite:2]{index=2}
+    return document.getElementById('santri-table')
+        || document.querySelector('table[data-role="santri-table"]')
+        || document.querySelector('table.santri-table')
+        || null;
+  }
+
+  // Reset filter: tampilkan semua baris & kembalikan teks NIS
+  function resetNISFilter(tbl){
+    if (!tbl) tbl = getTable();
+    if (!tbl) return;
+    const tbody = tbl.tBodies && tbl.tBodies[0];
+    if (!tbody) return;
+
+    [...tbody.rows].forEach(tr=>{
+      tr.style.display = '';
+      const cell = tr.querySelector('td.col-nis');
+      if (cell){
+        if (cell.dataset.originalNis) {
+          cell.textContent = cell.dataset.originalNis;
+          delete cell.dataset.originalNis;
+        }
+        cell.classList.remove('show-all');
+      }
+    });
+    delete tbl.dataset.nisFilter;
+  }
+
+  // Terapkan filter untuk satu NIS
+  function applyNISFilter(tbl, nisText){
+    if (!tbl) return;
+    const tbody = tbl.tBodies && tbl.tBodies[0];
+    if (!tbody) return;
+
+    tbl.dataset.nisFilter = nisText;
+
+    [...tbody.rows].forEach(tr=>{
+      const cell = tr.querySelector('td.col-nis');
+      const val  = cell ? String(cell.textContent).trim() : '';
+      const match = (val === nisText);
+      tr.style.display = match ? '' : 'none';
+      if (match && cell){
+        if (!cell.dataset.originalNis) cell.dataset.originalNis = val;
+        cell.textContent = 'Tampilkan Semua Santri';
+        cell.classList.add('show-all');
+      }
+    });
+  }
+
+  // Event delegation untuk klik di kolom NIS
+  document.addEventListener('click', function(e){
+    const cell = e.target && e.target.closest && e.target.closest('td.col-nis');
+    if (!cell) return; // bukan klik di kolom NIS
+
+    const tbl = cell.closest('table') || getTable();
+    if (!tbl) return;
+
+    const isFiltered = !!tbl.dataset.nisFilter;
+    // Jika sedang ter-filter dan user klik "Tampilkan Semua Santri" → reset
+    if (isFiltered && cell.classList.contains('show-all')) {
+      resetNISFilter(tbl);
+      return;
+    }
+
+    // Jika belum ter-filter → ambil teks NIS & filter
+    const nisText = String(cell.textContent).trim();
+    if (!nisText) return;
+    applyNISFilter(tbl, nisText);
+  });
+
+  // OPTIONAL: kalau ada proses render ulang, kamu bisa panggil reset ini,
+  // tapi aman diabaikan (filter akan hilang saat tabel di-render ulang):
+  window.resetNISFilter = resetNISFilter;
+})();
+</script>
 
 </body>
 </html>
