@@ -10231,41 +10231,44 @@ document.addEventListener("DOMContentLoaded", () => {
   // --- util kolom ringkas ---
   // Mode ringkas menampilkan HANYA: Nama, Presensi, Setor Dari, Setor Sampai, Nilai, Murajaah, Setting Murajaah
   function computeCompactColumns(){
-    const tbl = getTable();
-    const thead = tbl ? tbl.tHead : null;
-    if (!thead) return { keepIdx: new Set(), hideIdx: new Set() };
+  const tbl = getTable();
+  const thead = tbl ? tbl.tHead : null;
+  if (!thead) return { keepIdx: new Set(), hideIdx: new Set() };
 
-    const wantedLabels = new Set([
-      'nama',
-      'presensi',
-      'setor dari',
-      'setor sampai',
-      'nilai',
-      'murajaah',
-      'setting murajaah'
-    ]);
+  // Kolom yang DITAMPILKAN pada mode ringkas:
+  const wantedLabels = new Set([
+    'nama',
+    'presensi',
+    'setor dari',
+    'setor sampai',
+    'nilai',
+    'murajaah',
+    'setting murajaah',
+    'setting thms'          // <- tambahkan ini
+  ]);
 
-    const ths = Array.from(thead.rows[0].cells);
-    const keepIdx = new Set();
+  const ths = Array.from(thead.rows[0].cells);
+  const keepIdx = new Set();
 
-    ths.forEach((th, idx) => {
-      const label = th.textContent.trim().toLowerCase();
+  ths.forEach((th, idx) => {
+    const label = th.textContent.trim().toLowerCase();
 
-      const isWantedByLabel = wantedLabels.has(label);
-      const isSettingMurById = th.id === 'murRangeHeader';     // header injeksi "Setting Murajaah"
-      const isMurajaahByClass = th.classList.contains('mur-header'); // header "Murajaah" lama
+    const isWantedByLabel   = wantedLabels.has(label);
+    const isSettingMurById  = th.id === 'murRangeHeader';      // header injeksi "Setting Murajaah"
+    const isMurajaahByClass = th.classList.contains('mur-header'); // header "Murajaah"
+    const isTHMSById        = th.id === 'totalAllJuzHeader';   // <- robust untuk "Setting THMS"
 
-      if (isWantedByLabel || isSettingMurById || isMurajaahByClass){
-        keepIdx.add(idx);
-      }
-    });
+    if (isWantedByLabel || isSettingMurById || isMurajaahByClass || isTHMSById){
+      keepIdx.add(idx);
+    }
+  });
 
-    // Semua selain keep → hide
-    const hideIdx = new Set();
-    ths.forEach((_, idx) => { if (!keepIdx.has(idx)) hideIdx.add(idx); });
+  // Semua selain keep → hide
+  const hideIdx = new Set();
+  ths.forEach((_, idx) => { if (!keepIdx.has(idx)) hideIdx.add(idx); });
 
-    return { keepIdx, hideIdx };
-  }
+  return { keepIdx, hideIdx };
+}
 
   // Terapkan/lepaskan hidden-col pada kolom sesuai indeks
   function setColumnVisibility(compactOn){
