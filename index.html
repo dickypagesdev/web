@@ -10121,7 +10121,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
 		
 <!-- ===== MODE FILTER NIS ===== -->
-<!-- ===== MODE FILTER NIS (dengan card layout mobile + ayat ditumpuk) ===== -->
+<!-- ===== MODE FILTER NIS (card layout mobile + ayat ditumpuk, kartu center presisi) ===== -->
 <style>
   /* Kolom NIS interaktif */
   #santri-table td.col-nis {
@@ -10142,7 +10142,7 @@ document.addEventListener("DOMContentLoaded", () => {
     display: none !important;
   }
 
-  /* ===== Wrapper scroll khusus mobile (rapi di pinggir) ===== */
+  /* ===== Wrapper scroll khusus mobile ===== */
   @media (max-width: 768px) {
     .santri-scrollwrap.scroll-on {
       max-height: 70vh;
@@ -10151,12 +10151,12 @@ document.addEventListener("DOMContentLoaded", () => {
       border: 1px solid #eee;
       border-radius: 10px;
       scroll-behavior: smooth;
-      padding: 10px;           /* ruang napas */
-      overflow-x: hidden;      /* stop geser kiri-kanan */
+      padding: 10px;
+      overflow-x: hidden;    /* stop geser kiri-kanan */
       background: #fff;
-      display: block;          /* TETAP DI PINGGIR, tidak center */
+      display: block;        /* biarkan konten start dari kiri wrapper */
+      box-sizing: border-box;
     }
-    /* Tabel full-lebar, rapi di pinggir */
     .santri-scrollwrap.scroll-on > table {
       width: 100%;
       margin: 0;
@@ -10164,7 +10164,7 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
-  /* Bar kontrol filter (muncul saat kolom NIS disembunyikan) */
+  /* Bar kontrol filter */
   .nis-filter-bar {
     display: none;
     margin: 8px 0 6px;
@@ -10198,14 +10198,23 @@ document.addEventListener("DOMContentLoaded", () => {
       display: none !important;
     }
 
-    /* setiap baris jadi “kartu” yang rapi berjarak */
+    /* bungkus tbody agar ada sedikit padding samping */
+    #santri-table.filtered-compact.card-mobile tbody {
+      padding: 2px 0;
+      display: block; /* pastikan bisa mengatur child spacing */
+    }
+
+    /* setiap baris jadi kartu—CENTER PRESISI kiri/kanan */
     #santri-table.filtered-compact.card-mobile tbody tr {
       display: block;
+      box-sizing: border-box;
+      width: min(680px, 100% - 24px); /* max width 680px, sisakan 12px kiri+kanan */
+      margin: 10px auto;              /* <-- ini yang membuat center presisi */
       padding: 12px;
-      margin: 8px 0;                 /* jarak antar kartu */
       border: 1px solid #eee;
       border-radius: 10px;
       background: #fff;
+      box-shadow: 0 1px 6px rgba(0,0,0,.03);
     }
 
     /* sel yang tampil jadi kv-row (label: nilai) */
@@ -10362,7 +10371,7 @@ document.addEventListener("DOMContentLoaded", () => {
     return { keepIdx, hideIdx };
   }
 
-  // Set label untuk card layout: set data-label pada tiap TD yang tampil
+  // Set data-label untuk card layout
   function setCardLabels(){
     const tbl = getTable();
     if (!tbl || !tbl.tHead) return;
@@ -10394,7 +10403,7 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
-  // Terapkan/lepaskan hidden-col pada kolom sesuai indeks
+  // Terapkan/lepaskan hidden-col
   function setColumnVisibility(compactOn){
     const tbl = getTable();
     if (!tbl || !tbl.tHead) return;
@@ -10403,12 +10412,12 @@ document.addEventListener("DOMContentLoaded", () => {
     const tb = getTBody(tbl);
     const rows = tb ? Array.from(tb.rows) : [];
 
-    // toggle pada TH
+    // toggle TH
     ths.forEach((th, idx)=>{
       if (hideIdx.has(idx)) th.classList.toggle('hidden-col', !!compactOn);
       else th.classList.remove('hidden-col');
     });
-    // toggle pada TD
+    // toggle TD
     rows.forEach(tr=>{
       const tds = Array.from(tr.cells);
       tds.forEach((td, idx)=>{
@@ -10419,7 +10428,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     tbl.classList.toggle('filtered-compact', !!compactOn);
 
-    // setelah visibilitas kolom di-set, update card layout mobile
+    // update card layout mobile
     updateMobileCardMode();
   }
 
@@ -10469,8 +10478,7 @@ document.addEventListener("DOMContentLoaded", () => {
       tr.style.display = match ? '' : 'none';
       if (match && cell){
         if (!cell.dataset.originalNis) cell.dataset.originalNis = val;
-        /* kolom NIS disembunyikan saat compact → ubah teksnya
-           agar bila suatu saat terlihat, menjadi tombol 'Tampilkan Semua Santri' */
+        /* saat compact kolom NIS disembunyikan → ubah teks agar jika terlihat menjadi tombol umum */
         cell.textContent = 'Tampilkan Semua Santri';
         cell.classList.add('show-all');
         found = true;
