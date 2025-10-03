@@ -7998,12 +7998,11 @@ if (jF===30 && jT===30){
 
 // ============ PATCH: Reset 0 & simpan ke server ============
 async function serverZeroReset(idx){
-  // 1) kosongkan UI fields
   const sel = q => document.querySelector(q);
 
-  // kosongkan pilihan JUZ, PAGE, SURAH/AYAH, SCORE, PREDIKAT
-  sel(`#mur${idx}-juzFrom`).value = '';
-  sel(`#mur${idx}-juzTo`).value   = '';
+  // 1) Kosongkan UI fields sesi (JUZ, PAGE, SURAH/AYAH, SCORE, PREDIKAT)
+  sel(`#mur${idx}-juzFrom`).value  = '';
+  sel(`#mur${idx}-juzTo`).value    = '';
   sel(`#mur${idx}-pageFrom`).value = '';
   sel(`#mur${idx}-pageTo`).value   = '';
 
@@ -8014,11 +8013,10 @@ async function serverZeroReset(idx){
 
   sel(`#mur${idx}-score`).value = '';
   sel(`#mur${idx}-predikatBadge`).textContent = '–';
-
   sel(`#mur${idx}-pagesHint`).textContent = '';
   sel(`#mur${idx}-totalJuz`).textContent  = '0.00';
 
-  // 2) nolkan state sesi
+  // 2) Nolkan state internal sesi
   murState[idx] = {
     touched:false,
     sF:null, aF:null, sT:null, aT:null,
@@ -8028,11 +8026,11 @@ async function serverZeroReset(idx){
     score:null, pText:'', pHuruf:''
   };
 
-  // 3) sinkronkan dataset cell supaya serializer-mu menyimpan 0 ke DB
+  // 3) Sinkronkan dataset cell agar serializer menulis 0 ke DB
   if (window.currentRowEl){
     const cell = window.currentRowEl.querySelector('.murajaah-cell');
     if (cell){
-      // bersihkan semua jejak sesi ini
+      // Bersihkan semua jejak sesi ini
       delete cell.dataset[`sf${idx}`];
       delete cell.dataset[`af${idx}`];
       delete cell.dataset[`st${idx}`];
@@ -8045,38 +8043,48 @@ async function serverZeroReset(idx){
       delete cell.dataset[`ptext${idx}`];
       delete cell.dataset[`phuruf${idx}`];
 
-      // PENTING: set nilai juz sesi ke "0.00" agar benar2 terserialisasi sebagai 0
+      // PENTING: set nilai juz sesi → "0.00" (string) agar terserialisasi sebagai angka 0
       cell.dataset[`juz${idx}`] = '0.00';
+
+      // Hapus legacy single-session supaya tidak “mengisi balik” saat refresh
+      delete cell.dataset.sf; delete cell.dataset.af;
+      delete cell.dataset.st; delete cell.dataset.at;
+      delete cell.dataset.pf; delete cell.dataset.pt;
+
+      // Tampilkan 0.00 di UI tabel sekarang juga
+      const valEl = cell.querySelector('.mur-val');
+      if (valEl) valEl.textContent = '0.00 juz';
+      const lblEl = cell.querySelector('.mur-label');
+      if (lblEl) lblEl.textContent = '';
     }
   }
 
-  // 4) update total 3 sesi (grand total = 0 jika sesi lain juga 0)
+  // 4) Update grand total & dataset total baris
+  // Pastikan label per-sesi di UI juga 0.00 jika state 0
   [1,2,3].forEach(i=>{
-    // pastikan label sesi pada UI ikut 0 bila state 0
     if ((murState[i]?.total||0) === 0){
-      const t = document.querySelector(`#mur${i}-totalJuz`);
+      const t = sel(`#mur${i}-totalJuz`);
       if (t) t.textContent = '0.00';
     }
   });
 
-  const g = (murState[1]?.total||0)+(murState[2]?.total||0)+(murState[3]?.total||0);
-  const gEl = document.querySelector('#mur-totalJuzAll');
-  if (gEl) gEl.textContent = g.toFixed(2);
+  const grand = (murState[1]?.total||0) + (murState[2]?.total||0) + (murState[3]?.total||0);
+  const grandEl = sel('#mur-totalJuzAll');
+  if (grandEl) grandEl.textContent = grand.toFixed(2);
 
   if (window.currentRowEl){
     const cell = window.currentRowEl.querySelector('.murajaah-cell');
     const valEl = cell?.querySelector('.mur-val');
-    if (cell) cell.dataset.murtotal = g.toFixed(2);
-    if (valEl) valEl.textContent = `${g.toFixed(2)} juz`;
+    if (cell) cell.dataset.murtotal = grand.toFixed(2);
+    if (valEl) valEl.textContent = `${grand.toFixed(2)} juz`;
   }
 
-  // 5) SIMPAN ke DB (gunakan mekanisme yang sudah ada)
-  const statusEl = document.querySelector('#mur-save-status');
+  // 5) SIMPAN ke DB (mengandalkan mekanisme yang sudah ada)
+  const statusEl = sel('#mur-save-status');
   try{
     if (typeof window.simpanDataMutabaah === 'function'){
-      // kirim tombol atau null, sesuai implementasi-mu
-      await window.simpanDataMutabaah(document.querySelector(`#mur${idx}-totalJuz-reset`) || null);
-      // setelah simpan, muat ulang dari server agar overlay/tabel sinkron 0.00
+      window.__murJustZeroAt = Date.now(); // penjaga opsional bila dipakai di refreshMurFromServer
+      await window.simpanDataMutabaah(sel(`#mur${idx}-totalJuz-reset`) || null);
       if (typeof window.murajaah?.refreshServer === 'function'){
         await window.murajaah.refreshServer();
       }
@@ -8085,11 +8093,12 @@ async function serverZeroReset(idx){
       if (statusEl){ statusEl.textContent='ℹ️ Nilai sudah 0 lokal (fungsi simpan tidak ada).'; setTimeout(()=>statusEl.textContent='',1500); }
     }
   }catch(e){
-    console.error(e);
+    console.error('serverZeroReset error:', e);
     if (statusEl){ statusEl.textContent='❌ Gagal simpan Reset 0'; setTimeout(()=>statusEl.textContent='',2000); }
     alert('❌ Gagal menyimpan ke Database. Cek Network/Console.');
   }
 }
+
 
 
   // === Buat tombol reset di sebelah #murX-totalJuz (1..3) → jalankan serverSafeReset ===
