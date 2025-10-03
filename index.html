@@ -10131,44 +10131,43 @@ document.addEventListener("DOMContentLoaded", () => {
     text-decoration: none;
   }
 </style>
-
 <script>
 (function(){
-  const LS_KEY = 'nisFilterState_v1'; // {mode:'filter'|'showall', nis:'12345'}
+  const LS_KEY = 'nisFilterState_v1';
 
-  // ===== util akses tabel (pakai helper kamu bila ada) =====
+  // --- util eksisting ---
   function getTable(){
-    if (typeof getSantriTable === 'function') return getSantriTable(); // helper-mu
+    if (typeof getSantriTable === 'function') return getSantriTable();
     return document.getElementById('santri-table')
         || document.querySelector('table[data-role="santri-table"]')
         || document.querySelector('table.santri-table')
-        || document.querySelector('table'); // fallback
+        || document.querySelector('table');
   }
-
   function getTbody(tbl){ return tbl?.tBodies?.[0] || null; }
 
-  // ===== persist state =====
+  // --- persist (izin showall tanpa nis) ---
   function saveState(s){ try{ localStorage.setItem(LS_KEY, JSON.stringify(s||{})); }catch{} }
   function loadState(){
     try{
       const s = JSON.parse(localStorage.getItem(LS_KEY)||'{}');
-      if (s && (s.mode==='filter' || s.mode==='showall') && s.nis) return s;
+      if (!s || !s.mode) return null;
+      if (s.mode === 'filter' && !s.nis) return null;
+      // mode 'showall' boleh tanpa nis
+      if (s.mode === 'filter' || s.mode === 'showall') return s;
     }catch{}
     return null;
   }
   function clearState(){ try{ localStorage.removeItem(LS_KEY); }catch{} }
 
-  // ===== core actions (sama seperti versi sebelumnya, tapi aware-persist) =====
+  // --- reset tampil semua (dengan opsi mempertahankan label show-all) ---
   function resetNISFilter(tbl, opts={}){
     if (!tbl) tbl = getTable();
     const tbody = getTbody(tbl); if (!tbody) return;
 
-    const state = loadState();
     [...tbody.rows].forEach(tr=>{
       tr.style.display = '';
       const cell = tr.querySelector('td.col-nis');
       if (!cell) return;
-      // Pulihkan NIS angka kalau ada backup
       if (cell.dataset.originalNis){
         cell.textContent = cell.dataset.originalNis;
         delete cell.dataset.originalNis;
@@ -10176,118 +10175,102 @@ document.addEventListener("DOMContentLoaded", () => {
       cell.classList.remove('show-all');
     });
 
-    // Jika mode terakhir "showall" → pertahankan label "Tampilkan Semua Santri" pada NIS yang sama
-    if (opts.keepShowAllLabel || state?.mode === 'showall'){
-      const nis = (opts.nis || state?.nis || '').trim();
-      if (nis){
-        const row = [...tbody.rows].find(r=>{
-          const c = r.querySelector('td.col-nis');
-          return c && String(c.textContent).trim() === nis;
-        });
-        if (row){
-          const c = row.querySelector('td.col-nis');
-          if (c){
-            c.dataset.originalNis = nis;
-            c.textContent = 'Tampilkan Semua Santri';
-            c.classList.add('show-all');
-          }
-        }
+    // jika sebelumnya showall & kita ingin pertahankan label pada satu baris
+    const nis = (opts.nis || '').trim();
+    if (opts.keepShowAllLabel && nis){
+      const row = [...tbody.rows].find(r=>{
+        const c = r.querySelector('td.col-nis');
+        return c && String(c.textContent).trim() === nis;
+      });
+      if (row){
+        const c = row.querySelector('td.col-nis');
+        c.dataset.originalNis = nis;
+        c.textContent = 'Tampilkan Semua Santri';
+        c.classList.add('show-all');
       }
     }
 
     delete tbl.dataset.nisFilter;
   }
 
+  // --- TERPENTING: filter + fallback otomatis jika 0 match ---
   function applyNISFilter(tbl, nisText){
     const tbody = getTbody(tbl); if (!tbody) return;
     tbl.dataset.nisFilter = nisText;
 
+    let matchCount = 0;
     [...tbody.rows].forEach(tr=>{
       const cell = tr.querySelector('td.col-nis');
       const val  = cell ? String(cell.textContent).trim() : '';
       const match = (val === nisText);
       tr.style.display = match ? '' : 'none';
       if (match && cell){
+        matchCount++;
         if (!cell.dataset.originalNis) cell.dataset.originalNis = val;
         cell.textContent = 'Tampilkan Semua Santri';
         cell.classList.add('show-all');
       }
     });
+
+    // — Fallback: jika tak ada satupun baris yang cocok di dataset baru —
+    if (matchCount === 0){
+      resetNISFilter(tbl);                   // tampilkan semua
+      saveState({ mode:'showall', nis:'' }); // ganti state agar aman ke depan
+    }
   }
 
-  // ===== re-apply after render/refresh =====
+  // --- apply state saat render ulang ---
   function applyPersistedState(){
     const tbl = getTable(); const tbody = getTbody(tbl);
     if (!tbl || !tbody) return;
+
     const st = loadState();
-    if (!st){ // tidak ada preferensi → tampil default apa adanya
-      delete tbl.dataset.nisFilter;
-      return;
-    }
+    if (!st){ delete tbl.dataset.nisFilter; return; }
+
     if (st.mode === 'filter'){
-      applyNISFilter(tbl, st.nis);
+      applyNISFilter(tbl, String(st.nis).trim());
     } else if (st.mode === 'showall'){
-      // tampil semua + pertahankan label show-all pada NIS yang sama
-      resetNISFilter(tbl, { keepShowAllLabel:true, nis: st.nis });
+      // tampil semua; kalau ada nis yang tersimpan, boleh pertahankan label, kalau tidak ya tampil default
+      resetNISFilter(tbl, { keepShowAllLabel: !!st.nis, nis: st.nis||'' });
     }
   }
 
-  // ===== observer agar state balik lagi setelah tabel berubah =====
+  // --- observer agar state re-applied setelah tabel berubah ---
   let mo = null;
   function ensureObserver(){
     const tbl = getTable(); const tbody = getTbody(tbl);
     if (!tbl || !tbody) return;
     if (mo) mo.disconnect();
-    mo = new MutationObserver((muts)=>{
-      // Jika ada penambahan/penggantian row/sel → terapkan lagi
-      const need = muts.some(m => m.type==='childList' || m.type==='subtree' || m.addedNodes?.length);
-      if (need) applyPersistedState();
-    });
-    mo.observe(tbody, { childList:true, subtree:true, characterData:true });
+    mo = new MutationObserver(()=>applyPersistedState());
+    mo.observe(tbody, { childList:true, subtree:true });
   }
 
-  // ===== click handling =====
+  // --- klik handler tetap sama ---
   document.addEventListener('click', function(e){
     const cell = e.target?.closest?.('td.col-nis');
     if (!cell) return;
     const tbl = cell.closest('table') || getTable(); if (!tbl) return;
 
     const isFiltered = !!tbl.dataset.nisFilter;
-
-    // Jika sedang ter-filter dan user klik label "Tampilkan Semua Santri" → tampilkan semua,
-    // tetapi pertahankan label itu pada NIS yang sama dan simpan mode "showall"
     if (isFiltered && cell.classList.contains('show-all')) {
       const nis = (cell.dataset.originalNis || '').trim();
       resetNISFilter(tbl, { keepShowAllLabel:true, nis });
-      if (nis) saveState({ mode:'showall', nis });
-      else clearState();
+      saveState({ mode:'showall', nis });
       return;
     }
 
-    // Jika belum ter-filter → ambil NIS angka (atau backup bila kebetulan sudah berlabel)
     const nisText = (cell.dataset.originalNis || cell.textContent || '').trim();
     if (!nisText) return;
-
     applyNISFilter(tbl, nisText);
     saveState({ mode:'filter', nis: nisText });
   });
 
-  // ===== init on load and on visibility/page nav =====
-  document.addEventListener('DOMContentLoaded', ()=>{
-    applyPersistedState();
-    ensureObserver();
-  });
+  // --- init ---
+  document.addEventListener('DOMContentLoaded', ()=>{ applyPersistedState(); ensureObserver(); });
   window.addEventListener('pageshow', applyPersistedState);
-  window.addEventListener('hashchange', applyPersistedState);
-  document.addEventListener('visibilitychange', ()=>{ if (!document.hidden) applyPersistedState(); });
-
-  // Ekspor util jika perlu dipanggil skrip lain
-  window.resetNISFilter = function(){
-    const tbl = getTable(); const st = loadState();
-    resetNISFilter(tbl, { keepShowAllLabel: !!(st?.mode==='showall'), nis: st?.nis });
-  };
 })();
 </script>
+
 
 
 </body>
