@@ -3108,7 +3108,9 @@ logoutBtn.addEventListener("click", () => {
   }, 500);
 });
 
-// === Load Santri Data ===
+// ============================
+// A. LOAD SANTRI DATA
+// ============================	
 async function loadSantriData() {
   const kelas   = kelasSelect.value;
   const tanggal = tanggalInput.value; // tanggal awal (kolom pertama)
@@ -3843,8 +3845,13 @@ async function loadSantriData() {
 
   overlay.style.display = "none";
 }
+// ============================
+// A. LOAD SANTRI DATA
+// ============================	 
 
-
+// ============================
+// A. LOAD SANTRI DATA
+// ============================		 
 // ====== Dropdown Ayat (OWNER-AWARE): ayat terpakai disembunyikan KECUALI jika baris ini adalah owner-nya ======
 // ====== Dropdown Ayat (OWNER-AWARE + RENTANG OWNER TETAP TAMPIL) ======
 function fillAyatOptionsMarked(selectEl, surahId, selectedAyat = "") {
@@ -4099,7 +4106,14 @@ function updateTotalJuz(row) {
 // Listener tetap
 kelasSelect.addEventListener("change", loadSantriData);
 tanggalInput.addEventListener("change", loadSantriData);
-	 
+// ============================
+// A. LOAD SANTRI DATA
+// ============================	 
+
+// ============================
+// A. LOAD SANTRI DATA
+// ============================
+// ====== SIMPAN DATA MUTABAAH ======
 async function simpanDataMutabaah(saveBtn){
   const rows  = document.querySelectorAll('#santri-table tbody tr');
 
@@ -4507,8 +4521,18 @@ async function simpanDataMutabaah(saveBtn){
 document.getElementById('save-btn')?.addEventListener('click', function(){ simpanDataMutabaah(this); });
 document.getElementById('save-btn-modal')?.addEventListener('click', function(){ simpanDataMutabaah(this); });
 document.getElementById('mur-save')?.addEventListener('click', function(){ simpanDataMutabaah(this); });
-											
+// ============================
+// A. LOAD SANTRI DATA
+// ============================
 
+
+	 
+// ============================
+// B. DOWNLOAD DATA
+// ============================	 
+// ============================
+// Download PDF/Excel Rekap (slot-based attendance)
+// ============================
 // ============================
 // Download PDF/Excel Rekap (slot-based attendance)
 // ============================
@@ -6723,13 +6747,21 @@ async function pdfSantriDownload(){
   }
 }
 window._pdfSantriDownload = pdfSantriDownload;
+// ============================
+// B. DOWNLOAD DATA
+// ============================
 
 
 
 
 
 
-
+// ============================
+// C. HITUNG TOTAL ALL JUZ FROM TABLE
+// ============================
+// ============================
+// hitungTotalAllJuzFromTable (REVISI TENANG: tanpa warning, FIX %)
+// ============================
 // ============================
 // hitungTotalAllJuzFromTable (REVISI TENANG: tanpa warning, FIX %)
 // ============================
@@ -7085,11 +7117,17 @@ window.loadSantriData = async function (...args) {
 // Kalau ganti tanggal atau kelas, otomatis muat ulang tabel & hitung
 tanggalInput?.addEventListener("change", () => loadSantriData());
 kelasSelect?.addEventListener("change", () => loadSantriData());
+// ============================
+// C. HITUNG TOTAL ALL JUZ FROM TABLE
+// ============================
 </script>
 
 
 
 <script>
+// ============================
+// D. MURAJAAH 3 SESI
+// ============================	
 // ---------- Murajaah (3 sesi, Juz Range + Nilai per sesi) ----------
 (function(){
   const MAP_URL='https://raw.githubusercontent.com/dickymiswardi/tadabbur/main/ayah_page_map.json';
@@ -8454,6 +8492,10 @@ if (jF===30 && jT===30){
 
   window.hitungTotalMurRangeFromTable = hitungTotalMurRangeFromTable;
 })();
+
+// ============================
+// D. MURAJAAH 3 SESI
+// ============================	
 </script>
 
 
