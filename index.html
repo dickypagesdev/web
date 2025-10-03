@@ -7303,6 +7303,46 @@ function juzOfAyah(s,a){
 
   const murState = {1:{},2:{},3:{}};
 
+  // --- helper: serialize 1 sesi ---
+function serializeSessionForSave(i){
+  const st = murState[i] || {};
+  const empty = !(st.sF && st.aF && st.sT && st.aT);
+  return empty ? {
+    from: "",             // kosong kalau belum dipilih
+    to: "",
+    pages: "",
+    jFrom: null,
+    jTo: null,
+    juz: 0,               // KUNCI: kirim 0 jika kosong
+    score: null,
+    predikatText: "",
+    predikatHuruf: ""
+  } : {
+    from: `${st.sF}:${st.aF}`,
+    to:   `${st.sT}:${st.aT}`,
+    pages: (st.pFrom && st.pTo) ? `${st.pFrom}-${st.pTo}` : "",
+    jFrom: st.jFrom ?? null,
+    jTo:   st.jTo   ?? null,
+    juz:   Number(st.total || 0),
+    score: st.score ?? null,
+    predikatText: st.pText || "",
+    predikatHuruf: st.pHuruf || ""
+  };
+}
+
+// --- helper: serialize 3 sesi + total ---
+function buildMurajaahPayload(){
+  const s1 = serializeSessionForSave(1);
+  const s2 = serializeSessionForSave(2);
+  const s3 = serializeSessionForSave(3);
+  const totalJuz = Number((murState[1]?.total||0) + (murState[2]?.total||0) + (murState[3]?.total||0));
+  return { sessions:[s1,s2,s3], totalJuz };
+}
+
+// (opsional) expose agar bisa dipakai dari luar
+window.buildMurajaahPayload = buildMurajaahPayload;
+
+
   function setPredikatUI(idx){
     const sc = Math.max(0, Math.min(100, parseInt($(`#mur${idx}-score`).value||'0',10)||0));
     const p = getPredikat(sc);
@@ -7902,17 +7942,28 @@ if (jF===30 && jT===30){
       $('#murPreviewOverlay').style.display='flex';
     });
     $('#mur-save')?.addEventListener('click', async()=>{
-      try{
-        [1,2,3].forEach(renderSession);
-        if(typeof window.simpanDataMutabaah==='function'){
-          await window.simpanDataMutabaah($('#mur-save'));
-          await refreshMurFromServer();
-          $('#mur-save-status').textContent='✅ Tersimpan';
-          setTimeout(()=>$('#mur-save-status').textContent='',1500);
-        }
-      }catch(e){ console.error(e); $('#mur-save-status').textContent='❌ Gagal simpan'; }
-    });
+  try{
+    [1,2,3].forEach(renderSession);           // pastikan state terakhir
+    const payload = buildMurajaahPayload();   // <- total 0 jika kosong (hasil reset)
+
+    if (typeof window.simpanDataMutabaah === 'function'){
+      // kalau simpanDataMutabaah(btn, data) didukung, kirim data;
+      // kalau tidak, panggil versi lama (dia akan baca DOM/dataset yang sudah 0)
+      if (window.simpanDataMutabaah.length >= 2){
+        await window.simpanDataMutabaah($('#mur-save'), payload);
+      } else {
+        await window.simpanDataMutabaah($('#mur-save'));
+      }
+      await refreshMurFromServer();
+      $('#mur-save-status').textContent='✅ Tersimpan';
+      setTimeout(()=>$('#mur-save-status').textContent='',1500);
+    }
+  }catch(e){
+    console.error(e);
+    $('#mur-save-status').textContent='❌ Gagal simpan';
   }
+});
+
 
   function afterTableRendered(){ ensureMurColumn(); refreshMurFromServer(); }
 
@@ -8010,7 +8061,7 @@ async function serverSafeReset(idx){
 }
 
 function blankSafeResetAll(){
-  [1,2,3].forEach(blankSafeReset);
+  [1,2,3].forEach(i => serverSafeReset(i));
 
   // Rekap grand total 0.00 & label sel
   const grand = 0;
