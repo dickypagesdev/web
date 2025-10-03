@@ -10168,18 +10168,21 @@ document.addEventListener("DOMContentLoaded", () => {
     padding: 6px 10px;
     border: 1px solid #d1d5db;
     border-radius: 8px;
-    background: #1E88E5;
+    background: white;
     cursor: pointer;
   }
 </style>
 
 <script>
 (function(){
-  const STORAGE_KEY = 'nisFilterState.v2'; // {mode:'filtered'|'all', nis?:string}
+  const STORAGE_KEY = 'nisFilterState.v3'; // {mode:'filtered'|'all', nis?:string}
   let observer = null;
 
   // --- helper elemen ---
-  function getTable(){ return document.getElementById('santri-table'); }
+  function getTable(){
+    try { if (typeof getSantriTable === 'function') return getSantriTable(); } catch {}
+    return document.getElementById('santri-table');
+  }
   function getTBody(tbl){ return tbl && tbl.tBodies ? tbl.tBodies[0] : null; }
 
   // Bungkus table dgn .santri-scrollwrap (sekali saja)
@@ -10215,6 +10218,42 @@ document.addEventListener("DOMContentLoaded", () => {
     return bar;
   }
 
+  // --- sisip header & kolom "Setting Murajaah" ---
+  function callEnsureMurRangeColumn(){
+    // gunakan versi milikmu jika tersedia
+    if (typeof ensureMurRangeColumn === 'function') {
+      try { ensureMurRangeColumn(); } catch {}
+      return;
+    }
+    // fallback minimal (TH + klik)
+    const table = getTable(); if (!table) return;
+    const thRow = table.tHead?.rows?.[0];
+    if (thRow && !thRow.querySelector('#murRangeHeader')){
+      const th = document.createElement('th');
+      th.id = 'murRangeHeader';
+      th.style.cursor = 'pointer';
+      th.style.textDecoration = 'underline';
+      th.textContent = 'Setting Murajaah';
+      const murTh = thRow.querySelector('.mur-header');
+      if (murTh && murTh.nextSibling) thRow.insertBefore(th, murTh.nextSibling);
+      else thRow.appendChild(th);
+      if (typeof bukaOverlayTotalMurRange === 'function') {
+        th.addEventListener('click', bukaOverlayTotalMurRange);
+      }
+    }
+    // TD fallback ringan (jika ingin langsung ada selnya)
+    const rows = table.tBodies?.[0]?.rows || [];
+    [...rows].forEach(tr=>{
+      if (tr.querySelector('.total-mur-range')) return;
+      const td = document.createElement('td');
+      td.className = 'total-mur-range';
+      td.innerHTML = `0.00&nbsp;juz <span class="mur-range-badge" style="color:#999; font-size:12px">total 0%</span> <small class="mur-range-count" style="color:#6b7280">(0)</small>`;
+      const murCell = tr.querySelector('.murajaah-cell');
+      if (murCell && murCell.nextSibling) tr.insertBefore(td, murCell.nextSibling);
+      else tr.appendChild(td);
+    });
+  }
+
   // --- persistence ---
   function saveState(s){ try{ localStorage.setItem(STORAGE_KEY, JSON.stringify(s)); }catch{} }
   function loadState(){
@@ -10228,7 +10267,7 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   // --- util kolom ringkas ---
-  // Tentukan kolom mana yang boleh tampil saat filtered: by text, id, class
+  // Tentukan kolom tampil saat filtered: by text, id, class
   function computeCompactColumns(){
     const tbl = getTable();
     const thead = tbl ? tbl.tHead : null;
@@ -10240,10 +10279,9 @@ document.addEventListener("DOMContentLoaded", () => {
 
     ths.forEach((th, idx) => {
       const label = th.textContent.trim();
-      const keepByText = wantedTexts.has(label);
-      const keepById    = th.id === 'totalAllJuzHeader';
+      const keepByText  = wantedTexts.has(label);
+      const keepById    = (th.id === 'totalAllJuzHeader' || th.id === 'murRangeHeader'); // <-- tambahkan murRangeHeader
       const keepByClass = th.classList.contains('mur-header');
-	  const keepByClass = th.classList.contains('total-mur-range');
       if (keepByText || keepById || keepByClass){
         keepIdx.add(idx);
       }
@@ -10259,6 +10297,7 @@ document.addEventListener("DOMContentLoaded", () => {
   function setColumnVisibility(compactOn){
     const tbl = getTable();
     if (!tbl || !tbl.tHead) return;
+    callEnsureMurRangeColumn(); // pastikan header kolom sudah ada sebelum hitung
     const { hideIdx } = computeCompactColumns();
     const ths = Array.from(tbl.tHead.rows[0].cells);
     const tb = getTBody(tbl);
@@ -10327,7 +10366,7 @@ document.addEventListener("DOMContentLoaded", () => {
       tr.style.display = match ? '' : 'none';
       if (match && cell){
         if (!cell.dataset.originalNis) cell.dataset.originalNis = val;
-        // saat compact, kolom NIS akan disembunyikan → ubah teks tetap tapi tak terlihat
+        // saat compact, kolom NIS disembunyikan → ubah teks tetap tapi tak terlihat
         cell.textContent = 'Tampilkan Semua Santri';
         cell.classList.add('show-all');
         found = true;
@@ -10360,6 +10399,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // --- state saat init / re-render ---
   function applyStateIfAny(){
+    callEnsureMurRangeColumn(); // jaga header/kolom tersedia
     const tbl = getTable();
     const tbody = getTBody(tbl);
     if (!tbl || !tbody) return;
@@ -10382,7 +10422,8 @@ document.addEventListener("DOMContentLoaded", () => {
 
     if (observer) observer.disconnect();
     observer = new MutationObserver(() => {
-      // saat baris berubah, re-apply state + jaga kolom ringkas
+      // saat baris berubah, jaga kolom & re-apply state
+      callEnsureMurRangeColumn();
       applyStateIfAny();
     });
     observer.observe(tbody, { childList:true });
@@ -10405,7 +10446,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     const isFiltered = !!tbl.dataset.nisFilter;
     if (isFiltered && cell.classList.contains('show-all')){
-      // walau kolom NIS disembunyikan saat compact, ini guard jika kolom terlihat
+      // guard jika kolom NIS sedang terlihat
       resetNISFilter(tbl);
       return;
     }
@@ -10424,6 +10465,7 @@ document.addEventListener("DOMContentLoaded", () => {
   function init(){
     ensureWrapper();
     ensureFilterBar();
+    callEnsureMurRangeColumn();
     ensureObserver();
     applyStateIfAny();
 
@@ -10436,6 +10478,7 @@ document.addEventListener("DOMContentLoaded", () => {
       if (tbl && tbody && tbody.rows.length){
         ensureWrapper();
         ensureFilterBar();
+        callEnsureMurRangeColumn();
         ensureObserver();
         applyStateIfAny();
         clearInterval(i);
@@ -10448,7 +10491,6 @@ document.addEventListener("DOMContentLoaded", () => {
   window.resetNISFilter = resetNISFilter;
 })();
 </script>
-
 
 
 
