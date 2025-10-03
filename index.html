@@ -10118,67 +10118,180 @@ document.addEventListener("DOMContentLoaded", () => {
 
 <!-- ===== MODE TAMPILKAN NIS SAJA ===== -->
 <style>
-  /* Biar NIS terlihat interaktif */
+  /* Kolom NIS interaktif */
   #santri-table td.col-nis {
     color: #1E88E5;
     cursor: pointer;
     text-decoration: underline;
     user-select: none;
+    white-space: nowrap;
   }
-  /* Saat menjadi tombol "Tampilkan Semua Santri" */
   #santri-table td.col-nis.show-all {
     font-weight: 600;
     text-decoration: none;
+  }
+
+  /* Sembunyikan kolom saat mode ringkas (filtered) */
+  #santri-table.filtered-compact th.hidden-col,
+  #santri-table.filtered-compact td.hidden-col {
+    display: none !important;
+  }
+
+  /* Scroll khusus mobile saat filter aktif */
+  @media (max-width: 768px) {
+    .santri-scrollwrap.scroll-on {
+      max-height: 70vh;
+      overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
+      border: 1px solid #eee;
+      border-radius: 10px;
+      scroll-behavior: smooth;
+      padding: 4px 0;
+    }
+    .santri-scrollwrap.scroll-on table { width: 100%; }
+  }
+
+  /* Bar kontrol filter (muncul saat kolom NIS disembunyikan) */
+  .nis-filter-bar {
+    display: none;
+    margin: 8px 0 6px;
+    padding: 8px 12px;
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+    background: #f9fafb;
+    font-size: 14px;
+    line-height: 1.4;
+  }
+  .nis-filter-bar.show { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .nis-filter-bar .label { opacity: .8; }
+  .nis-filter-bar .btn-clear {
+    padding: 6px 10px;
+    border: 1px solid #d1d5db;
+    border-radius: 8px;
+    background: white;
+    cursor: pointer;
   }
 </style>
 
 <script>
 (function(){
-  const STORAGE_KEY = 'nisFilterState.v1'; // {mode:'filtered'|'all', nis?:string}
+  const STORAGE_KEY = 'nisFilterState.v2'; // {mode:'filtered'|'all', nis?:string}
   let observer = null;
 
-  // ---------- Util ambil tabel ----------
-  function getTable(){
-    // Jika kamu punya helper getSantriTable(), silakan biarkan baris pertama ini jalan.
-    try { if (typeof getSantriTable === 'function') return getSantriTable(); } catch(e){}
-    return document.getElementById('santri-table')
-        || document.querySelector('table[data-role="santri-table"]')
-        || document.querySelector('table.santri-table')
-        || null;
+  // --- helper elemen ---
+  function getTable(){ return document.getElementById('santri-table'); }
+  function getTBody(tbl){ return tbl && tbl.tBodies ? tbl.tBodies[0] : null; }
+
+  // Bungkus table dgn .santri-scrollwrap (sekali saja)
+  function ensureWrapper(){
+    const tbl = getTable();
+    if (!tbl) return null;
+    let wrap = tbl.closest('.santri-scrollwrap');
+    if (wrap) return wrap;
+    wrap = document.createElement('div');
+    wrap.className = 'santri-scrollwrap';
+    wrap.setAttribute('role','region');
+    wrap.setAttribute('aria-label','Daftar santri');
+    tbl.parentNode.insertBefore(wrap, tbl);
+    wrap.appendChild(tbl);
+    return wrap;
   }
 
-  function getTBody(tbl){
-    return tbl && tbl.tBodies ? tbl.tBodies[0] : null;
+  // Bar kontrol di atas wrapper
+  function ensureFilterBar(){
+    const wrap = ensureWrapper();
+    if (!wrap) return null;
+    let bar = wrap.previousElementSibling;
+    if (!bar || !bar.classList.contains('nis-filter-bar')){
+      bar = document.createElement('div');
+      bar.className = 'nis-filter-bar';
+      bar.innerHTML = `
+        <span class="label">Filter aktif:</span>
+        <strong class="nis"></strong>
+        <button type="button" class="btn-clear">Tampilkan Semua Santri</button>
+      `;
+      wrap.parentNode.insertBefore(bar, wrap);
+    }
+    return bar;
   }
 
-  // ---------- Persistence ----------
-  function saveState(state){
-    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch(e){}
-  }
+  // --- persistence ---
+  function saveState(s){ try{ localStorage.setItem(STORAGE_KEY, JSON.stringify(s)); }catch{} }
   function loadState(){
-    try {
+    try{
       const raw = localStorage.getItem(STORAGE_KEY);
       if (!raw) return null;
       const s = JSON.parse(raw);
-      if (s && (s.mode === 'filtered' || s.mode === 'all')) return s;
-    } catch(e){}
+      if (s && (s.mode==='filtered' || s.mode==='all')) return s;
+    }catch{}
     return null;
   }
-  function clearState(){
-    try { localStorage.removeItem(STORAGE_KEY); } catch(e){}
+
+  // --- util kolom ringkas ---
+  // Tentukan kolom mana yang boleh tampil saat filtered: by text, id, class
+  function computeCompactColumns(){
+    const tbl = getTable();
+    const thead = tbl ? tbl.tHead : null;
+    if (!thead) return { keepIdx: new Set(), hideIdx: new Set() };
+
+    const wantedTexts = new Set(['Nama','Presensi','Setor Dari','Setor Sampai','Nilai']);
+    const keepIdx = new Set();
+    const ths = Array.from(thead.rows[0].cells);
+
+    ths.forEach((th, idx) => {
+      const label = th.textContent.trim();
+      const keepByText = wantedTexts.has(label);
+      const keepById    = th.id === 'totalAllJuzHeader';
+      const keepByClass = th.classList.contains('mur-header');
+      if (keepByText || keepById || keepByClass){
+        keepIdx.add(idx);
+      }
+    });
+
+    // Semua selain keepIdx → hideIdx
+    const hideIdx = new Set();
+    ths.forEach((_, idx) => { if (!keepIdx.has(idx)) hideIdx.add(idx); });
+    return { keepIdx, hideIdx };
   }
 
-  // ---------- Reset & Filter ----------
+  // Terapkan/lepaskan hidden-col pada kolom sesuai indeks
+  function setColumnVisibility(compactOn){
+    const tbl = getTable();
+    if (!tbl || !tbl.tHead) return;
+    const { hideIdx } = computeCompactColumns();
+    const ths = Array.from(tbl.tHead.rows[0].cells);
+    const tb = getTBody(tbl);
+    const rows = tb ? Array.from(tb.rows) : [];
+
+    // toggle pada TH
+    ths.forEach((th, idx)=>{
+      if (hideIdx.has(idx)) th.classList.toggle('hidden-col', !!compactOn);
+      else th.classList.remove('hidden-col');
+    });
+    // toggle pada TD
+    rows.forEach(tr=>{
+      const tds = Array.from(tr.cells);
+      tds.forEach((td, idx)=>{
+        if (hideIdx.has(idx)) td.classList.toggle('hidden-col', !!compactOn);
+        else td.classList.remove('hidden-col');
+      });
+    });
+
+    tbl.classList.toggle('filtered-compact', !!compactOn);
+  }
+
+  // --- reset & filter ---
   function resetNISFilter(tbl){
     if (!tbl) tbl = getTable();
     const tbody = getTBody(tbl);
     if (!tbody) return;
 
+    // tampilkan semua baris
     [...tbody.rows].forEach(tr=>{
       tr.style.display = '';
       const cell = tr.querySelector('td.col-nis');
       if (cell){
-        if (cell.dataset.originalNis) {
+        if (cell.dataset.originalNis){
           cell.textContent = cell.dataset.originalNis;
           delete cell.dataset.originalNis;
         }
@@ -10187,6 +10300,15 @@ document.addEventListener("DOMContentLoaded", () => {
     });
     delete tbl.dataset.nisFilter;
     saveState({ mode: 'all' });
+
+    // nonaktifkan scroll & mode ringkas
+    const wrap = ensureWrapper();
+    if (wrap) wrap.classList.remove('scroll-on');
+    setColumnVisibility(false);
+
+    // sembunyikan bar kontrol
+    const bar = ensureFilterBar();
+    if (bar){ bar.classList.remove('show'); bar.querySelector('.nis').textContent = ''; }
   }
 
   function applyNISFilter(tbl, nisText){
@@ -10204,6 +10326,7 @@ document.addEventListener("DOMContentLoaded", () => {
       tr.style.display = match ? '' : 'none';
       if (match && cell){
         if (!cell.dataset.originalNis) cell.dataset.originalNis = val;
+        // saat compact, kolom NIS akan disembunyikan → ubah teks tetap tapi tak terlihat
         cell.textContent = 'Tampilkan Semua Santri';
         cell.classList.add('show-all');
         found = true;
@@ -10212,23 +10335,35 @@ document.addEventListener("DOMContentLoaded", () => {
 
     if (found){
       saveState({ mode: 'filtered', nis: nisText });
+
+      // aktifkan scroll mobile + mode ringkas
+      const wrap = ensureWrapper();
+      if (wrap){
+        wrap.classList.add('scroll-on');
+        wrap.scrollTop = 0;
+        wrap.scrollIntoView({ behavior:'smooth', block:'start' });
+      }
+      setColumnVisibility(true);
+
+      // tampilkan bar kontrol + info NIS
+      const bar = ensureFilterBar();
+      if (bar){
+        bar.classList.add('show');
+        bar.querySelector('.nis').textContent = nisText;
+      }
     } else {
-      // Jika NIS tidak ada (misal data berganti), kembali ke all
       resetNISFilter(tbl);
     }
     return found;
   }
 
-  // ---------- Terapkan state dari storage ----------
+  // --- state saat init / re-render ---
   function applyStateIfAny(){
     const tbl = getTable();
     const tbody = getTBody(tbl);
     if (!tbl || !tbody) return;
-
     const state = loadState();
     if (!state) return;
-
-    // Jika tabel kosong (belum render), nanti observer akan panggil lagi
     if (tbody.rows.length === 0) return;
 
     if (state.mode === 'filtered' && state.nis){
@@ -10238,7 +10373,7 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
-  // ---------- Observer untuk re-render dinamis ----------
+  // --- observer tbody dinamis ---
   function ensureObserver(){
     const tbl = getTable();
     const tbody = getTBody(tbl);
@@ -10246,68 +10381,73 @@ document.addEventListener("DOMContentLoaded", () => {
 
     if (observer) observer.disconnect();
     observer = new MutationObserver(() => {
-      // Tiap ada perubahan isi tbody (render ulang), coba terapkan state lagi
+      // saat baris berubah, re-apply state + jaga kolom ringkas
       applyStateIfAny();
     });
-    observer.observe(tbody, { childList: true, subtree: false });
+    observer.observe(tbody, { childList:true });
   }
 
-  // ---------- Event klik (delegation) ----------
-  document.addEventListener('click', function(e){
-    const cell = e.target && e.target.closest && e.target.closest('td.col-nis');
-    if (!cell) return;
+  // --- klik delegasi: td.col-nis + tombol di filter bar ---
+  document.addEventListener('click', (e)=>{
+    // tombol bar clear
+    const btnClear = e.target && e.target.closest && e.target.closest('.nis-filter-bar .btn-clear');
+    if (btnClear){
+      resetNISFilter(getTable());
+      return;
+    }
 
-    const tbl = cell.closest('table') || getTable();
+    // klik NIS
+    const cell = e.target && e.target.closest && e.target.closest('#santri-table td.col-nis');
+    if (!cell) return;
+    const tbl = getTable();
     if (!tbl) return;
 
     const isFiltered = !!tbl.dataset.nisFilter;
-
-    // Jika sedang ter-filter & user klik "Tampilkan Semua Santri" → reset + simpan state 'all'
-    if (isFiltered && cell.classList.contains('show-all')) {
+    if (isFiltered && cell.classList.contains('show-all')){
+      // walau kolom NIS disembunyikan saat compact, ini guard jika kolom terlihat
       resetNISFilter(tbl);
       return;
     }
 
-    // Jika belum ter-filter → ambil NIS & filter + simpan state 'filtered'
     const nisText = String(cell.dataset.originalNis || cell.textContent).trim();
     if (!nisText) return;
     applyNISFilter(tbl, nisText);
   });
 
-  // ---------- Init awal ----------
-  // 1) Tunggu DOM siap
+  // --- init ---
   if (document.readyState === 'loading'){
     document.addEventListener('DOMContentLoaded', init);
   } else {
     init();
   }
-
   function init(){
-    // 2) Pasang observer agar tahan re-render
+    ensureWrapper();
+    ensureFilterBar();
     ensureObserver();
-
-    // 3) Coba terapkan state sekarang
     applyStateIfAny();
 
-    // 4) Guard tambahan: jika tabel muncul belakangan, polling ringan (maks 2 detik)
+    // guard polling bila tbody render belakangan
     let tries = 0;
     const i = setInterval(()=>{
       tries++;
       const tbl = getTable();
       const tbody = getTBody(tbl);
       if (tbl && tbody && tbody.rows.length){
-        applyStateIfAny();
+        ensureWrapper();
+        ensureFilterBar();
         ensureObserver();
+        applyStateIfAny();
         clearInterval(i);
       }
       if (tries > 20) clearInterval(i);
     }, 100);
   }
 
-  // Ekspor opsional untuk dipanggil skrip lain
+  // opsional
   window.resetNISFilter = resetNISFilter;
 })();
 </script>
+
 
 
 
