@@ -1354,7 +1354,6 @@ async function buatUserNIS() {
             <th>Total Juz</th>
             <th>Nilai</th>
             <th id="totalAllJuzHeader" style="cursor:pointer; text-decoration:underline;">Setting THMS</th>
-			<th class="mur-header" id="murRangeHeader">Murajaah</th>
           </tr>
         </thead>
         <tbody></tbody>
@@ -10169,7 +10168,7 @@ document.addEventListener("DOMContentLoaded", () => {
     padding: 6px 10px;
     border: 1px solid #d1d5db;
     border-radius: 8px;
-    background: #1E88E5;
+    background: white;
     cursor: pointer;
   }
 </style>
@@ -10177,7 +10176,8 @@ document.addEventListener("DOMContentLoaded", () => {
 <script>
 (function(){
   const STORAGE_KEY = 'nisFilterState.v2'; // {mode:'filtered'|'all', nis?:string}
-  let observer = null;
+  let bodyObserver = null;
+  let headObserver = null;
 
   // --- helper elemen ---
   function getTable(){ return document.getElementById('santri-table'); }
@@ -10229,28 +10229,29 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   // --- util kolom ringkas ---
-  // Tentukan kolom mana yang boleh tampil saat filtered: by text, id, class
+  // Saat mode ringkas, tampilkan HANYA: Nama, Presensi, Setor Dari, Setor Sampai, Nilai, Setting Murajaah
   function computeCompactColumns(){
     const tbl = getTable();
     const thead = tbl ? tbl.tHead : null;
     if (!thead) return { keepIdx: new Set(), hideIdx: new Set() };
 
-    const wantedTexts = new Set(['Nama','Presensi','Setor Dari','Setor Sampai','Nilai']);
+    const wanted = new Set([
+      'nama',
+      'presensi',
+      'setor dari',
+      'setor sampai',
+      'nilai',
+      'setting murajaah'
+    ]);
+
     const keepIdx = new Set();
     const ths = Array.from(thead.rows[0].cells);
 
     ths.forEach((th, idx) => {
-      const label = th.textContent.trim();
-      const keepByText = wantedTexts.has(label);
-      const keepById    = th.id === 'totalAllJuzHeader';
-      const keepByClass = th.classList.contains('mur-header');
-	  const keepByIdMur = th.id === 'murRangeHeader';
-      if (keepByText || keepById || keepByClass){
-        keepIdx.add(idx);
-      }
+      const label = th.textContent.trim().toLowerCase();
+      if (wanted.has(label)) keepIdx.add(idx);
     });
 
-    // Semua selain keepIdx → hideIdx
     const hideIdx = new Set();
     ths.forEach((_, idx) => { if (!keepIdx.has(idx)) hideIdx.add(idx); });
     return { keepIdx, hideIdx };
@@ -10328,7 +10329,7 @@ document.addEventListener("DOMContentLoaded", () => {
       tr.style.display = match ? '' : 'none';
       if (match && cell){
         if (!cell.dataset.originalNis) cell.dataset.originalNis = val;
-        // saat compact, kolom NIS akan disembunyikan → ubah teks tetap tapi tak terlihat
+        // saat compact, kolom NIS disembunyikan → ubah teks tetap tapi tak terlihat
         cell.textContent = 'Tampilkan Semua Santri';
         cell.classList.add('show-all');
         found = true;
@@ -10376,17 +10377,31 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   // --- observer tbody dinamis ---
-  function ensureObserver(){
+  function ensureBodyObserver(){
     const tbl = getTable();
     const tbody = getTBody(tbl);
     if (!tbl || !tbody) return;
 
-    if (observer) observer.disconnect();
-    observer = new MutationObserver(() => {
+    if (bodyObserver) bodyObserver.disconnect();
+    bodyObserver = new MutationObserver(() => {
       // saat baris berubah, re-apply state + jaga kolom ringkas
       applyStateIfAny();
     });
-    observer.observe(tbody, { childList:true });
+    bodyObserver.observe(tbody, { childList:true });
+  }
+
+  // --- observer thead (agar Setting Murajaah yang disisip dinamis ikut dihitung) ---
+  function ensureHeadObserver(){
+    const tbl = getTable();
+    const thead = tbl && tbl.tHead;
+    if (!tbl || !thead) return;
+
+    if (headObserver) headObserver.disconnect();
+    headObserver = new MutationObserver(() => {
+      // bila sedang compact, hitung ulang visibilitas kolom
+      if (tbl.dataset.nisFilter) setColumnVisibility(true);
+    });
+    headObserver.observe(thead, { childList:true, subtree:true });
   }
 
   // --- klik delegasi: td.col-nis + tombol di filter bar ---
@@ -10406,7 +10421,6 @@ document.addEventListener("DOMContentLoaded", () => {
 
     const isFiltered = !!tbl.dataset.nisFilter;
     if (isFiltered && cell.classList.contains('show-all')){
-      // walau kolom NIS disembunyikan saat compact, ini guard jika kolom terlihat
       resetNISFilter(tbl);
       return;
     }
@@ -10425,7 +10439,8 @@ document.addEventListener("DOMContentLoaded", () => {
   function init(){
     ensureWrapper();
     ensureFilterBar();
-    ensureObserver();
+    ensureBodyObserver();
+    ensureHeadObserver();
     applyStateIfAny();
 
     // guard polling bila tbody render belakangan
@@ -10437,7 +10452,8 @@ document.addEventListener("DOMContentLoaded", () => {
       if (tbl && tbody && tbody.rows.length){
         ensureWrapper();
         ensureFilterBar();
-        ensureObserver();
+        ensureBodyObserver();
+        ensureHeadObserver();
         applyStateIfAny();
         clearInterval(i);
       }
