@@ -7996,11 +7996,11 @@ if (jF===30 && jT===30){
     }
   }
 
-// ============ PATCH: Reset 0 & simpan ke server (revisi full) ============
+// ============ PATCH: Reset 0 & simpan ke server (revisi lebih kuat) ============
 async function serverZeroReset(idx){
   const sel = q => document.querySelector(q);
 
-  // --- A. Kosongkan semua input di modal (sesi idx) ---
+  // --- 1) Kosongkan semua input di modal (sesi idx) ---
   sel(`#mur${idx}-juzFrom`).value  = '';
   sel(`#mur${idx}-juzTo`).value    = '';
   sel(`#mur${idx}-pageFrom`).value = '';
@@ -8016,7 +8016,7 @@ async function serverZeroReset(idx){
   sel(`#mur${idx}-pagesHint`).textContent = '';
   sel(`#mur${idx}-totalJuz`).textContent  = '0.00';
 
-  // --- B. Nolkan state internal ---
+  // --- 2) Nolkan state internal ---
   murState[idx] = {
     touched:false,
     sF:null, aF:null, sT:null, aT:null,
@@ -8026,147 +8026,167 @@ async function serverZeroReset(idx){
     score:null, pText:'', pHuruf:''
   };
 
-  // --- C. Sinkronkan dataset + tampilan baris ---
-  const row = window.currentRowEl || sel('#santri-table tbody tr.selected') || null;
-  if (row){
-    const cell = row.querySelector('.murajaah-cell');
-    if (cell){
-      // bersihkan semua jejak sesi {idx}
-      delete cell.dataset[`sf${idx}`];
-      delete cell.dataset[`af${idx}`];
-      delete cell.dataset[`st${idx}`];
-      delete cell.dataset[`at${idx}`];
-      delete cell.dataset[`pf${idx}`];
-      delete cell.dataset[`pt${idx}`];
-      delete cell.dataset[`jfrom${idx}`];
-      delete cell.dataset[`jto${idx}`];
-      delete cell.dataset[`score${idx}`];
-      delete cell.dataset[`ptext${idx}`];
-      delete cell.dataset[`phuruf${idx}`];
+  // --- 3) Sinkronkan dataset baris & tampilkan 0 segera ---
+  const row  = window.currentRowEl || sel('#santri-table tbody tr.selected') || null;
+  const cell = row?.querySelector?.('.murajaah-cell') || null;
+  if (cell){
+    // bersihkan jejak sesi {idx}
+    delete cell.dataset[`sf${idx}`];
+    delete cell.dataset[`af${idx}`];
+    delete cell.dataset[`st${idx}`];
+    delete cell.dataset[`at${idx}`];
+    delete cell.dataset[`pf${idx}`];
+    delete cell.dataset[`pt${idx}`];
+    delete cell.dataset[`jfrom${idx}`];
+    delete cell.dataset[`jto${idx}`];
+    delete cell.dataset[`score${idx}`];
+    delete cell.dataset[`ptext${idx}`];
+    delete cell.dataset[`phuruf${idx}`];
 
-      // set juz sesi ke "0.00" (agar terserialisasi sebagai 0)
-      cell.dataset[`juz${idx}`] = '0.00';
+    // set juz sesi → "0.00" supaya serializer nulis 0
+    cell.dataset[`juz${idx}`] = '0.00';
 
-      // hapus legacy single-session
-      delete cell.dataset.sf; delete cell.dataset.af;
-      delete cell.dataset.st; delete cell.dataset.at;
-      delete cell.dataset.pf; delete cell.dataset.pt;
+    // hapus legacy single-session (hindari isi balik)
+    delete cell.dataset.sf; delete cell.dataset.af;
+    delete cell.dataset.st; delete cell.dataset.at;
+    delete cell.dataset.pf; delete cell.dataset.pt;
 
-      // GRAND TOTAL = jumlah 3 sesi dari murState
-      const grand = (murState[1]?.total||0) + (murState[2]?.total||0) + (murState[3]?.total||0);
-      cell.dataset.murtotal = grand.toFixed(2);
-
-      const valEl = cell.querySelector('.mur-val');
-      if (valEl){ valEl.textContent = `${grand.toFixed(2)} juz`; valEl.innerText = `${grand.toFixed(2)} juz`; }
-      const lblEl = cell.querySelector('.mur-label');
-      if (lblEl){ lblEl.textContent = ''; lblEl.innerText = ''; }
-
-      // kolom Setting Murajaah (kalau ada) ikut dinolkan
-      const totalRangeTd = row.querySelector('.total-mur-range');
-      if (totalRangeTd){
-        totalRangeTd.innerHTML = `0.00&nbsp;juz <span class="mur-range-badge" style="color:#999; font-size:12px">total 0%</span> <small class="mur-range-count" style="color:#6b7280">(0)</small>`;
-        totalRangeTd.dataset.murRangeTotal = "0.00";
-        totalRangeTd.dataset.murRangePsum  = "0";
-        totalRangeTd.dataset.murRangePavg  = "0";
-      }
-    }
+    // hitung & tampilkan grand total 0
+    const grand = (murState[1]?.total||0) + (murState[2]?.total||0) + (murState[3]?.total||0);
+    cell.dataset.murtotal = grand.toFixed(2);
+    const valEl = cell.querySelector('.mur-val');
+    if (valEl){ valEl.textContent = `${grand.toFixed(2)} juz`; valEl.innerText = `${grand.toFixed(2)} juz`; }
+    const lblEl = cell.querySelector('.mur-label');
+    if (lblEl){ lblEl.textContent = ''; lblEl.innerText = ''; }
   }
+  [1,2,3].forEach(i=>{ const t = sel(`#mur${i}-totalJuz`); if (t) t.textContent = (murState[i]?.total||0).toFixed(2); });
+  const grandEl = sel('#mur-totalJuzAll'); if (grandEl){ const g=(murState[1]?.total||0)+(murState[2]?.total||0)+(murState[3]?.total||0); grandEl.textContent=g.toFixed(2); }
 
-  // --- D. Update ringkasan total di modal ---
-  [1,2,3].forEach(i=>{
-    if ((murState[i]?.total||0) === 0){
-      const t = sel(`#mur${i}-totalJuz`); if (t) t.textContent = '0.00';
-    }
-  });
-  const grandNow = (murState[1]?.total||0)+(murState[2]?.total||0)+(murState[3]?.total||0);
-  const grandEl  = sel('#mur-totalJuzAll'); if (grandEl) grandEl.textContent = grandNow.toFixed(2);
-
-  // --- E. Helper lokal: paksa reset ke server (payload lengkap 0) ---
-  async function forceServerRowZero(row){
-    // ambil konteks kelas & tanggal
+  // --- 4) Helper: identitas baris & konteks ---
+  const ctx = (()=> {
     const kelas = (typeof resolveKelas==='function' ? resolveKelas() : '') ||
                   String(document.querySelector('#santri-table')?.dataset?.kelas || document.body?.dataset?.kelas || '');
     const tanggal = String(row?.dataset?.tanggal || '') ||
                     (typeof resolveTanggalGlobal==='function' ? resolveTanggalGlobal() : '');
-    if (!row || !kelas || !tanggal){ console.warn('[murZero] konteks kurang'); return false; }
-
-    // identitas baris
     const id   = String(row?.dataset?.id || row?.children?.[0]?.textContent || '').trim();
     const nis  = String(row?.dataset?.nis || '').trim();
     const nama = ((row?.children?.[1]?.childNodes?.[0]?.textContent || row?.children?.[1]?.textContent || '')+'').trim();
+    return { kelas, tanggal, id, nis, nama, key:(nis||id||nama||'') };
+  })();
 
-    // payload nol komplit (akomodir berbagai skema backend)
-    const dataZero = {
+  // --- 5) Helper: payload nol super-komplit (akomodir semua skema umum) ---
+  function buildZeroPayload(){
+    return {
       totalJuz: 0, juzmurajaah: 0, juzmur: 0,
+      // per-sesi (dua varian nama)
       juzmur1: 0, juzmur2: 0, juzmur3: 0,
       juzSesi1: 0, juzSesi2: 0, juzSesi3: 0,
+      // legacy range strings
       murFrom: "", murTo: "", murPages: "",
       murFrom1: "", murTo1: "", murPages1: "",
       murFrom2: "", murTo2: "", murPages2: "",
       murFrom3: "", murTo3: "", murPages3: "",
+      // info juz per sesi
       jFrom1: null, jTo1: null, jFrom2: null, jTo2: null, jFrom3: null, jTo3: null,
+      // skor/predikat
       murScore1: null, murScore2: null, murScore3: null,
       murPredText1: "", murPredText2: "", murPredText3: "",
       murPredHuruf1: "", murPredHuruf2: "", murPredHuruf3: "",
+      // format array sesi gaya baru
       murSessions: [
         { from:"", to:"", pages:"", juz:0, jFrom:null, jTo:null, score:null, predikatText:"", predikatHuruf:"" },
         { from:"", to:"", pages:"", juz:0, jFrom:null, jTo:null, score:null, predikatText:"", predikatHuruf:"" },
         { from:"", to:"", pages:"", juz:0, jFrom:null, jTo:null, score:null, predikatText:"", predikatHuruf:"" },
       ],
     };
+  }
 
-    const envA = { kelas, tanggal, id, nis, nama, data: dataZero };
-    const envB = { kelas, tanggal, id, nis, nama, ...dataZero };
-    const envC = { key:(nis||id||nama||""), kelas, tanggal, data: dataZero };
+  // --- 6) Helper: tembak endpoint reset/zero & delete ---
+  async function hit(url, method, body){
+    try{
+      const r = await fetch(url, { method, headers:{'Content-Type':'application/json'}, body: JSON.stringify(body||{}) });
+      let j=null; try{ j = await r.clone().json(); }catch(_){}
+      const ok = r.ok || r.status===204 || (j && (j.ok||j.success||j.saved||j.updated||j.upserted||j.removed||j.deleted));
+      return { ok, status:r.status, json:j };
+    }catch(e){ return { ok:false, err:e }; }
+  }
 
+  async function tryDeleteOnServer(){
+    const b = { kelas:ctx.kelas, tanggal:ctx.tanggal, id:ctx.id, nis:ctx.nis, nama:ctx.nama, key:ctx.key, delete:true };
     const attempts = [
-      { url: '/api/saveAbsensi',   method:'POST', body: envA },
-      { url: '/api/updateAbsensi', method:'POST', body: envB },
-      { url: '/api/upsertAbsensi', method:'POST', body: envB },
-      { url: '/api/setAbsensi',    method:'POST', body: envB },
-      { url: '/api/aksesAbsensi',  method:'POST', body: envA },
-      { url: '/api/saveAbsensi',   method:'PUT',  body: envB },
-      { url: '/api/updateAbsensi', method:'PUT',  body: envB },
-      { url: '/api/saveAbsensi?mode=reset', method:'POST', body: envC },
+      { url:'/api/deleteAbsensi', method:'POST', body:b },
+      { url:'/api/resetAbsensi',  method:'POST', body:b },
+      { url:'/api/aksesAbsensi',  method:'POST', body:{...b, data:{delete:true}} },
+      { url:'/api/saveAbsensi?delete=1', method:'POST', body:b },
+      { url:'/api/updateAbsensi?delete=1', method:'POST', body:b },
     ];
-
-    for (const att of attempts){
-      try{
-        const r = await fetch(att.url, {
-          method: att.method,
-          headers: {'Content-Type':'application/json'},
-          body: JSON.stringify(att.body||{})
-        });
-        let j=null; try{ j = await r.clone().json(); }catch(_){}
-        const ok = r.ok || r.status===204 || (j && (j.ok||j.success||j.saved||j.updated||j.upserted));
-        if (ok){ console.info('[murZero] server reset OK via', att.method, att.url); return true; }
-        console.warn('[murZero] fail', att.method, att.url, r.status, j||await r.text());
-      }catch(e){
-        console.warn('[murZero] error', att, e);
-      }
-    }
+    for (const a of attempts){ const r = await hit(a.url, a.method, a.body); if (r.ok) return true; }
     return false;
   }
 
-  // --- F. Simpan ke DB (fungsi bawaan + pemaksa reset) & refresh ---
+  async function tryUpsertZeroOnServer(){
+    const Z = buildZeroPayload();
+    const envA = { kelas:ctx.kelas, tanggal:ctx.tanggal, id:ctx.id, nis:ctx.nis, nama:ctx.nama, data: Z };
+    const envB = { kelas:ctx.kelas, tanggal:ctx.tanggal, id:ctx.id, nis:ctx.nis, nama:ctx.nama, ...Z };
+    const envC = { key:ctx.key, kelas:ctx.kelas, tanggal:ctx.tanggal, data: Z };
+    const attempts = [
+      { url:'/api/saveAbsensi',   method:'POST', body:envA },
+      { url:'/api/updateAbsensi', method:'POST', body:envB },
+      { url:'/api/upsertAbsensi', method:'POST', body:envB },
+      { url:'/api/setAbsensi',    method:'POST', body:envB },
+      { url:'/api/aksesAbsensi',  method:'POST', body:envA },
+      { url:'/api/saveAbsensi',   method:'PUT',  body:envB },
+      { url:'/api/updateAbsensi', method:'PUT',  body:envB },
+      { url:'/api/saveAbsensi?mode=reset', method:'POST', body:envC },
+    ];
+    for (const a of attempts){ const r = await hit(a.url, a.method, a.body); if (r.ok) return true; }
+    return false;
+  }
+
+  // --- 7) Simpan: (a) mekanisme bawaan, (b) upsert zero, (c) fallback hapus→upsert ---
   const statusEl = sel('#mur-save-status');
   try{
-    // 1) coba mekanisme simpan bawaan (jika ada)
+    // beri “penjaga” supaya refresh segera tidak meng-hydrate nilai lama
+    window.__murJustZeroAt = Date.now();
+
+    // (a) simpan bawaan (kalau ada)
     if (typeof window.simpanDataMutabaah === 'function'){
       await window.simpanDataMutabaah(sel(`#mur${idx}-totalJuz-reset`) || null);
     }
 
-    // 2) paksa server 0 dengan payload lengkap
-    const ok = await forceServerRowZero(row);
+    // (b) coba langsung upsert 0
+    let ok = await tryUpsertZeroOnServer();
 
-    // 3) tarik ulang dari server supaya UI konsisten
-    if (typeof window.murajaah?.refreshServer === 'function'){
-      await window.murajaah.refreshServer();
+    // tarik ulang
+    if (typeof window.murajaah?.refreshServer === 'function'){ await window.murajaah.refreshServer(); }
+
+    // cek apakah masih > 0 (kadang backend hitung ulang dari field lain)
+    let stillNonZero = false;
+    if (cell){
+      const after = parseFloat(cell.dataset.murtotal || '0');
+      stillNonZero = Number.isFinite(after) && after > 0;
+    }
+
+    // (c) fallback: hapus lalu upsert 0 lagi, lalu refresh lagi
+    if (!ok || stillNonZero){
+      await tryDeleteOnServer();
+      ok = await tryUpsertZeroOnServer();
+      if (typeof window.murajaah?.refreshServer === 'function'){ await window.murajaah.refreshServer(); }
+    }
+
+    // pastikan UI 0 walau server eventual-consistent sebentar
+    if (cell){
+      const now = parseFloat(cell.dataset.murtotal || '0');
+      if (!Number.isFinite(now) || now > 0){
+        cell.dataset.murtotal = '0.00';
+        const v = cell.querySelector('.mur-val');
+        if (v){ v.textContent = '0.00 juz'; v.innerText = '0.00 juz'; }
+      }
     }
 
     if (statusEl){
-      statusEl.textContent = ok ? '✅ Reset 0 tersimpan (server)' : '⚠️ Reset 0 lokal; paksa server gagal';
-      setTimeout(()=> statusEl.textContent='', 1800);
+      statusEl.textContent = ok ? '✅ Reset 0 tersimpan (server)' : '⚠️ Reset 0 lokal; server belum menerima';
+      setTimeout(()=> statusEl.textContent = '', 2000);
     }
   }catch(e){
     console.error('serverZeroReset error:', e);
@@ -8174,6 +8194,7 @@ async function serverZeroReset(idx){
     alert('❌ Gagal menyimpan ke Database. Cek Network/Console.');
   }
 }
+
 
 // === Helper: ambil identitas baris untuk request reset ===
 function __murGetRowIdentity(row){
