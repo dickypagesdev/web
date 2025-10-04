@@ -7935,17 +7935,17 @@ renderSession(i);
 
   function afterTableRendered(){ ensureMurColumn(); refreshMurFromServer(); }
 
-  // ============ PATCH: Reset 0.00 (benar-benar kosong) ============
+  // ============ PATCH: Reset 0.00 (benar-benar kosong & tidak di-refresh balik) ============
 async function serverSafeReset(idx){
-  // Pastikan map siap, tapi jangan set apa pun selain kosong
   try{ if (!window.dataReady) await ensureMap(); }catch(_){}
 
-  // 1) Kosongkan seluruh input & state sesi idx (sudah 0.00 di UI)
-  resetSession(idx); // ini: kosongkan juzFrom/To, pageFrom/To, surah/ayah, score, badge, hint, total=0.00, & murState[idx]
+  // 1) Kosongkan sesi idx sepenuhnya (UI + state)
+  resetSession(idx); // sudah set #murX-totalJuz = "0.00" dan sinkron grand total
 
-  // 2) Sinkron dataset baris aktif (hapus semua jejak sesi idx + set juz idx = 0.00)
-  const cell = currentRowEl?.querySelector('.murajaah-cell');
+  // 2) Pastikan dataset pada cell ikut kosong/0.00 (termasuk legacy key sesi-1)
+  const cell = window.currentRowEl?.querySelector('.murajaah-cell');
   if (cell){
+    // hapus dataset sesi idx
     delete cell.dataset[`sf${idx}`];
     delete cell.dataset[`af${idx}`];
     delete cell.dataset[`st${idx}`];
@@ -7959,65 +7959,31 @@ async function serverSafeReset(idx){
     delete cell.dataset[`phuruf${idx}`];
     cell.dataset[`juz${idx}`] = '0.00';
 
-    // Rehitung grand total dari murState (setelah resetSession = 0)
-    const grand =
-      Number(murState[1]?.total||0) +
-      Number(murState[2]?.total||0) +
-      Number(murState[3]?.total||0);
+    // legacy (kalau idx==1 biasanya backend pakai sf/af/st/at/pf/pt lama)
+    if (idx === 1){
+      delete cell.dataset.sf;
+      delete cell.dataset.af;
+      delete cell.dataset.st;
+      delete cell.dataset.at;
+      delete cell.dataset.pf;
+      delete cell.dataset.pt;
+    }
 
+    // 3) Hitung ulang total & update label
+    const grand =
+      (Number(murState[1]?.total||0)) +
+      (Number(murState[2]?.total||0)) +
+      (Number(murState[3]?.total||0));
     cell.dataset.murtotal = grand.toFixed(2);
     const valEl = cell.querySelector('.mur-val');
     if (valEl) valEl.textContent = `${grand.toFixed(2)} juz`;
   }
 
-  // 3) Update ringkasan total di footer modal (kalau ada)
-  document.querySelector('#mur-t1')?.textContent = (murState[1]?.total||0).toFixed(2);
-  document.querySelector('#mur-t2')?.textContent = (murState[2]?.total||0).toFixed(2);
-  document.querySelector('#mur-t3')?.textContent = (murState[3]?.total||0).toFixed(2);
-  const grandAll = (murState[1]?.total||0)+(murState[2]?.total||0)+(murState[3]?.total||0);
-  document.querySelector('#mur-totalJuzAll')?.textContent = grandAll.toFixed(2);
-
-  // 4) Simpan ke server -> lalu refresh -> dan kalau server masih kirim legacy,
-  //    kita "bersihkan lagi" (failsafe) agar tidak balik ke 1.00
+  // 4) Simpan ke server kalau ada; JANGAN refresh dari server di sini
   const statusEl = document.querySelector('#mur-save-status');
   try{
     if (typeof window.simpanDataMutabaah === 'function'){
-      // Penting: panggilan save membaca dari form + dataset; kita sudah set semuanya ke 0/kosong.
       await window.simpanDataMutabaah(document.querySelector(`#mur${idx}-totalJuz-reset`) || null);
-
-      // Refresh dari server
-      if (typeof window.murajaah?.refreshServer === 'function'){
-        await window.murajaah.refreshServer();
-      }
-
-      // Failsafe: jika sesudah refresh server masih menyisakan data sesi idx, bersihkan lagi
-      const cell2 = currentRowEl?.querySelector('.murajaah-cell');
-      if (cell2){
-        const jz = String(cell2.dataset[`juz${idx}`]||'0.00');
-        if (jz !== '0.00'){ // server mengembalikan nilai lama -> hard clear
-          delete cell2.dataset[`sf${idx}`];
-          delete cell2.dataset[`af${idx}`];
-          delete cell2.dataset[`st${idx}`];
-          delete cell2.dataset[`at${idx}`];
-          delete cell2.dataset[`pf${idx}`];
-          delete cell2.dataset[`pt${idx}`];
-          delete cell2.dataset[`jfrom${idx}`];
-          delete cell2.dataset[`jto${idx}`];
-          delete cell2.dataset[`score${idx}`];
-          delete cell2.dataset[`ptext${idx}`];
-          delete cell2.dataset[`phuruf${idx}`];
-          cell2.dataset[`juz${idx}`] = '0.00';
-
-          const g2 =
-            Number(cell2.dataset[`juz1`]||0) +
-            Number(cell2.dataset[`juz2`]||0) +
-            Number(cell2.dataset[`juz3`]||0);
-          cell2.dataset.murtotal = g2.toFixed(2);
-          const valEl2 = cell2.querySelector('.mur-val');
-          if (valEl2) valEl2.textContent = `${g2.toFixed(2)} juz`;
-        }
-      }
-
       if (statusEl){ statusEl.textContent='✅ Reset tersimpan: 0.00'; setTimeout(()=>statusEl.textContent='',1500); }
     } else {
       if (statusEl){ statusEl.textContent='ℹ️ Di-set lokal: 0.00'; setTimeout(()=>statusEl.textContent='',1500); }
