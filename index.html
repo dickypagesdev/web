@@ -7864,45 +7864,68 @@ renderSession(i);
         const rec = (nis && byNis.get(nis)) || (id && byId.get(id)) || null;
 
         const total = num(rec?.juzmurajaah ?? rec?.totalJuz ?? 0);
-        const valEl = cell.querySelector('.mur-val');
-        if(valEl) valEl.textContent = `${total.toFixed(2)} juz`;
-        cell.dataset.murtotal = total.toFixed(2);
+const valEl = cell.querySelector('.mur-val');
+if (valEl) valEl.textContent = `${total.toFixed(2)} juz`;
+cell.dataset.murtotal = total.toFixed(2);
 
-        const legacyFrom = rec?.murFrom || '';
-        const legacyTo   = rec?.murTo   || '';
-        const legacyPg   = rec?.murPages|| '';
-        setSA(cell, legacyFrom, 'sf', 'af');
-        setSA(cell, legacyTo,   'st', 'at');
-        setPages(cell, legacyPg, 'pf', 'pt');
+/* === PATCH: bila total 0, kosongkan semua dataset & hentikan prefilling === */
+if (total <= 0) {
+  // bersihkan legacy (global)
+  ['sf','af','st','at','pf','pt'].forEach(k => { delete cell.dataset[k]; });
+  // bersihkan per-sesi 1..3
+  for (let i=1;i<=3;i++){
+    ['sf','af','st','at','pf','pt','jfrom','jto','score','ptext','phuruf','juz']
+      .forEach(k => { delete cell.dataset[`${k}${i}`]; });
+  }
+  // pastikan tampilan 0.00 dan label kosong
+  if (valEl) valEl.textContent = `0.00 juz`;
+  const lbl = cell.querySelector('.mur-label');
+  if (lbl) lbl.textContent = '';
+  // selesai untuk row ini
+  return;
+}
+/* === END PATCH === */
 
-        const takeNonEmpty = (...xs) => { for (const x of xs){ if(x!==undefined && x!==null && String(x)!=='') return x; } return ''; };
-        function getSessionFrom(rec, i){
-          const arr = Array.isArray(rec?.murSessions) ? rec.murSessions : null;
-          const ses = arr && arr[i-1] ? arr[i-1] : null;
-          const fromStr  = takeNonEmpty(rec?.[`murFrom${i}`],  ses?.from,  rec?.murFrom);
-          const toStr    = takeNonEmpty(rec?.[`murTo${i}`],    ses?.to,    rec?.murTo);
-          const pagesStr = takeNonEmpty(rec?.[`murPages${i}`], ses?.pages, rec?.murPages);
-          const juzVal   = takeNonEmpty(rec?.[`juzmur${i}`], rec?.[`juzSesi${i}`], ses?.juz);
-          const jFrom    = (rec?.[`jFrom${i}`] ?? ses?.jFrom);
-          const jTo      = (rec?.[`jTo${i}`]   ?? ses?.jTo);
-          const score    = (rec?.[`murScore${i}`]     ?? ses?.score);
-          const pText    = (rec?.[`murPredText${i}`]  ?? ses?.predikatText);
-          const pHuruf   = (rec?.[`murPredHuruf${i}`] ?? ses?.predikatHuruf);
-          return { fromStr, toStr, pagesStr, juzVal, jFrom, jTo, score, pText, pHuruf };
-        }
+// (lanjut seperti sebelumnya — hanya dijalankan jika total > 0)
+const legacyFrom = rec?.murFrom || '';
+const legacyTo   = rec?.murTo   || '';
+const legacyPg   = rec?.murPages|| '';
+setSA(cell, legacyFrom, 'sf', 'af');
+setSA(cell, legacyTo,   'st', 'at');
+setPages(cell, legacyPg, 'pf', 'pt');
 
-        for (let i = 1; i <= 3; i++) {
-          const ses = getSessionFrom(rec, i);
-          setSA(cell, ses.fromStr, `sf${i}`, `af${i}`);
-          setSA(cell, ses.toStr,   `st${i}`, `at${i}`);
-          setPages(cell, ses.pagesStr, `pf${i}`, `pt${i}`);
-          if (ses.jFrom != null && ses.jFrom !== '') cell.dataset[`jfrom${i}`] = String(ses.jFrom); else delete cell.dataset[`jfrom${i}`];
-          if (ses.jTo   != null && ses.jTo   !== '') cell.dataset[`jto${i}`]   = String(ses.jTo);   else delete cell.dataset[`jto${i}`];
-          cell.dataset[`juz${i}`] = num(ses.juzVal || 0).toFixed(2);
-          if (ses.score  != null) cell.dataset[`score${i}`] = String(ses.score); else delete cell.dataset[`score${i}`];
-          if (ses.pText  != null) cell.dataset[`ptext${i}`] = String(ses.pText); else delete cell.dataset[`ptext${i}`];
-          if (ses.pHuruf != null) cell.dataset[`phuruf${i}`]= String(ses.pHuruf); else delete cell.dataset[`phuruf${i}`];
-        }
+const takeNonEmpty = (...xs) => { for (const x of xs){ if(x!==undefined && x!==null && String(x)!=='') return x; } return ''; };
+function getSessionFrom(rec, i){
+  const arr = Array.isArray(rec?.murSessions) ? rec.murSessions : null;
+  const ses = arr && arr[i-1] ? arr[i-1] : null;
+  const fromStr  = takeNonEmpty(rec?.[`murFrom${i}`],  ses?.from,  rec?.murFrom);
+  const toStr    = takeNonEmpty(rec?.[`murTo${i}`],    ses?.to,    rec?.murTo);
+  const pagesStr = takeNonEmpty(rec?.[`murPages${i}`], ses?.pages, rec?.murPages);
+  const juzVal   = takeNonEmpty(rec?.[`juzmur${i}`], rec?.[`juzSesi${i}`], ses?.juz);
+  const jFrom    = (rec?.[`jFrom${i}`] ?? ses?.jFrom);
+  const jTo      = (rec?.[`jTo${i}`]   ?? ses?.jTo);
+  const score    = (rec?.[`murScore${i}`]     ?? ses?.score);
+  const pText    = (rec?.[`murPredText${i}`]  ?? ses?.predikatText);
+  const pHuruf   = (rec?.[`murPredHuruf${i}`] ?? ses?.predikatHuruf);
+  return { fromStr, toStr, pagesStr, juzVal, jFrom, jTo, score, pText, pHuruf };
+}
+
+for (let i = 1; i <= 3; i++) {
+  const ses = getSessionFrom(rec, i);
+  setSA(cell, ses.fromStr, `sf${i}`, `af${i}`);
+  setSA(cell, ses.toStr,   `st${i}`, `at${i}`);
+  setPages(cell, ses.pagesStr, `pf${i}`, `pt${i}`);
+
+  if (ses.jFrom != null && ses.jFrom !== '') cell.dataset[`jfrom${i}`] = String(ses.jFrom); else delete cell.dataset[`jfrom${i}`];
+  if (ses.jTo   != null && ses.jTo   !== '') cell.dataset[`jto${i}`]   = String(ses.jTo);   else delete cell.dataset[`jto${i}`];
+
+  cell.dataset[`juz${i}`] = num(ses.juzVal || 0).toFixed(2);
+
+  if (ses.score  != null) cell.dataset[`score${i}`] = String(ses.score); else delete cell.dataset[`score${i}`];
+  if (ses.pText  != null) cell.dataset[`ptext${i}`] = String(ses.pText); else delete cell.dataset[`ptext${i}`];
+  if (ses.pHuruf != null) cell.dataset[`phuruf${i}`]= String(ses.pHuruf); else delete cell.dataset[`phuruf${i}`];
+}
+
       });
     }
   }
