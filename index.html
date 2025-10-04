@@ -7858,66 +7858,77 @@ renderSession(i);
       }
 
       rows.forEach(tr=>{
-  const cell = tr.querySelector('.murajaah-cell'); 
+  const cell = tr.querySelector('.murajaah-cell');
   if (!cell) return;
 
-  // === GUARD: jika baris baru di-reset ke 0, jangan timpa dari server ===
-  const fz  = cell.dataset.forceZero === '1';
-  const fzu = +(cell.dataset.forceZeroUntil || 0);
-  const stillForce = fz && (!fzu || Date.now() < fzu);
-  if (stillForce){
-    const valEl = cell.querySelector('.mur-val');
-    if (valEl) valEl.textContent = '0.00 juz';
-    cell.dataset.murtotal = '0.00';
-    for (let i=1;i<=3;i++){
-      cell.dataset[`juz${i}`] = '0.00';
-      delete cell.dataset[`sf${i}`];
-      delete cell.dataset[`af${i}`];
-      delete cell.dataset[`st${i}`];
-      delete cell.dataset[`at${i}`];
-      delete cell.dataset[`pf${i}`];
-      delete cell.dataset[`pt${i}`];
-      delete cell.dataset[`jfrom${i}`];
-      delete cell.dataset[`jto${i}`];
-      delete cell.dataset[`score${i}`];
-      delete cell.dataset[`ptext${i}`];
-      delete cell.dataset[`phuruf${i}`];
+  // --- pastikan tombol "Input" SELALU ada & berfungsi ---
+  (function ensureInputButton(){
+    if (!cell.querySelector('.btn-mur')) {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'btn-mur';
+      btn.style.marginTop = '6px';
+      btn.style.padding = '4px 8px';
+      btn.textContent = 'Input';
+      cell.appendChild(btn);
+      btn.addEventListener('click', ()=> openModalForRow(tr));
     }
-    return; // skip update dari server untuk baris ini
-  } else {
-    // masa proteksi habis: bersihkan flag
-    delete cell.dataset.forceZero;
-    delete cell.dataset.forceZeroUntil;
-  }
+  })();
 
-  // === Ambil record server utk baris ini ===
   const nis = String(tr.dataset?.nis||'').trim();
   const id  = String(tr.children?.[0]?.textContent||'').trim();
   const rec = (nis && byNis.get(nis)) || (id && byId.get(id)) || null;
 
-  // === Tampilkan total (default 0.00 jika rec kosong) ===
-  const total = num(rec?.juzmurajaah ?? rec?.totalJuz ?? 0);
+  // helper kecil
+  const num = (v)=>{ if(typeof v==='number') return Number.isFinite(v)?v:0;
+    const n=parseFloat(String(v??'').replace(/[^0-9.,-]/g,'').replace(',', '.')); return Number.isFinite(n)?n:0; };
+  const setOrDelete = (obj, key, val)=>{
+    if (val===undefined || val===null || String(val)==='') delete obj.dataset[key];
+    else obj.dataset[key] = String(val);
+  };
+  const setSA = (cell, src, dsS, dsA)=>{
+    if (!src){ delete cell.dataset[dsS]; delete cell.dataset[dsA]; return; }
+    const [s,a]=String(src).split(':');
+    setOrDelete(cell, dsS, s||'');
+    setOrDelete(cell, dsA, a||'');
+  };
+  const setPages = (cell, src, pfKey, ptKey)=>{
+    if (!src){ delete cell.dataset[pfKey]; delete cell.dataset[ptKey]; return; }
+    const [pf,pt]=String(src).split('-');
+    setOrDelete(cell, pfKey, pf||'');
+    setOrDelete(cell, ptKey, pt||'');
+  };
+  const takeNonEmpty = (...xs)=>{ for(const x of xs){ if(x!==undefined && x!==null && String(x)!=='') return x; } return ''; };
+
   const valEl = cell.querySelector('.mur-val');
+
+  if (!rec) {
+    // === TIDAK ADA DATA DI SERVER → tampil 0.00 & bersihkan semua dataset sesi ===
+    if (valEl) valEl.textContent = '0.00 juz';
+    cell.dataset.murtotal = '0.00';
+
+    // bersihkan legacy
+    delete cell.dataset.sf; delete cell.dataset.af;
+    delete cell.dataset.st; delete cell.dataset.at;
+    delete cell.dataset.pf; delete cell.dataset.pt;
+
+    // bersihkan 3 sesi
+    for (let i=1; i<=3; i++){
+      delete cell.dataset[`sf${i}`]; delete cell.dataset[`af${i}`];
+      delete cell.dataset[`st${i}`]; delete cell.dataset[`at${i}`];
+      delete cell.dataset[`pf${i}`]; delete cell.dataset[`pt${i}`];
+      delete cell.dataset[`jfrom${i}`]; delete cell.dataset[`jto${i}`];
+      delete cell.dataset[`score${i}`]; delete cell.dataset[`ptext${i}`]; delete cell.dataset[`phuruf${i}`];
+      cell.dataset[`juz${i}`] = '0.00';
+    }
+    return; // selesai untuk baris ini
+  }
+
+  // === ADA DATA DI SERVER → render seperti biasa ===
+  const total = num(rec?.juzmurajaah ?? rec?.totalJuz ?? 0);
   if (valEl) valEl.textContent = `${total.toFixed(2)} juz`;
   cell.dataset.murtotal = total.toFixed(2);
 
-  // Bersihkan dulu dataset sesi agar tidak ada nilai nyangkut
-  for (let i=1;i<=3;i++){
-    delete cell.dataset[`sf${i}`];
-    delete cell.dataset[`af${i}`];
-    delete cell.dataset[`st${i}`];
-    delete cell.dataset[`at${i}`];
-    delete cell.dataset[`pf${i}`];
-    delete cell.dataset[`pt${i}`];
-    delete cell.dataset[`jfrom${i}`];
-    delete cell.dataset[`jto${i}`];
-    delete cell.dataset[`score${i}`];
-    delete cell.dataset[`ptext${i}`];
-    delete cell.dataset[`phuruf${i}`];
-    cell.dataset[`juz${i}`] = '0.00';
-  }
-
-  // === Legacy (jaga kompatibilitas lama) ===
   const legacyFrom = rec?.murFrom || '';
   const legacyTo   = rec?.murTo   || '';
   const legacyPg   = rec?.murPages|| '';
@@ -7925,34 +7936,38 @@ renderSession(i);
   setSA(cell, legacyTo,   'st', 'at');
   setPages(cell, legacyPg, 'pf', 'pt');
 
-  // === Per sesi ===
-  const takeNonEmpty = (...xs) => { for (const x of xs){ if(x!==undefined && x!==null && String(x)!=='') return x; } return ''; };
-  function getSessionFrom(r, i){
-    const arr = Array.isArray(r?.murSessions) ? r.murSessions : null;
+  function getSessionFrom(rec, i){
+    const arr = Array.isArray(rec?.murSessions) ? rec.murSessions : null;
     const ses = arr && arr[i-1] ? arr[i-1] : null;
-    const fromStr  = takeNonEmpty(r?.[`murFrom${i}`],  ses?.from,  r?.murFrom);
-    const toStr    = takeNonEmpty(r?.[`murTo${i}`],    ses?.to,    r?.murTo);
-    const pagesStr = takeNonEmpty(r?.[`murPages${i}`], ses?.pages, r?.murPages);
-    const juzVal   = takeNonEmpty(r?.[`juzmur${i}`],  r?.[`juzSesi${i}`], ses?.juz);
-    const jFrom    = (r?.[`jFrom${i}`] ?? ses?.jFrom);
-    const jTo      = (r?.[`jTo${i}`]   ?? ses?.jTo);
-    const score    = (r?.[`murScore${i}`]     ?? ses?.score);
-    const pText    = (r?.[`murPredText${i}`]  ?? ses?.predikatText);
-    const pHuruf   = (r?.[`murPredHuruf${i}`] ?? ses?.predikatHuruf);
+    const fromStr  = takeNonEmpty(rec?.[`murFrom${i}`],  ses?.from,  rec?.murFrom);
+    const toStr    = takeNonEmpty(rec?.[`murTo${i}`],    ses?.to,    rec?.murTo);
+    const pagesStr = takeNonEmpty(rec?.[`murPages${i}`], ses?.pages, rec?.murPages);
+    const juzVal   = takeNonEmpty(rec?.[`juzmur${i}`],   rec?.[`juzSesi${i}`], ses?.juz);
+    const jFrom    = (rec?.[`jFrom${i}`] ?? ses?.jFrom);
+    const jTo      = (rec?.[`jTo${i}`]   ?? ses?.jTo);
+    const score    = (rec?.[`murScore${i}`]     ?? ses?.score);
+    const pText    = (rec?.[`murPredText${i}`]  ?? ses?.predikatText);
+    const pHuruf   = (rec?.[`murPredHuruf${i}`] ?? ses?.predikatHuruf);
     return { fromStr, toStr, pagesStr, juzVal, jFrom, jTo, score, pText, pHuruf };
   }
 
-  for (let i = 1; i <= 3; i++) {
+  for (let i=1; i<=3; i++){
     const ses = getSessionFrom(rec, i);
     setSA(cell, ses.fromStr, `sf${i}`, `af${i}`);
     setSA(cell, ses.toStr,   `st${i}`, `at${i}`);
     setPages(cell, ses.pagesStr, `pf${i}`, `pt${i}`);
-    if (ses.jFrom != null && ses.jFrom !== '') cell.dataset[`jfrom${i}`] = String(ses.jFrom); else delete cell.dataset[`jfrom${i}`];
-    if (ses.jTo   != null && ses.jTo   !== '') cell.dataset[`jto${i}`]   = String(ses.jTo);   else delete cell.dataset[`jto${i}`];
-    cell.dataset[`juz${i}`] = num(ses.juzVal || 0).toFixed(2);
-    if (ses.score  != null) cell.dataset[`score${i}`] = String(ses.score); else delete cell.dataset[`score${i}`];
-    if (ses.pText  != null) cell.dataset[`ptext${i}`] = String(ses.pText); else delete cell.dataset[`ptext${i}`];
-    if (ses.pHuruf != null) cell.dataset[`phuruf${i}`]= String(ses.pHuruf); else delete cell.dataset[`phuruf${i}`];
+
+    setOrDelete(cell, `jfrom${i}`, ses.jFrom);
+    setOrDelete(cell, `jto${i}`,   ses.jTo);
+
+    // simpan total per sesi; kalau kosong ⇒ 0.00
+    const jz = num(ses.juzVal || 0).toFixed(2);
+    cell.dataset[`juz${i}`] = jz;
+
+    // nilai/predikat per sesi
+    setOrDelete(cell, `score${i}`,  (ses.score!=null ? ses.score : ''));
+    setOrDelete(cell, `ptext${i}`,  (ses.pText!=null ? ses.pText : ''));
+    setOrDelete(cell, `phuruf${i}`, (ses.pHuruf!=null ? ses.pHuruf: ''));
   }
 });
     }
