@@ -7614,142 +7614,6 @@ if (jF===30 && jT===30){
     return '';
   }
 
-
-// ====== [PATCH] helper fetch POST ke endpoint reset ======
-async function _apiPost(url, payload) {
-  const res = await fetch(url, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(payload ?? {})
-  });
-  const data = await res.json().catch(()=>({}));
-  const ok = data?.ok === true;
-  if (!ok) throw new Error(data?.error || `HTTP ${res.status}`);
-  return data; // { ok:true, scope, changes }
-}
-
-// Ambil identitas kelas, tanggal, student_key dari konteks baris yang sedang dibuka
-function _getCurrentIdentifiers(idx) {
-  const row = currentRowEl || document.querySelector('#santri-table tbody tr.selected') || null;
-
-  const class_name =
-    (typeof resolveKelas === 'function' && resolveKelas()) ||
-    document.querySelector('#santri-table')?.dataset?.kelas ||
-    document.body?.dataset?.kelas || '';
-
-  const tanggal =
-    String(row?.dataset?.tanggal || '') ||
-    (typeof resolveTanggalGlobal === 'function' && resolveTanggalGlobal()) ||
-    '';
-
-  const student_key =
-    String(row?.dataset?.nis || '') ||
-    String(row?.dataset?.key || '') ||
-    String(row?.children?.[0]?.textContent || '') || '';
-
-  return {
-    class_name: String(class_name||'').trim(),
-    tanggal: String(tanggal||'').trim(),
-    student_key: String(student_key||'').trim(),
-    row
-  };
-}
-
-// Set nilai UI sesi ke 0/empty setelah server reset sukses
-function _applyZeroToSessionUI(idx, rowEl) {
-  const $ = (s,r=document)=>r.querySelector(s);
-
-  $(`#mur${idx}-surahFrom`)?.value = '';
-  if ($(`#mur${idx}-ayahFrom`)) { $(`#mur${idx}-ayahFrom`).innerHTML = '<option value=""></option>'; $(`#mur${idx}-ayahFrom`).value = ''; }
-  $(`#mur${idx}-surahTo`)?.value = '';
-  if ($(`#mur${idx}-ayahTo`))    { $(`#mur${idx}-ayahTo`).innerHTML = '<option value=""></option>';  $(`#mur${idx}-ayahTo`).value = ''; }
-  $(`#mur${idx}-pageFrom`)?.value = '';
-  $(`#mur${idx}-pageTo`)?.value   = '';
-  $(`#mur${idx}-pagesHint`) && ($(`#mur${idx}-pagesHint`).textContent = '');
-
-  $(`#mur${idx}-totalJuz`) && ($(`#mur${idx}-totalJuz`).textContent = '0.00');
-  $(`#mur${idx}-score`) && ($(`#mur${idx}-score`).value = '');
-  $(`#mur${idx}-predikatBadge`) && ($(`#mur${idx}-predikatBadge`).textContent = '–');
-
-  murState[idx] = {
-    touched:false, sF:null,aF:null,sT:null,aT:null,
-    pFrom:'', pTo:'', jFrom:null, jTo:null,
-    total:0, score:null, pText:'', pHuruf:''
-  };
-
-  const cell = (rowEl || currentRowEl)?.querySelector?.('.murajaah-cell');
-  if (cell){
-    delete cell.dataset[`sf${idx}`]; delete cell.dataset[`af${idx}`];
-    delete cell.dataset[`st${idx}`]; delete cell.dataset[`at${idx}`];
-    delete cell.dataset[`pf${idx}`]; delete cell.dataset[`pt${idx}`];
-    delete cell.dataset[`jfrom${idx}`]; delete cell.dataset[`jto${idx}`];
-    cell.dataset[`juz${idx}`] = '0.00';
-    delete cell.dataset[`score${idx}`];
-    delete cell.dataset[`ptext${idx}`];
-    delete cell.dataset[`phuruf${idx}`];
-  }
-
-  renderSession(idx);
-  const g = (murState[1]?.total||0)+(murState[2]?.total||0)+(murState[3]?.total||0);
-  const gEl = document.querySelector('#mur-totalJuzAll');
-  if (gEl) gEl.textContent = g.toFixed(2);
-  if (cell){
-    const valEl = cell.querySelector('.mur-val');
-    cell.dataset.murtotal = g.toFixed(2);
-    if (valEl) valEl.textContent = `${g.toFixed(2)} juz`;
-  }
-}
-
-// Klik handler untuk #murX-totalJuz-reset → panggil /api/resetMurToZero
-async function _handleResetClick(idx) {
-  try{
-    const ids = _getCurrentIdentifiers(idx);
-    if (!ids.class_name || !ids.tanggal || !ids.student_key) {
-      alert('Kelas/tanggal/student tidak ditemukan. Pastikan baris santri sedang aktif.');
-      return;
-    }
-    const okGo = confirm(`Reset Murajaah (DB=0) untuk santri ini pada ${ids.tanggal}?`);
-    if (!okGo) return;
-
-    // Endpoint: nolkan semua sesi (1–3) di DB untuk santri & tanggal tsb
-    await _apiPost('/api/resetMurToZero', {
-      scope: 'one',
-      class_name: ids.class_name,
-      tanggal: ids.tanggal,
-      student_key: ids.student_key
-    });
-
-    // UI: nolkan sesi yang ditekan (sesi idx)
-    _applyZeroToSessionUI(idx, ids.row);
-
-    try { if (typeof window.murajaah?.refreshServer === 'function') await window.murajaah.refreshServer(); } catch(_){}
-
-    const st = document.querySelector('#mur-save-status');
-    if (st) { st.textContent = '✅ Reset (DB=0) tersimpan'; setTimeout(()=>st.textContent='',1500); }
-  } catch(e){
-    console.error(e);
-    alert('❌ Gagal reset: ' + (e?.message || e));
-    const st = document.querySelector('#mur-save-status');
-    if (st) { st.textContent = '❌ Gagal reset'; setTimeout(()=>st.textContent='',1800); }
-  }
-}
-
-// Bind tombol reset yang SUDAH ADA (id mur1/2/3-totalJuz-reset) → _handleResetClick
-function bindExistingResetButtonsToServer() {
-  const map = {
-    1: document.getElementById('mur1-totalJuz-reset'),
-    2: document.getElementById('mur2-totalJuz-reset'),
-    3: document.getElementById('mur3-totalJuz-reset'),
-  };
-  Object.entries(map).forEach(([idx, btn])=>{
-    if (!btn) return;
-    if (btn._murBoundServer) return; // guard anti-dobel
-    btn._murBoundServer = true;
-    btn.addEventListener('click', ()=> _handleResetClick(Number(idx)));
-  });
-}
-	
-
   // === Modal ===
   async function openModalForRow(row){
     currentRowEl = row;
@@ -7898,7 +7762,6 @@ renderSession(i);
 
     // pastikan tombol reset tampil saat modal dibuka
     ensureResetButtons();
-	bindExistingResetButtonsToServer();
   }
 
   function fillAllBases(idx){
@@ -8072,6 +7935,135 @@ renderSession(i);
 
   function afterTableRendered(){ ensureMurColumn(); refreshMurFromServer(); }
 
+
+// ====== [PATCH] helper fetch POST ke endpoint reset ======
+async function _apiPost(url, payload) {
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(payload ?? {})
+  });
+  const data = await res.json().catch(()=>({}));
+  const ok = data?.ok === true;
+  if (!ok) throw new Error(data?.error || `HTTP ${res.status}`);
+  return data; // { ok:true, scope, changes }
+}
+
+// Ambil identitas kelas, tanggal, student_key dari konteks baris yang sedang dibuka
+function _getCurrentIdentifiers(idx) {
+  const row = currentRowEl || document.querySelector('#santri-table tbody tr.selected') || null;
+
+  // kelas
+  const class_name =
+    (typeof resolveKelas === 'function' && resolveKelas()) ||
+    document.querySelector('#santri-table')?.dataset?.kelas ||
+    document.body?.dataset?.kelas || '';
+
+  // tanggal
+  const tanggal =
+    String(row?.dataset?.tanggal || '') ||
+    (typeof resolveTanggalGlobal === 'function' && resolveTanggalGlobal()) ||
+    '';
+
+  // student_key (utamakan NIS, fallback ke kolom id)
+  const student_key =
+    String(row?.dataset?.nis || '') ||
+    String(row?.dataset?.key || '') ||
+    String(row?.children?.[0]?.textContent || '') || '';
+
+  return { class_name: String(class_name||'').trim(),
+           tanggal: String(tanggal||'').trim(),
+           student_key: String(student_key||'').trim(),
+           row };
+}
+
+// Set nilai UI sesi ke 0/empty setelah server reset sukses
+function _applyZeroToSessionUI(idx, rowEl) {
+  const $q = (s,r=document)=>r.querySelector(s);
+
+  // Kosongkan rentang & pages
+  $q(`#mur${idx}-surahFrom`)  && ($q(`#mur${idx}-surahFrom`).value = '');
+  if ($q(`#mur${idx}-ayahFrom`))  { $q(`#mur${idx}-ayahFrom`).innerHTML = '<option value=""></option>'; $q(`#mur${idx}-ayahFrom`).value=''; }
+  $q(`#mur${idx}-surahTo`)    && ($q(`#mur${idx}-surahTo`).value = '');
+  if ($q(`#mur${idx}-ayahTo`))    { $q(`#mur${idx}-ayahTo`).innerHTML   = '<option value=""></option>'; $q(`#mur${idx}-ayahTo`).value=''; }
+  $q(`#mur${idx}-pageFrom`)   && ($q(`#mur${idx}-pageFrom`).value = '');
+  $q(`#mur${idx}-pageTo`)     && ($q(`#mur${idx}-pageTo`).value = '');
+  $q(`#mur${idx}-pagesHint`)  && ($q(`#mur${idx}-pagesHint`).textContent = '');
+
+  // Nolkan total juz sesi & kosongkan score
+  $q(`#mur${idx}-totalJuz`)   && ($q(`#mur${idx}-totalJuz`).textContent = '0.00');
+  $q(`#mur${idx}-score`)      && ($q(`#mur${idx}-score`).value = '');
+  $q(`#mur${idx}-predikatBadge`) && ($q(`#mur${idx}-predikatBadge`).textContent = '–');
+
+  // Perbarui state memori lokal
+  murState[idx] = {
+    touched:false, sF:null,aF:null,sT:null,aT:null,
+    pFrom:'', pTo:'', jFrom:null, jTo:null,
+    total:0, score:null, pText:'', pHuruf:''
+  };
+
+  // Sinkron dataset pada sel baris aktif (agar preview/rekap konsisten)
+  const cell = (rowEl || currentRowEl)?.querySelector?.('.murajaah-cell');
+  if (cell){
+    delete cell.dataset[`sf${idx}`]; delete cell.dataset[`af${idx}`];
+    delete cell.dataset[`st${idx}`]; delete cell.dataset[`at${idx}`];
+    delete cell.dataset[`pf${idx}`]; delete cell.dataset[`pt${idx}`];
+    delete cell.dataset[`jfrom${idx}`]; delete cell.dataset[`jto${idx}`];
+    cell.dataset[`juz${idx}`] = '0.00';
+    delete cell.dataset[`score${idx}`];
+    delete cell.dataset[`ptext${idx}`];
+    delete cell.dataset[`phuruf${idx}`];
+  }
+
+  // Render ulang sesi & rekap total 3 sesi
+  renderSession(idx);
+  const g = (murState[1]?.total||0)+(murState[2]?.total||0)+(murState[3]?.total||0);
+  const gEl = document.querySelector('#mur-totalJuzAll');
+  if (gEl) gEl.textContent = g.toFixed(2);
+  if (cell){
+    const valEl = cell.querySelector('.mur-val');
+    cell.dataset.murtotal = g.toFixed(2);
+    if (valEl) valEl.textContent = `${g.toFixed(2)} juz`;
+  }
+}
+
+// Klik handler untuk #murX-totalJuz-reset → panggil /api/resetMurToZero
+async function _handleResetClick(idx) {
+  try{
+    const ids = _getCurrentIdentifiers(idx);
+    if (!ids.class_name || !ids.tanggal || !ids.student_key) {
+      alert('Kelas/tanggal/student tidak ditemukan. Pastikan baris santri sedang aktif.');
+      return;
+    }
+
+    const okGo = confirm(`Reset Murajaah (DB=0) untuk santri ini pada ${ids.tanggal}?`);
+    if (!okGo) return;
+
+    // Kirim ke endpoint (scope 'one') → endpoint akan nolkan semua sesi (1–3)
+    await _apiPost('/api/resetMurToZero', {
+      scope: 'one',
+      class_name: ids.class_name,
+      tanggal: ids.tanggal,
+      student_key: ids.student_key
+    });
+
+    // Setelah sukses: nolkan UI sesi yang ditekan (konsisten dengan DB=0)
+    _applyZeroToSessionUI(idx, ids.row);
+
+    // (opsional) refresh dari server agar sinkron penuh
+    try { if (typeof window.murajaah?.refreshServer === 'function') await window.murajaah.refreshServer(); } catch(_){}
+
+    const st = document.querySelector('#mur-save-status');
+    if (st) { st.textContent = '✅ Reset (DB=0) tersimpan'; setTimeout(()=>st.textContent='',1500); }
+  } catch(e){
+    console.error(e);
+    alert('❌ Gagal reset: ' + (e?.message || e));
+    const st = document.querySelector('#mur-save-status');
+    if (st) { st.textContent = '❌ Gagal reset'; setTimeout(()=>st.textContent='',1800); }
+  }
+}
+	
+
   // ============ PATCH: Reset aman server (Al-Fatihah 1→1, 0.01 juz) ============
   async function serverSafeReset(idx){
     try{ if (!window.dataReady) await ensureMap(); }catch(_){}
@@ -8155,14 +8147,17 @@ renderSession(i);
     }
   }
 
-  // === Buat tombol reset di sebelah #murX-totalJuz (1..3) → jalankan serverSafeReset ===
-  function ensureResetButtons(){
-    for (let i=1;i<=3;i++){
-      const totalEl = $(`#mur${i}-totalJuz`);
-      if (!totalEl) continue;
-      if (document.getElementById(`mur${i}-totalJuz-reset`)) continue;
+  // === Pastikan tombol reset ada & TERBIND ke endpoint reset ===
+function ensureResetButtons(){
+  for (let i=1;i<=3;i++){
+    let btn = document.getElementById(`mur${i}-totalJuz-reset`);
 
-      const btn = document.createElement('button');
+    // jika tombol belum ada, buat (kompatibel dengan kode lama)
+    if (!btn) {
+      const totalEl = document.querySelector(`#mur${i}-totalJuz`);
+      if (!totalEl) continue;
+
+      btn = document.createElement('button');
       btn.id = `mur${i}-totalJuz-reset`;
       btn.type = 'button';
       btn.textContent = 'Reset';
@@ -8174,12 +8169,15 @@ renderSession(i);
       if (totalEl.parentNode) totalEl.parentNode.insertBefore(btn, totalEl.nextSibling);
       else if (sesiWrap) sesiWrap.appendChild(btn);
       else totalEl.after(btn);
+    }
 
+    // bind SEKALI ke server endpoint (tidak menambah listener dobel)
+    if (!btn._murBoundServer){
+      btn._murBoundServer = true;
       btn.addEventListener('click', ()=> _handleResetClick(i));
-
     }
   }
-
+}
   // ekspor
   window.murajaah = { afterTableRendered: ()=>{ ensureMurColumn(); refreshMurFromServer(); }, refreshServer: refreshMurFromServer };
 
@@ -8198,7 +8196,6 @@ renderSession(i);
 
     // tombol reset sesi tersedia dari awal
     ensureResetButtons();
-	bindExistingResetButtonsToServer();
   })();
 })();
 </script>
