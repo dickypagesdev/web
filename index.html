@@ -7768,24 +7768,82 @@ function juzOfAyah(s,a){
   function bindSession(idx){ fillAllBases(idx); }
 
   function ensureMurColumn(){
-    const table=$('#santri-table'); if(!table) return;
-    const theadRow=table.tHead?.rows?.[0];
-    if(theadRow && !theadRow.querySelector('th.mur-header')){
-      const th=document.createElement('th'); th.className='mur-header'; th.textContent='Murajaah'; theadRow.appendChild(th);
+  // cari tabelnya
+  const table = document.querySelector('#santri-table, #santriTable, table[data-role="santri-table"], table.santri-table');
+  if (!table) return;
+  const tbody = table.tBodies?.[0];
+  if (!tbody) return;
+
+  // ===== header: pastikan ada TH "Murajaah" sebelum "Setting Murajaah" =====
+  const theadRow = table.tHead?.rows?.[0] || null;
+  let idxMur = -1;
+  if (theadRow){
+    const ths = [...theadRow.cells];
+
+    // sudah ada?
+    idxMur = ths.findIndex(th =>
+      th.classList.contains('mur-header') || /^\s*Murajaah\s*$/i.test(th.textContent||'')
+    );
+
+    // belum ada → sisipkan sebelum "Setting Murajaah" (range) atau di akhir
+    if (idxMur === -1){
+      const idxRange = ths.findIndex(th =>
+        th.id === 'murRangeHeader' || /Setting\s*Murajaah/i.test(th.textContent||'')
+      );
+      const th = document.createElement('th');
+      th.className = 'mur-header';
+      th.textContent = 'Murajaah';
+      if (idxRange >= 0){
+        theadRow.insertBefore(th, ths[idxRange]);
+        idxMur = idxRange; // kolom Murajaah menempati posisi ini
+      } else {
+        theadRow.appendChild(th);
+        idxMur = ths.length;
+      }
     }
-    const rows=table.tBodies?.[0]?.rows||[];
-    [...rows].forEach(tr=>{
-      if(tr.querySelector('.murajaah-cell')) return;
-      const td=document.createElement('td'); td.className='murajaah-cell';
-      td.dataset.murtotal = ""; td.dataset.murlabel = "";
-      td.innerHTML = `
-        <div class="mur-val" style="font-weight:600;min-height:1em">—</div>
-        <div class="mur-label" style="font-size:11px; color:#6b7280;"></div>
-        <button type="button" class="btn-mur" style="margin-top:6px; padding:4px 8px;">Input</button>`;
-      tr.appendChild(td);
-      td.querySelector('.btn-mur').addEventListener('click',()=>openModalForRow(tr));
-    });
   }
+
+  // ===== body: pastikan ada <td class="murajaah-cell"> per baris di posisi idxMur =====
+  [...(tbody.rows||[])].forEach(tr=>{
+    let cell = tr.querySelector('.murajaah-cell');
+    if (!cell){
+      cell = document.createElement('td');
+      cell.className = 'murajaah-cell';
+      cell.dataset.murtotal = "";
+      cell.dataset.murlabel = "";
+      cell.innerHTML = `
+        <div class="mur-val" style="font-weight:600;min-height:1em">0.00 juz</div>
+        <div class="mur-label" style="font-size:11px; color:#6b7280;"></div>
+        <button type="button" class="btn-mur" style="margin-top:6px; padding:4px 8px;">Input</button>
+      `;
+
+      // target posisi:
+      // 1) jika kita tahu index kolom Murajaah dari header → sisip di index itu
+      // 2) kalau tidak, sisip sebelum kolom range (.total-mur-range) kalau ada
+      // 3) fallback: append di akhir
+      if (idxMur >= 0 && tr.cells.length >= idxMur){
+        tr.insertBefore(cell, tr.cells[idxMur] || null);
+      } else {
+        const rangeCell = tr.querySelector('.total-mur-range');
+        if (rangeCell) tr.insertBefore(cell, rangeCell);
+        else tr.appendChild(cell);
+      }
+    }
+
+    // pastikan label punya nilai default & tombol berfungsi
+    const valEl = cell.querySelector('.mur-val');
+    if (valEl && !valEl.textContent.trim()) valEl.textContent = '0.00 juz';
+    const btn = cell.querySelector('.btn-mur');
+    if (btn && !btn.__murBound){
+      btn.addEventListener('click', ()=>openModalForRow(tr));
+      btn.__murBound = true;
+    }
+  });
+}
+
+// optional: helper buat debug dari console
+window.forceEnsureMurColumn = ensureMurColumn;
+
 
   // ---------- Refresh dari server (muat juga skor/predikat jika ada) ----------
   async function refreshMurFromServer(){
