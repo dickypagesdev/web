@@ -7863,17 +7863,23 @@ renderSession(i);
         const id  = String(tr.children?.[0]?.textContent||'').trim();
         const rec = (nis && byNis.get(nis)) || (id && byId.get(id)) || null;
 
-        const total = num(rec?.juzmurajaah ?? rec?.totalJuz ?? 0);
-        const valEl = cell.querySelector('.mur-val');
-        if(valEl) valEl.textContent = `${total.toFixed(2)} juz`;
-        cell.dataset.murtotal = total.toFixed(2);
+        // status kunci (jangan menimpa sesi yang dikunci)
+        const locked = {
+          1: cell.dataset.lock1 === '1',
+          2: cell.dataset.lock2 === '1',
+          3: cell.dataset.lock3 === '1',
+        };
+        const anyLocked = locked[1] || locked[2] || locked[3];
 
-        const legacyFrom = rec?.murFrom || '';
-        const legacyTo   = rec?.murTo   || '';
-        const legacyPg   = rec?.murPages|| '';
-        setSA(cell, legacyFrom, 'sf', 'af');
-        setSA(cell, legacyTo,   'st', 'at');
-        setPages(cell, legacyPg, 'pf', 'pt');
+        // legacy single
+        if (!anyLocked) {
+          const legacyFrom = rec?.murFrom || '';
+          const legacyTo   = rec?.murTo   || '';
+          const legacyPg   = rec?.murPages|| '';
+          setSA(cell, legacyFrom, 'sf', 'af');
+          setSA(cell, legacyTo,   'st', 'at');
+          setPages(cell, legacyPg, 'pf', 'pt');
+        }
 
         const takeNonEmpty = (...xs) => { for (const x of xs){ if(x!==undefined && x!==null && String(x)!=='') return x; } return ''; };
         function getSessionFrom(rec, i){
@@ -7892,6 +7898,7 @@ renderSession(i);
         }
 
         for (let i = 1; i <= 3; i++) {
+          if (locked[i]) continue; // hormati kunci
           const ses = getSessionFrom(rec, i);
           setSA(cell, ses.fromStr, `sf${i}`, `af${i}`);
           setSA(cell, ses.toStr,   `st${i}`, `at${i}`);
@@ -7902,6 +7909,21 @@ renderSession(i);
           if (ses.score  != null) cell.dataset[`score${i}`] = String(ses.score); else delete cell.dataset[`score${i}`];
           if (ses.pText  != null) cell.dataset[`ptext${i}`] = String(ses.pText); else delete cell.dataset[`ptext${i}`];
           if (ses.pHuruf != null) cell.dataset[`phuruf${i}`]= String(ses.pHuruf); else delete cell.dataset[`phuruf${i}`];
+        }
+
+        // total: jika ada kunci, hitung dari dataset; jika tidak, pakai total server bila ada
+        const valEl = cell.querySelector('.mur-val');
+        if (anyLocked) {
+          const t1 = num(cell.dataset.juz1||0);
+          const t2 = num(cell.dataset.juz2||0);
+          const t3 = num(cell.dataset.juz3||0);
+          const grand = t1+t2+t3;
+          cell.dataset.murtotal = grand.toFixed(2);
+          if (valEl) valEl.textContent = `${grand.toFixed(2)} juz`;
+        } else {
+          const total = num(rec?.juzmurajaah ?? rec?.totalJuz ?? (num(cell.dataset.juz1||0)+num(cell.dataset.juz2||0)+num(cell.dataset.juz3||0)));
+          cell.dataset.murtotal = total.toFixed(2);
+          if (valEl) valEl.textContent = `${total.toFixed(2)} juz`;
         }
       });
     }
@@ -7940,9 +7962,9 @@ renderSession(i);
     try{ if (!window.dataReady) await ensureMap(); }catch(_){}
 
     // 1) Kosongkan sesi idx sepenuhnya (UI + state)
-    resetSession(idx); // sudah set #murX-totalJuz = "0.00" dan sinkron grand total
+    resetSession(idx);
 
-    // 2) Pastikan dataset pada cell ikut kosong/0.00 (termasuk legacy key sesi-1)
+    // 2) Pastikan dataset pada cell ikut kosong/0.00 + LOCK sesi
     const cell = window.currentRowEl?.querySelector('.murajaah-cell');
     if (cell){
       delete cell.dataset[`sf${idx}`];
@@ -7958,14 +7980,15 @@ renderSession(i);
       delete cell.dataset[`phuruf${idx}`];
       cell.dataset[`juz${idx}`] = '0.00';
 
+      // legacy (untuk sesi-1)
       if (idx === 1){
-        delete cell.dataset.sf;
-        delete cell.dataset.af;
-        delete cell.dataset.st;
-        delete cell.dataset.at;
-        delete cell.dataset.pf;
-        delete cell.dataset.pt;
+        delete cell.dataset.sf; delete cell.dataset.af;
+        delete cell.dataset.st; delete cell.dataset.at;
+        delete cell.dataset.pf; delete cell.dataset.pt;
       }
+
+      // LOCK agar refresh tidak menimpa lagi
+      cell.dataset[`lock${idx}`] = '1';
 
       // 3) Hitung ulang total & update label
       const grand =
