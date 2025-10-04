@@ -7127,7 +7127,7 @@ kelasSelect?.addEventListener("change", () => loadSantriData());
 <script>
 // ============================
 // D. MURAJAAH 3 SESI
-// ============================
+// ============================	
 // ---------- Murajaah (3 sesi, Juz Range + Nilai per sesi) ----------
 (function(){
   const MAP_URL='https://raw.githubusercontent.com/dickymiswardi/tadabbur/main/ayah_page_map.json';
@@ -7137,44 +7137,6 @@ kelasSelect?.addEventListener("change", () => loadSantriData());
   const $$=(s,r=document)=>[...r.querySelectorAll(s)];
   const makeOpts=(n)=>Array.from({length:n},(_,i)=>`<option value="${i+1}">${i+1}</option>`).join('');
   const parseNum=(v)=>{ if(typeof v==='number')return Number.isFinite(v)?v:0; const s=String(v??'').replace(/[^0-9.,-]/g,'').replace(',', '.'); const n=parseFloat(s); return Number.isFinite(n)?n:0; };
-
-  // ===== Wipe token helpers (tombstone agar server diabaikan setelah reset) =====
-  const LS_WIPE = 'murWipe:v1';
-  function _wipeDB(){ try{ return JSON.parse(localStorage.getItem(LS_WIPE)||'{}'); }catch{ return {}; } }
-  function _saveWipeDB(db){ try{ localStorage.setItem(LS_WIPE, JSON.stringify(db)); }catch{} }
-  function _kelasNow(){
-    try{
-      return String(
-        window.kelasSelect?.value ||
-        $('#kelasSelect')?.value || $('#kelas')?.value ||
-        document.querySelector('select[name="kelas"]')?.value ||
-        $('#santri-table')?.dataset?.kelas ||
-        document.body?.dataset?.kelas || ''
-      ).trim();
-    }catch{ return ''; }
-  }
-  function _tanggalNow(tr){
-    const byRow = String(tr?.dataset?.tanggal||'').trim();
-    if (byRow) return byRow;
-    try{
-      return String(
-        window.tanggalInput?.value ||
-        $('#tanggalInput')?.value || $('#tanggal')?.value || $('#date')?.value ||
-        document.querySelector('input[name="tanggal"]')?.value ||
-        document.querySelector('input[name="date"]')?.value || ''
-      ).trim();
-    }catch{ return ''; }
-  }
-  function _rowKey(tr){
-    const id  = String(tr?.dataset?.nis || '').trim() || String(tr?.children?.[0]?.textContent||'').trim();
-    const nm  = (tr?.children?.[1]?.childNodes?.[0]?.textContent || tr?.children?.[1]?.textContent || '').trim().toLowerCase();
-    return id || nm || 'unknown';
-  }
-  function _wipeKey(tr, idx){ return `${_kelasNow()||'kls'}|${_tanggalNow(tr)||'tgl'}|${_rowKey(tr)}|${idx}`; }
-  function _murWipeAdd(tr, idx){ const db=_wipeDB(); db[_wipeKey(tr,idx)]=1; _saveWipeDB(db); }
-  function _murWipeHas(tr, idx){ const db=_wipeDB(); return !!db[_wipeKey(tr,idx)]; }
-  function _murWipeClear(tr, idx){ const db=_wipeDB(); const k=_wipeKey(tr,idx); if(k in db){ delete db[k]; _saveWipeDB(db); } }
-  window._murWipeAdd=_murWipeAdd; window._murWipeHas=_murWipeHas; window._murWipeClear=_murWipeClear;
 
   // Predikat
   const PREDIKATS = [
@@ -7189,56 +7151,56 @@ kelasSelect?.addEventListener("change", () => loadSantriData());
     return PREDIKATS.find(p=>s<=p.max) || PREDIKATS[PREDIKATS.length-1];
   }
 
-  // --- META JUZ: surah/ayat & page (akurasi dari mapping kamu) ---
-  const JUZ_META = {
-    1:{ sFrom:1,  aFrom:1,   sTo:2,  aTo:141, pFrom:1,   pTo:20  },
-    2:{ sFrom:2,  aFrom:142, sTo:2,  aTo:252, pFrom:22,  pTo:41  },
-    3:{ sFrom:2,  aFrom:253, sTo:3,  aTo:92,  pFrom:42,  pTo:62  },
-    4:{ sFrom:3,  aFrom:93,  sTo:4,  aTo:23,  pFrom:62,  pTo:81  },
-    5:{ sFrom:4,  aFrom:24,  sTo:4,  aTo:147, pFrom:82,  pTo:101 },
-    6:{ sFrom:4,  aFrom:148, sTo:5,  aTo:81,  pFrom:102, pTo:121 },
-    7:{ sFrom:5,  aFrom:82,  sTo:6,  aTo:110, pFrom:121, pTo:141 },
-    8:{ sFrom:6,  aFrom:111, sTo:7,  aTo:87,  pFrom:142, pTo:161 },
-    9:{ sFrom:7,  aFrom:88,  sTo:8,  aTo:40,  pFrom:162, pTo:181 },
-    10:{ sFrom:8,  aFrom:41,  sTo:9,  aTo:92,  pFrom:182, pTo:201 },
-    11:{ sFrom:9,  aFrom:93,  sTo:11, aTo:5,   pFrom:201, pTo:221 },
-    12:{ sFrom:11, aFrom:6,   sTo:12, aTo:52,  pFrom:222, pTo:241 },
-    13:{ sFrom:12, aFrom:53,  sTo:14, aTo:52,  pFrom:242, pTo:261 },
-    14:{ sFrom:15, aFrom:1,   sTo:16, aTo:128, pFrom:262, pTo:281 },
-    15:{ sFrom:17, aFrom:1,   sTo:18, aTo:74,  pFrom:282, pTo:301 },
-    16:{ sFrom:18, aFrom:75,  sTo:20, aTo:135, pFrom:302, pTo:321 },
-    17:{ sFrom:21, aFrom:1,   sTo:22, aTo:78,  pFrom:322, pTo:341 },
-    18:{ sFrom:23, aFrom:1,   sTo:25, aTo:20,  pFrom:342, pTo:361 },
-    19:{ sFrom:25, aFrom:21,  sTo:27, aTo:55,  pFrom:362, pTo:381 },
-    20:{ sFrom:27, aFrom:56,  sTo:29, aTo:45,  pFrom:382, pTo:401 },
-    21:{ sFrom:29, aFrom:46,  sTo:33, aTo:30,  pFrom:402, pTo:421 },
-    22:{ sFrom:33, aFrom:31,  sTo:36, aTo:27,  pFrom:422, pTo:441 },
-    23:{ sFrom:36, aFrom:28,  sTo:39, aTo:31,  pFrom:442, pTo:461 },
-    24:{ sFrom:39, aFrom:32,  sTo:41, aTo:46,  pFrom:462, pTo:481 },
-    25:{ sFrom:41, aFrom:47,  sTo:45, aTo:37,  pFrom:482, pTo:502 },
-    26:{ sFrom:46, aFrom:1,   sTo:51, aTo:30,  pFrom:502, pTo:521 },
-    27:{ sFrom:51, aFrom:31,  sTo:57, aTo:29,  pFrom:522, pTo:541 },
-    28:{ sFrom:58, aFrom:1,   sTo:66, aTo:12,  pFrom:542, pTo:561 },
-    29:{ sFrom:67, aFrom:1,   sTo:77, aTo:50,  pFrom:562, pTo:581 },
-    30:{ sFrom:78, aFrom:1,   sTo:114,aTo:6,   pFrom:582, pTo:601 }, // UI tetap tulis 582–604
-  };
+ // --- META JUZ: surah/ayat & page (akurasi dari mapping kamu) ---
+const JUZ_META = {
+  1:{ sFrom:1,  aFrom:1,   sTo:2,  aTo:141, pFrom:1,   pTo:20  },
+  2:{ sFrom:2,  aFrom:142, sTo:2,  aTo:252, pFrom:22,  pTo:41  },
+  3:{ sFrom:2,  aFrom:253, sTo:3,  aTo:92,  pFrom:42,  pTo:62  },
+  4:{ sFrom:3,  aFrom:93,  sTo:4,  aTo:23,  pFrom:62,  pTo:81  },
+  5:{ sFrom:4,  aFrom:24,  sTo:4,  aTo:147, pFrom:82,  pTo:101 },
+  6:{ sFrom:4,  aFrom:148, sTo:5,  aTo:81,  pFrom:102, pTo:121 },
+  7:{ sFrom:5,  aFrom:82,  sTo:6,  aTo:110, pFrom:121, pTo:141 },
+  8:{ sFrom:6,  aFrom:111, sTo:7,  aTo:87,  pFrom:142, pTo:161 },
+  9:{ sFrom:7,  aFrom:88,  sTo:8,  aTo:40,  pFrom:162, pTo:181 },
+ 10:{ sFrom:8,  aFrom:41,  sTo:9,  aTo:92,  pFrom:182, pTo:201 },
+ 11:{ sFrom:9,  aFrom:93,  sTo:11, aTo:5,   pFrom:201, pTo:221 },
+ 12:{ sFrom:11, aFrom:6,   sTo:12, aTo:52,  pFrom:222, pTo:241 },
+ 13:{ sFrom:12, aFrom:53,  sTo:14, aTo:52,  pFrom:242, pTo:261 },
+ 14:{ sFrom:15, aFrom:1,   sTo:16, aTo:128, pFrom:262, pTo:281 },
+ 15:{ sFrom:17, aFrom:1,   sTo:18, aTo:74,  pFrom:282, pTo:301 },
+ 16:{ sFrom:18, aFrom:75,  sTo:20, aTo:135, pFrom:302, pTo:321 },
+ 17:{ sFrom:21, aFrom:1,   sTo:22, aTo:78,  pFrom:322, pTo:341 },
+ 18:{ sFrom:23, aFrom:1,   sTo:25, aTo:20,  pFrom:342, pTo:361 },
+ 19:{ sFrom:25, aFrom:21,  sTo:27, aTo:55,  pFrom:362, pTo:381 },
+ 20:{ sFrom:27, aFrom:56,  sTo:29, aTo:45,  pFrom:382, pTo:401 },
+ 21:{ sFrom:29, aFrom:46,  sTo:33, aTo:30,  pFrom:402, pTo:421 },
+ 22:{ sFrom:33, aFrom:31,  sTo:36, aTo:27,  pFrom:422, pTo:441 },
+ 23:{ sFrom:36, aFrom:28,  sTo:39, aTo:31,  pFrom:442, pTo:461 },
+ 24:{ sFrom:39, aFrom:32,  sTo:41, aTo:46,  pFrom:462, pTo:481 },
+ 25:{ sFrom:41, aFrom:47,  sTo:45, aTo:37,  pFrom:482, pTo:502 },
+ 26:{ sFrom:46, aFrom:1,   sTo:51, aTo:30,  pFrom:502, pTo:521 },
+ 27:{ sFrom:51, aFrom:31,  sTo:57, aTo:29,  pFrom:522, pTo:541 },
+ 28:{ sFrom:58, aFrom:1,   sTo:66, aTo:12,  pFrom:542, pTo:561 },
+ 29:{ sFrom:67, aFrom:1,   sTo:77, aTo:50,  pFrom:562, pTo:581 },
+ 30:{ sFrom:78, aFrom:1,   sTo:114,aTo:6,   pFrom:582, pTo:601 }, // UI tetap tulis 582–604
+};
 
-  // Range Juz by number
-  function getJuzRange(j){
-    j = +j;
-    return (j>=1 && j<=30) ? { ...JUZ_META[j] } : null;
-  }
+// Range Juz by number
+function getJuzRange(j){
+  j = +j;
+  return (j>=1 && j<=30) ? { ...JUZ_META[j] } : null;
+}
 
-  // Cari juz untuk (surah, ayat) berdasarkan META
-  function juzOfAyah(s,a){
-    const gt = (x1,y1,x2,y2)=> (x1>x2) || (x1===x2 && y1>y2);
-    const ge = (x1,y1,x2,y2)=> (x1>x2) || (x1===x2 && y1>=y2);
-    for (let j=1;j<=30;j++){
-      const m = JUZ_META[j];
-      if (ge(s,a,m.sFrom,m.aFrom) && !gt(s,a,m.sTo,m.aTo)) return j;
-    }
-    return 30;
+// Cari juz untuk (surah, ayat) berdasarkan META
+function juzOfAyah(s,a){
+  const gt = (x1,y1,x2,y2)=> (x1>x2) || (x1===x2 && y1>y2);
+  const ge = (x1,y1,x2,y2)=> (x1>x2) || (x1===x2 && y1>=y2);
+  for (let j=1;j<=30;j++){
+    const m = JUZ_META[j];
+    if (ge(s,a,m.sFrom,m.aFrom) && !gt(s,a,m.sTo,m.aTo)) return j;
   }
+  return 30;
+}
 
   // ---------- Data Mushaf ----------
   let ayahPageMap={}, pageAyahCount={}, surahMaxAyah={}, dataReady=false, currentRowEl=null;
@@ -7263,6 +7225,40 @@ kelasSelect?.addEventListener("change", () => loadSantriData());
     dataReady=true;
     window.dataReady = true;
   }
+
+  // ====== WIPE TOKEN (tombstone) ======
+  const LS_WIPE = 'murWipe:v1';
+  function _wipeDB(){ try{ return JSON.parse(localStorage.getItem(LS_WIPE)||'{}'); }catch{ return {}; } }
+  function _wipeDBSet(x){ try{ localStorage.setItem(LS_WIPE, JSON.stringify(x)); }catch{} }
+  function _kelasNow(){
+    return String(
+      window.kelasSelect?.value ||
+      $('#kelasSelect')?.value || $('#kelas')?.value ||
+      document.querySelector('select[name="kelas"]')?.value ||
+      $('#santri-table')?.dataset?.kelas ||
+      document.body?.dataset?.kelas || ''
+    ).trim();
+  }
+  function _tanggalOfRow(tr){
+    const byRow = String(tr?.dataset?.tanggal||'').trim();
+    if (byRow) return byRow;
+    return String(
+      window.tanggalInput?.value ||
+      $('#tanggalInput')?.value || $('#tanggal')?.value || $('#date')?.value ||
+      document.querySelector('input[name="tanggal"]')?.value ||
+      document.querySelector('input[name="date"]')?.value || ''
+    ).trim();
+  }
+  function _rowKey(tr){
+    const nis = String(tr?.dataset?.nis||'').trim();
+    const id  = String(tr?.children?.[0]?.textContent||'').trim();
+    const name = (tr?.children?.[1]?.childNodes?.[0]?.textContent || tr?.children?.[1]?.textContent || '').trim().toLowerCase();
+    return nis || id || name || 'unknown';
+  }
+  function _wipeKey(tr, idx){ return `${_kelasNow()}|${_tanggalOfRow(tr)}|${_rowKey(tr)}|${idx}`; }
+  function wipeHas(tr, idx){ const db=_wipeDB(); return !!db[_wipeKey(tr,idx)]; }
+  function wipeAdd(tr, idx){ const db=_wipeDB(); db[_wipeKey(tr,idx)]=1; _wipeDBSet(db); }
+  function wipeClear(tr, idx){ const db=_wipeDB(); const k=_wipeKey(tr,idx); if (k in db){ delete db[k]; _wipeDBSet(db); } }
 
   function computeTotalJuz(sF,aF,sT,aT){
     let tot=0;
@@ -7479,6 +7475,7 @@ kelasSelect?.addEventListener("change", () => loadSantriData());
         const jF=juzOfAyah(sF,aF), jT=juzOfAyah(sT,aT);
         const total=computeTotalJuz(sF,aF,sT,aT);
         $(`#mur${idx}-totalJuz`).textContent=total.toFixed(2);
+
         if (jF===30 && jT===30){
           $(`#mur${idx}-pagesHint`).textContent = 'Halaman: 582—604';
           if (!$(`#mur${idx}-pageFrom`).value) $(`#mur${idx}-pageFrom`).value = '582';
@@ -7504,16 +7501,6 @@ kelasSelect?.addEventListener("change", () => loadSantriData());
       }
     }
 
-    // hapus wipe-token otomatis bila user sudah isi nyata (biar server boleh isi lagi ke depannya)
-    try{
-      const hasReal = !!(murState[idx]?.sF && murState[idx]?.aF && murState[idx]?.sT && murState[idx]?.aT);
-      if (hasReal && typeof window._murWipeClear==='function' && currentRowEl){
-        window._murWipeClear(currentRowEl, idx);
-        const c = currentRowEl.querySelector('.murajaah-cell');
-        if (c) delete c.dataset[`wipe${idx}`];
-      }
-    }catch(_){}
-
     // rekap & sinkron dataset
     $('#mur-t1').textContent=(murState[1]?.total||0).toFixed(2);
     $('#mur-t2').textContent=(murState[2]?.total||0).toFixed(2);
@@ -7529,13 +7516,23 @@ kelasSelect?.addEventListener("change", () => loadSantriData());
           cell.dataset[`sf${i}`]=st.sF||''; cell.dataset[`af${i}`]=st.aF||'';
           cell.dataset[`st${i}`]=st.sT||''; cell.dataset[`at${i}`]=st.aT||'';
           cell.dataset[`pf${i}`]=st.pFrom||''; cell.dataset[`pt${i}`]=st.pTo||'';
-          cell.dataset[`jfrom${i}`]=st.jFrom||''; cell.dataset[`jto${i}`]=st.jTo||'';
+          cell.dataset[`jfrom${i}`]=st.jFrom||''; cell.dataset[`jto${i}`]=st.JTo||st.jTo||'';
           cell.dataset[`juz${i}`]=(st.total||0).toFixed(2);
           if(st.score!=null){ cell.dataset[`score${i}`]=String(st.score); cell.dataset[`ptext${i}`]=st.pText||''; cell.dataset[`phuruf${i}`]=st.pHuruf||''; }
         });
         const valEl=cell.querySelector('.mur-val'); if(valEl) valEl.textContent = grand.toFixed(2)+' juz';
       }
     }
+
+    // --- jika user sudah mengisi data sesi -> hapus wipe-token supaya server boleh isi ulang
+    try{
+      const hasData = !!(murState[idx]?.sF && murState[idx]?.aF && murState[idx]?.sT && murState[idx]?.aT);
+      if (hasData && currentRowEl) {
+        wipeClear(currentRowEl, idx);
+        const cell = currentRowEl.querySelector('.murajaah-cell');
+        if (cell) delete cell.dataset[`wipe${idx}`];
+      }
+    }catch(_){}
   }
 
   function applyJuzRange(idx){
@@ -7731,8 +7728,8 @@ kelasSelect?.addEventListener("change", () => loadSantriData());
       if (kind==='to')     return pickNonEmpty(rec[`murTo${i}`],     rec.murSessions?.[i-1]?.to,     i===1?rec.murTo:undefined);
       if (kind==='pages')  return pickNonEmpty(rec[`murPages${i}`],  rec.murSessions?.[i-1]?.pages,  i===1?rec.murPages:undefined);
       if (kind==='juz')    return pickNonEmpty(rec[`juzmur${i}`],    rec[`juzSesi${i}`],             rec.murSessions?.[i-1]?.juz);
-      if (kind==='jFrom`)  return pickNonEmpty(rec[`jFrom${i}`],     rec.murSessions?.[i-1]?.jFrom);
-      if (kind==='jTo`)    return pickNonEmpty(rec[`jTo${i}`],       rec.murSessions?.[i-1]?.jTo);
+      if (kind==='jFrom')  return pickNonEmpty(rec[`jFrom${i}`],     rec.murSessions?.[i-1]?.jFrom);
+      if (kind==='jTo')    return pickNonEmpty(rec[`jTo${i}`],       rec.murSessions?.[i-1]?.jTo);
       if (kind==='score')  return pickNonEmpty(rec[`murScore${i}`],  rec.murSessions?.[i-1]?.score);
       if (kind==='pText')  return pickNonEmpty(rec[`murPredText${i}`],  rec.murSessions?.[i-1]?.predikatText);
       if (kind==='pHuruf') return pickNonEmpty(rec[`murPredHuruf${i}`], rec.murSessions?.[i-1]?.predikatHuruf);
@@ -7741,9 +7738,21 @@ kelasSelect?.addEventListener("change", () => loadSantriData());
     const applyPages = (i, str)=>{ if(!str) return; const [pf,pt]=String(str).split('-'); $(`#mur${i}-pageFrom`).value=pf||''; $(`#mur${i}-pageTo`).value=pt||''; };
 
     const loadOne = (i) => {
-      // jika sesi di-wipe: biarkan kosong total (abaikan server & dataset)
-      if (typeof window._murWipeHas==='function' && window._murWipeHas(row,i)){
-        resetOne(i);
+      // Jika sesi di-wipe: kosongkan total & jangan prefill apapun
+      if (wipeHas(row, i)){
+        $(`#mur${i}-juzFrom`).value = '';
+        $(`#mur${i}-juzTo`).value   = '';
+        $(`#mur${i}-pageFrom`).value = '';
+        $(`#mur${i}-pageTo`).value   = '';
+        $(`#mur${i}-surahFrom`).value = '';
+        fillAyahForSurah($(`#mur${i}-ayahFrom`), '', {});
+        $(`#mur${i}-surahTo`).value   = '';
+        fillAyahForSurah($(`#mur${i}-ayahTo`),   '', {});
+        $(`#mur${i}-score`).value = '';
+        $(`#mur${i}-predikatBadge`).textContent = '–';
+        $(`#mur${i}-pagesHint`).textContent = '';
+        $(`#mur${i}-totalJuz`).textContent = '0.00';
+        murState[i] = { touched:false, sF:null,aF:null,sT:null,aT:null, pFrom:'',pTo:'', jFrom:null,jTo:null, total:0, score:null, pText:'', pHuruf:'' };
         return;
       }
 
@@ -7785,7 +7794,7 @@ kelasSelect?.addEventListener("change", () => loadSantriData());
         $(`#mur${i}-juzFrom`).value = jf!==undefined ? String(jf) : '';
         $(`#mur${i}-juzTo`).value   = jt!==undefined ? String(jt) : '';
 
-        // kosongkan score saat modal dibuka
+        // Jangan prefill nilai
         $(`#mur${i}-score`).value = '';
         $(`#mur${i}-predikatBadge`).textContent = '–';
         murState[i].score  = null;
@@ -7908,8 +7917,9 @@ kelasSelect?.addEventListener("change", () => loadSantriData());
         const id  = String(tr.children?.[0]?.textContent||'').trim();
         const rec = (nis && byNis.get(nis)) || (id && byId.get(id)) || null;
 
-        // siapkan total dari server dulu
-        let total = num(rec?.juzmurajaah ?? rec?.totalJuz ?? 0);
+        const total = num(rec?.juzmurajaah ?? rec?.totalJuz ?? 0);
+        const valEl = cell.querySelector('.mur-val');
+        if(valEl) valEl.textContent = `${total.toFixed(2)} juz`;
         cell.dataset.murtotal = total.toFixed(2);
 
         const legacyFrom = rec?.murFrom || '';
@@ -7935,16 +7945,17 @@ kelasSelect?.addEventListener("change", () => loadSantriData());
           return { fromStr, toStr, pagesStr, juzVal, jFrom, jTo, score, pText, pHuruf };
         }
 
-        // isi per sesi, tapi hormati wipe-token
         for (let i = 1; i <= 3; i++) {
-          if (typeof window._murWipeHas==='function' && window._murWipeHas(tr,i)){
+          // Jika ada wipe untuk sesi ini: kosongkan & skip data server
+          if (wipeHas(tr, i)){
             ['sf','af','st','at','pf','pt','jfrom','jto','score','ptext','phuruf'].forEach(k=>{
               const key = `${k}${i}`; if (key in cell.dataset) delete cell.dataset[key];
             });
             cell.dataset[`juz${i}`] = '0.00';
-            cell.dataset[`wipe${i}`]= '1';
+            cell.dataset[`wipe${i}`] = '1';
             continue;
           }
+
           const ses = getSessionFrom(rec, i);
           setSA(cell, ses.fromStr, `sf${i}`, `af${i}`);
           setSA(cell, ses.toStr,   `st${i}`, `at${i}`);
@@ -7955,14 +7966,7 @@ kelasSelect?.addEventListener("change", () => loadSantriData());
           if (ses.score  != null) cell.dataset[`score${i}`] = String(ses.score); else delete cell.dataset[`score${i}`];
           if (ses.pText  != null) cell.dataset[`ptext${i}`] = String(ses.pText); else delete cell.dataset[`ptext${i}`];
           if (ses.pHuruf != null) cell.dataset[`phuruf${i}`]= String(ses.pHuruf); else delete cell.dataset[`phuruf${i}`];
-          delete cell.dataset[`wipe${i}`];
         }
-
-        // TAMPILKAN total sesuai penjumlahan 3 sesi (setelah kemungkinan wipe)
-        const sum = ['juz1','juz2','juz3'].reduce((a,k)=>a+(parseFloat(cell.dataset[k]||'0')||0),0);
-        const valEl = cell.querySelector('.mur-val');
-        cell.dataset.murtotal = sum.toFixed(2);
-        if (valEl) valEl.textContent = `${sum.toFixed(2)} juz`;
       });
     }
   }
@@ -7995,30 +7999,64 @@ kelasSelect?.addEventListener("change", () => loadSantriData());
 
   function afterTableRendered(){ ensureMurColumn(); refreshMurFromServer(); }
 
-  // ============ RESET FINAL: kosong (0.00) + tombstone supaya server diabaikan ============
+  // ============ RESET: kosong total (0.00) + lindungi dari data server ============
   async function serverSafeReset(idx){
-    // 1) kosongkan UI
-    resetSession(idx);
+    try{ if (!window.dataReady) await ensureMap(); }catch(_){}
+    const sel = q => document.querySelector(q);
 
-    // 2) tandai wipe-token agar refresh server mengabaikan isi lama
-    if (window.currentRowEl && typeof window._murWipeAdd==='function'){
-      window._murWipeAdd(window.currentRowEl, idx);
+    // Kosongkan UI
+    sel(`#mur${idx}-juzFrom`)   && (sel(`#mur${idx}-juzFrom`).value   = '');
+    sel(`#mur${idx}-juzTo`)     && (sel(`#mur${idx}-juzTo`).value     = '');
+    sel(`#mur${idx}-pageFrom`)  && (sel(`#mur${idx}-pageFrom`).value  = '');
+    sel(`#mur${idx}-pageTo`)    && (sel(`#mur${idx}-pageTo`).value    = '');
+    sel(`#mur${idx}-surahFrom`) && (sel(`#mur${idx}-surahFrom`).value = '');
+    sel(`#mur${idx}-surahTo`)   && (sel(`#mur${idx}-surahTo`).value   = '');
+    if (sel(`#mur${idx}-ayahFrom`)) sel(`#mur${idx}-ayahFrom`).innerHTML = '<option value=""></option>';
+    if (sel(`#mur${idx}-ayahTo`))   sel(`#mur${idx}-ayahTo`).innerHTML   = '<option value=""></option>';
+    if (sel(`#mur${idx}-score`))           sel(`#mur${idx}-score`).value = '';
+    if (sel(`#mur${idx}-predikatBadge`))   sel(`#mur${idx}-predikatBadge`).textContent = '–';
+    if (sel(`#mur${idx}-pagesHint`))       sel(`#mur${idx}-pagesHint`).textContent = '';
+    if (sel(`#mur${idx}-totalJuz`))        sel(`#mur${idx}-totalJuz`).textContent = '0.00';
+
+    // Reset state
+    murState[idx] = {
+      touched:false, sF:null,aF:null,sT:null,aT:null,
+      pFrom:'', pTo:'', jFrom:null, jTo:null,
+      total:0, score:null, pText:'', pHuruf:''
+    };
+
+    // Bersihkan dataset sel + set wipe marker
+    if (window.currentRowEl){
       const cell = window.currentRowEl.querySelector('.murajaah-cell');
-      if (cell) cell.dataset[`wipe${idx}`]='1';
+      if (cell){
+        ['sf','af','st','at','pf','pt','jfrom','jto','score','ptext','phuruf','juz'].forEach(k=>{
+          const key = `${k}${idx}`; if (key in cell.dataset) delete cell.dataset[key];
+        });
+        wipeAdd(window.currentRowEl, idx);
+        cell.dataset[`wipe${idx}`] = '1';
+      }
     }
 
-    // 3) update total tampilan
+    // Rekap total
     [1,2,3].forEach(renderSession);
+    const g = (murState[1]?.total||0)+(murState[2]?.total||0)+(murState[3]?.total||0);
+    const gEl = document.querySelector('#mur-totalJuzAll');
+    if (gEl) gEl.textContent = g.toFixed(2);
+    if (window.currentRowEl){
+      const cell = window.currentRowEl.querySelector('.murajaah-cell');
+      const valEl = cell?.querySelector('.mur-val');
+      if (cell) cell.dataset.murtotal = g.toFixed(2);
+      if (valEl) valEl.textContent = `${g.toFixed(2)} juz`;
+    }
 
-    // 4) simpan (jika ada) + refresh
     const statusEl = document.querySelector('#mur-save-status');
     try{
       if (typeof window.simpanDataMutabaah === 'function'){
-        await window.simpanDataMutabaah(document.getElementById(`mur${idx}-totalJuz-reset`) || null);
+        await window.simpanDataMutabaah(document.querySelector(`#mur${idx}-totalJuz-reset`) || null);
         if (typeof window.murajaah?.refreshServer === 'function'){
           await window.murajaah.refreshServer();
         }
-        if (statusEl){ statusEl.textContent='✅ Reset ke kosong (0.00) & dilindungi dari data lama'; setTimeout(()=>statusEl.textContent='',1500); }
+        if (statusEl){ statusEl.textContent='✅ Reset ke kosong (0.00) & dilindungi dari server'; setTimeout(()=>statusEl.textContent='',1500); }
       } else {
         if (statusEl){ statusEl.textContent='ℹ️ Di-reset lokal (tanpa simpan server)'; setTimeout(()=>statusEl.textContent='',1500); }
       }
@@ -8068,6 +8106,7 @@ kelasSelect?.addEventListener("change", () => loadSantriData());
     await ensureMap();
     [1,2,3].forEach(bindSession);
 
+    // tombol reset sesi tersedia dari awal
     ensureResetButtons();
   })();
 })();
@@ -8159,6 +8198,7 @@ kelasSelect?.addEventListener("change", () => loadSantriData());
     if (!r.ok) throw new Error('saveRangeServer: HTTP '+r.status);
   }
 
+  // Multi-strategy penghapusan range di server (agar kompatibel berbagai backend)
   async function tryResetRangeServer(kelas){
     const attempts = [
       { url: '/api/aksesAutoUpdateAllJuzMur', method:'POST',   body:{ kelas, delete:true } },
@@ -8206,6 +8246,7 @@ kelasSelect?.addEventListener("change", () => loadSantriData());
     return { fromDate:"", toDate:"" };
   }
 
+  // ===== overlay open =====
   function bukaOverlayTotalMurRange(){
     const el = $('#murRangeOverlay'); if (!el) return;
     const today = new Date(); const yyyy = today.getFullYear();
@@ -8219,6 +8260,7 @@ kelasSelect?.addEventListener("change", () => loadSantriData());
     el.style.display = 'flex';
   }
 
+  // ===== hitung dari server → tampilkan =====
   async function hitungTotalMurRangeFromTable(){
     const kelas  = kelasNow();
     const table  = getSantriTable();
@@ -8523,7 +8565,7 @@ kelasSelect?.addEventListener("change", () => loadSantriData());
 
 // ============================
 // D. MURAJAAH 3 SESI
-// ============================
+// ============================	
 </script>
 
 
