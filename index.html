@@ -7858,52 +7858,103 @@ renderSession(i);
       }
 
       rows.forEach(tr=>{
-        const cell=tr.querySelector('.murajaah-cell'); if(!cell) return;
-        const nis = String(tr.dataset?.nis||'').trim();
-        const id  = String(tr.children?.[0]?.textContent||'').trim();
-        const rec = (nis && byNis.get(nis)) || (id && byId.get(id)) || null;
+  const cell = tr.querySelector('.murajaah-cell'); 
+  if (!cell) return;
 
-        const total = num(rec?.juzmurajaah ?? rec?.totalJuz ?? 0);
-        const valEl = cell.querySelector('.mur-val');
-        if(valEl) valEl.textContent = `${total.toFixed(2)} juz`;
-        cell.dataset.murtotal = total.toFixed(2);
+  // === GUARD: jika baris baru di-reset ke 0, jangan timpa dari server ===
+  const fz  = cell.dataset.forceZero === '1';
+  const fzu = +(cell.dataset.forceZeroUntil || 0);
+  const stillForce = fz && (!fzu || Date.now() < fzu);
+  if (stillForce){
+    const valEl = cell.querySelector('.mur-val');
+    if (valEl) valEl.textContent = '0.00 juz';
+    cell.dataset.murtotal = '0.00';
+    for (let i=1;i<=3;i++){
+      cell.dataset[`juz${i}`] = '0.00';
+      delete cell.dataset[`sf${i}`];
+      delete cell.dataset[`af${i}`];
+      delete cell.dataset[`st${i}`];
+      delete cell.dataset[`at${i}`];
+      delete cell.dataset[`pf${i}`];
+      delete cell.dataset[`pt${i}`];
+      delete cell.dataset[`jfrom${i}`];
+      delete cell.dataset[`jto${i}`];
+      delete cell.dataset[`score${i}`];
+      delete cell.dataset[`ptext${i}`];
+      delete cell.dataset[`phuruf${i}`];
+    }
+    return; // skip update dari server untuk baris ini
+  } else {
+    // masa proteksi habis: bersihkan flag
+    delete cell.dataset.forceZero;
+    delete cell.dataset.forceZeroUntil;
+  }
 
-        const legacyFrom = rec?.murFrom || '';
-        const legacyTo   = rec?.murTo   || '';
-        const legacyPg   = rec?.murPages|| '';
-        setSA(cell, legacyFrom, 'sf', 'af');
-        setSA(cell, legacyTo,   'st', 'at');
-        setPages(cell, legacyPg, 'pf', 'pt');
+  // === Ambil record server utk baris ini ===
+  const nis = String(tr.dataset?.nis||'').trim();
+  const id  = String(tr.children?.[0]?.textContent||'').trim();
+  const rec = (nis && byNis.get(nis)) || (id && byId.get(id)) || null;
 
-        const takeNonEmpty = (...xs) => { for (const x of xs){ if(x!==undefined && x!==null && String(x)!=='') return x; } return ''; };
-        function getSessionFrom(rec, i){
-          const arr = Array.isArray(rec?.murSessions) ? rec.murSessions : null;
-          const ses = arr && arr[i-1] ? arr[i-1] : null;
-          const fromStr  = takeNonEmpty(rec?.[`murFrom${i}`],  ses?.from,  rec?.murFrom);
-          const toStr    = takeNonEmpty(rec?.[`murTo${i}`],    ses?.to,    rec?.murTo);
-          const pagesStr = takeNonEmpty(rec?.[`murPages${i}`], ses?.pages, rec?.murPages);
-          const juzVal   = takeNonEmpty(rec?.[`juzmur${i}`], rec?.[`juzSesi${i}`], ses?.juz);
-          const jFrom    = (rec?.[`jFrom${i}`] ?? ses?.jFrom);
-          const jTo      = (rec?.[`jTo${i}`]   ?? ses?.jTo);
-          const score    = (rec?.[`murScore${i}`]     ?? ses?.score);
-          const pText    = (rec?.[`murPredText${i}`]  ?? ses?.predikatText);
-          const pHuruf   = (rec?.[`murPredHuruf${i}`] ?? ses?.predikatHuruf);
-          return { fromStr, toStr, pagesStr, juzVal, jFrom, jTo, score, pText, pHuruf };
-        }
+  // === Tampilkan total (default 0.00 jika rec kosong) ===
+  const total = num(rec?.juzmurajaah ?? rec?.totalJuz ?? 0);
+  const valEl = cell.querySelector('.mur-val');
+  if (valEl) valEl.textContent = `${total.toFixed(2)} juz`;
+  cell.dataset.murtotal = total.toFixed(2);
 
-        for (let i = 1; i <= 3; i++) {
-          const ses = getSessionFrom(rec, i);
-          setSA(cell, ses.fromStr, `sf${i}`, `af${i}`);
-          setSA(cell, ses.toStr,   `st${i}`, `at${i}`);
-          setPages(cell, ses.pagesStr, `pf${i}`, `pt${i}`);
-          if (ses.jFrom != null && ses.jFrom !== '') cell.dataset[`jfrom${i}`] = String(ses.jFrom); else delete cell.dataset[`jfrom${i}`];
-          if (ses.jTo   != null && ses.jTo   !== '') cell.dataset[`jto${i}`]   = String(ses.jTo);   else delete cell.dataset[`jto${i}`];
-          cell.dataset[`juz${i}`] = num(ses.juzVal || 0).toFixed(2);
-          if (ses.score  != null) cell.dataset[`score${i}`] = String(ses.score); else delete cell.dataset[`score${i}`];
-          if (ses.pText  != null) cell.dataset[`ptext${i}`] = String(ses.pText); else delete cell.dataset[`ptext${i}`];
-          if (ses.pHuruf != null) cell.dataset[`phuruf${i}`]= String(ses.pHuruf); else delete cell.dataset[`phuruf${i}`];
-        }
-      });
+  // Bersihkan dulu dataset sesi agar tidak ada nilai nyangkut
+  for (let i=1;i<=3;i++){
+    delete cell.dataset[`sf${i}`];
+    delete cell.dataset[`af${i}`];
+    delete cell.dataset[`st${i}`];
+    delete cell.dataset[`at${i}`];
+    delete cell.dataset[`pf${i}`];
+    delete cell.dataset[`pt${i}`];
+    delete cell.dataset[`jfrom${i}`];
+    delete cell.dataset[`jto${i}`];
+    delete cell.dataset[`score${i}`];
+    delete cell.dataset[`ptext${i}`];
+    delete cell.dataset[`phuruf${i}`];
+    cell.dataset[`juz${i}`] = '0.00';
+  }
+
+  // === Legacy (jaga kompatibilitas lama) ===
+  const legacyFrom = rec?.murFrom || '';
+  const legacyTo   = rec?.murTo   || '';
+  const legacyPg   = rec?.murPages|| '';
+  setSA(cell, legacyFrom, 'sf', 'af');
+  setSA(cell, legacyTo,   'st', 'at');
+  setPages(cell, legacyPg, 'pf', 'pt');
+
+  // === Per sesi ===
+  const takeNonEmpty = (...xs) => { for (const x of xs){ if(x!==undefined && x!==null && String(x)!=='') return x; } return ''; };
+  function getSessionFrom(r, i){
+    const arr = Array.isArray(r?.murSessions) ? r.murSessions : null;
+    const ses = arr && arr[i-1] ? arr[i-1] : null;
+    const fromStr  = takeNonEmpty(r?.[`murFrom${i}`],  ses?.from,  r?.murFrom);
+    const toStr    = takeNonEmpty(r?.[`murTo${i}`],    ses?.to,    r?.murTo);
+    const pagesStr = takeNonEmpty(r?.[`murPages${i}`], ses?.pages, r?.murPages);
+    const juzVal   = takeNonEmpty(r?.[`juzmur${i}`],  r?.[`juzSesi${i}`], ses?.juz);
+    const jFrom    = (r?.[`jFrom${i}`] ?? ses?.jFrom);
+    const jTo      = (r?.[`jTo${i}`]   ?? ses?.jTo);
+    const score    = (r?.[`murScore${i}`]     ?? ses?.score);
+    const pText    = (r?.[`murPredText${i}`]  ?? ses?.predikatText);
+    const pHuruf   = (r?.[`murPredHuruf${i}`] ?? ses?.predikatHuruf);
+    return { fromStr, toStr, pagesStr, juzVal, jFrom, jTo, score, pText, pHuruf };
+  }
+
+  for (let i = 1; i <= 3; i++) {
+    const ses = getSessionFrom(rec, i);
+    setSA(cell, ses.fromStr, `sf${i}`, `af${i}`);
+    setSA(cell, ses.toStr,   `st${i}`, `at${i}`);
+    setPages(cell, ses.pagesStr, `pf${i}`, `pt${i}`);
+    if (ses.jFrom != null && ses.jFrom !== '') cell.dataset[`jfrom${i}`] = String(ses.jFrom); else delete cell.dataset[`jfrom${i}`];
+    if (ses.jTo   != null && ses.jTo   !== '') cell.dataset[`jto${i}`]   = String(ses.jTo);   else delete cell.dataset[`jto${i}`];
+    cell.dataset[`juz${i}`] = num(ses.juzVal || 0).toFixed(2);
+    if (ses.score  != null) cell.dataset[`score${i}`] = String(ses.score); else delete cell.dataset[`score${i}`];
+    if (ses.pText  != null) cell.dataset[`ptext${i}`] = String(ses.pText); else delete cell.dataset[`ptext${i}`];
+    if (ses.pHuruf != null) cell.dataset[`phuruf${i}`]= String(ses.pHuruf); else delete cell.dataset[`phuruf${i}`];
+  }
+});
     }
   }
 
@@ -7941,100 +7992,85 @@ renderSession(i);
     try{ if (!window.dataReady) await ensureMap(); }catch(_){}
     const sel = q => document.querySelector(q);
 
-    // 1) Kosongkan semua input pilihan sesi idx
-    sel(`#mur${idx}-juzFrom`)  && (sel(`#mur${idx}-juzFrom`).value  = '');
-    sel(`#mur${idx}-juzTo`)    && (sel(`#mur${idx}-juzTo`).value    = '');
-    sel(`#mur${idx}-pageFrom`) && (sel(`#mur${idx}-pageFrom`).value = '');
-    sel(`#mur${idx}-pageTo`)   && (sel(`#mur${idx}-pageTo`).value   = '');
-    sel(`#mur${idx}-surahFrom`)&& (sel(`#mur${idx}-surahFrom`).value= '');
-    sel(`#mur${idx}-surahTo`)  && (sel(`#mur${idx}-surahTo`).value  = '');
-
-    // Ayah dropdown dikosongkan ulang
+    // Kosongkan input sesi idx
+    const ids = [
+      `#mur${idx}-juzFrom`, `#mur${idx}-juzTo`,
+      `#mur${idx}-pageFrom`, `#mur${idx}-pageTo`,
+      `#mur${idx}-surahFrom`, `#mur${idx}-surahTo`
+    ];
+    ids.forEach(id=>{ const el=sel(id); if(el) el.value=''; });
     fillAyahForSurah(sel(`#mur${idx}-ayahFrom`), '', {});
     fillAyahForSurah(sel(`#mur${idx}-ayahTo`),   '', {});
 
-    // Skor/predikat dikosongkan
+    // Score/predikat kosong
     if (sel(`#mur${idx}-score`)) sel(`#mur${idx}-score`).value = '';
     if (sel(`#mur${idx}-predikatBadge`)) sel(`#mur${idx}-predikatBadge`).textContent = '–';
 
-    // Hint halaman & totalJuz = 0.00
+    // UI hint & total 0.00
     if (sel(`#mur${idx}-pagesHint`)) sel(`#mur${idx}-pagesHint`).textContent = '';
     if (sel(`#mur${idx}-totalJuz`))  sel(`#mur${idx}-totalJuz`).textContent  = '0.00';
 
-    // 2) State internal ke nol
+    // State internal nol
     murState[idx] = {
-      touched:false,
-      sF:null,aF:null,sT:null,aT:null,
-      pFrom:'',pTo:'',
-      jFrom:null,jTo:null,
-      total:0,
-      score:null, pText:'', pHuruf:''
+      touched:false, sF:null,aF:null,sT:null,aT:null,
+      pFrom:'',pTo:'', jFrom:null,jTo:null,
+      total:0, score:null, pText:'', pHuruf:''
     };
 
-    // 3) Bersihkan dataset pada cell baris aktif
+    // Bersihkan dataset di baris aktif + beri "forceZero" supaya refresh skip baris ini
     if (window.currentRowEl){
       const cell = window.currentRowEl.querySelector('.murajaah-cell');
       if (cell){
-        delete cell.dataset[`sf${idx}`];
-        delete cell.dataset[`af${idx}`];
-        delete cell.dataset[`st${idx}`];
-        delete cell.dataset[`at${idx}`];
-        delete cell.dataset[`pf${idx}`];
-        delete cell.dataset[`pt${idx}`];
-        delete cell.dataset[`jfrom${idx}`];
-        delete cell.dataset[`jto${idx}`];
-        delete cell.dataset[`score${idx}`];
-        delete cell.dataset[`ptext${idx}`];
-        delete cell.dataset[`phuruf${idx}`];
-        cell.dataset[`juz${idx}`] = '0.00';
+        // Proteksi selama 3 menit (bisa diubah)
+        cell.dataset.forceZero = '1';
+        cell.dataset.forceZeroUntil = String(Date.now() + 3*60*1000);
+
+        // Hapus semua sesi & set juz sesi = 0.00
+        for (let i=1;i<=3;i++){
+          delete cell.dataset[`sf${i}`];
+          delete cell.dataset[`af${i}`];
+          delete cell.dataset[`st${i}`];
+          delete cell.dataset[`at${i}`];
+          delete cell.dataset[`pf${i}`];
+          delete cell.dataset[`pt${i}`];
+          delete cell.dataset[`jfrom${i}`];
+          delete cell.dataset[`jto${i}`];
+          delete cell.dataset[`score${i}`];
+          delete cell.dataset[`ptext${i}`];
+          delete cell.dataset[`phuruf${i}`];
+          cell.dataset[`juz${i}`] = '0.00';
+        }
+        cell.dataset.murtotal = '0.00';
+        const valEl = cell.querySelector('.mur-val');
+        if (valEl) valEl.textContent = '0.00 juz';
       }
     }
 
-    // 4) Render ulang supaya rekap & grand total ikut 0
-    [1,2,3].forEach(renderSession); // ini juga akan update #mur-t1..3
-
-    // Rekap total 3 sesi (semua 0)
+    // Render ulang rekap
+    [1,2,3].forEach(renderSession);
     const grand = (murState[1]?.total||0)+(murState[2]?.total||0)+(murState[3]?.total||0);
-    const gEl = document.querySelector('#mur-totalJuzAll');
-    if (gEl) gEl.textContent = grand.toFixed(2);
+    const gEl = sel('#mur-totalJuzAll'); if (gEl) gEl.textContent = grand.toFixed(2);
 
-    if (window.currentRowEl){
-      const cell  = window.currentRowEl.querySelector('.murajaah-cell');
-      const valEl = cell?.querySelector('.mur-val');
-      if (cell)  cell.dataset.murtotal = grand.toFixed(2); // "0.00"
-      if (valEl) valEl.textContent     = `${grand.toFixed(2)} juz`; // "0.00 juz"
-    }
-
-    // 5) Simpan ke server (jika tersedia) lalu refresh tabel dari server
-    const statusEl = document.querySelector('#mur-save-status');
+    // Simpan ke server jika tersedia (agar DB juga 0)
+    const statusEl = sel('#mur-save-status');
     try{
       if (typeof window.simpanDataMutabaah === 'function'){
-        // kirim tombol reset ini sebagai marker (boleh null)
-        await window.simpanDataMutabaah(document.querySelector(`#mur${idx}-totalJuz-reset`) || null);
+        await window.simpanDataMutabaah(sel(`#mur${idx}-totalJuz-reset`) || null);
+        // Setelah save, refresh tabel—TAPI baris ini aman karena forceZero aktif
         if (typeof window.murajaah?.refreshServer === 'function'){
           await window.murajaah.refreshServer();
         }
-        if (statusEl){
-          statusEl.textContent='✅ Reset tersimpan: 0.00';
-          setTimeout(()=>statusEl.textContent='',1500);
-        }
+        if (statusEl){ statusEl.textContent = '✅ Reset 0.00 tersimpan'; setTimeout(()=>statusEl.textContent='',1500); }
       } else {
-        // fallback lokal saja
-        if (statusEl){
-          statusEl.textContent='ℹ️ Reset lokal: 0.00 (fungsi simpan tidak ada).';
-          setTimeout(()=>statusEl.textContent='',1500);
-        }
+        if (statusEl){ statusEl.textContent = 'ℹ️ Reset lokal 0.00 (tanpa simpan server)'; setTimeout(()=>statusEl.textContent='',1500); }
       }
     }catch(e){
       console.error(e);
-      if (statusEl){
-        statusEl.textContent='❌ Gagal simpan ke server';
-        setTimeout(()=>statusEl.textContent='',2000);
-      }
+      if (statusEl){ statusEl.textContent = '❌ Gagal simpan ke server'; setTimeout(()=>statusEl.textContent='',2000); }
     }
   }
 
-  // === Buat tombol reset di sebelah #murX-totalJuz (1..3) → jalankan strictZeroReset ===
+  // Pakai tombol reset yang sudah ada, cukup ubah handler ke strictZeroReset
   function ensureResetButtons(){
     for (let i=1;i<=3;i++){
       const totalEl = document.querySelector(`#mur${i}-totalJuz`);
@@ -8057,12 +8093,6 @@ renderSession(i);
       btn.addEventListener('click', ()=> strictZeroReset(i));
     }
   }
-
-  // ekspor (tetap sama)
-  window.murajaah = {
-    afterTableRendered: ()=>{ ensureMurColumn(); refreshMurFromServer(); },
-    refreshServer: refreshMurFromServer
-  };
 
 
   // init
