@@ -7942,9 +7942,68 @@ renderSession(i);
       $('#murPreviewBody').innerHTML = `<ul style="margin:0 0 10px 18px">${lines}</ul><div><b>Total 3 sesi:</b> ${grand} juz</div>`;
       $('#murPreviewOverlay').style.display='flex';
     });
+
+    // --- helper: nolkan sesi yg sangat kecil agar server simpan 0.00 (BUKAN 0.01)
+    function zeroizeSessionIfTiny(i){
+      const st = murState[i] || {};
+      const tiny = Number(st.total || 0) < 0.02; // ambang < ~1 ayat
+      if (!tiny) return;
+
+      // bersihkan UI input
+      $(`#mur${i}-surahFrom`).value = '';
+      fillAyahForSurah($(`#mur${i}-ayahFrom`), '', {});
+      $(`#mur${i}-surahTo`).value = '';
+      fillAyahForSurah($(`#mur${i}-ayahTo`), '', {});
+      $(`#mur${i}-juzFrom`).value = '';
+      $(`#mur${i}-juzTo`).value = '';
+      $(`#mur${i}-pageFrom`).value = '';
+      $(`#mur${i}-pageTo`).value = '';
+      $(`#mur${i}-pagesHint`).textContent = '';
+      $(`#mur${i}-totalJuz`).textContent = '0.00';
+
+      // bersihkan state
+      murState[i] = {
+        touched: st.touched || false,
+        sF:null,aF:null,sT:null,aT:null,
+        pFrom:'', pTo:'', jFrom:null, jTo:null,
+        total:0, score:null, pText:'', pHuruf:''
+      };
+
+      // bersihkan dataset (jangan kirim apapun utk sesi ini)
+      const cell = currentRowEl?.querySelector('.murajaah-cell');
+      if (cell){
+        ['sf','af','st','at','pf','pt','jfrom','jto','score','ptext','phuruf'].forEach(k=>{
+          delete cell.dataset[`${k}${i}`];
+        });
+        cell.dataset[`juz${i}`] = '0.00';
+
+        // legacy utk sesi 1
+        if (i===1){
+          delete cell.dataset.sf; delete cell.dataset.af;
+          delete cell.dataset.st; delete cell.dataset.at;
+          delete cell.dataset.pf; delete cell.dataset.pt;
+        }
+      }
+    }
+
+    // --- PATCH: klik Save (zeroize tiny sebelum kirim)
     $('#mur-save')?.addEventListener('click', async()=>{
       try{
+        // render dulu supaya state/dataset terbaru
         [1,2,3].forEach(renderSession);
+
+        // FORCING 0.00: nolkan sesi yg <0.02 (mis. 1 ayat → 0.01)
+        [1,2,3].forEach(zeroizeSessionIfTiny);
+
+        // hitung ulang label total grand
+        const grand = (Number(murState[1]?.total||0) + Number(murState[2]?.total||0) + Number(murState[3]?.total||0)).toFixed(2);
+        const cell = currentRowEl?.querySelector('.murajaah-cell');
+        if (cell){
+          cell.dataset.murtotal = grand;
+          const valEl = cell.querySelector('.mur-val');
+          if (valEl) valEl.textContent = `${grand} juz`;
+        }
+
         if(typeof window.simpanDataMutabaah==='function'){
           await window.simpanDataMutabaah($('#mur-save'));
           await refreshMurFromServer();
