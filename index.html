@@ -7936,29 +7936,47 @@ renderSession(i);
   function afterTableRendered(){ ensureMurColumn(); refreshMurFromServer(); }
 
   // ============ PATCH: Reset 0.00 (kosong total tanpa prefilling) ============
+// ============ PATCH: Reset 0.00 (benar-benar kosong) ============
 async function serverSafeReset(idx){
-  try{ if (!window.dataReady) await ensureMap(); }catch(_){}
+  // 1) Kosongkan sesi idx (input, badge, hint, total) + state lokal
+  resetSession(idx); // sudah set #murX-totalJuz = "0.00" dan bersihkan dataset per-sesi
 
-  // 1) Kosongkan sesi idx sepenuhnya (UI + state + dataset per-sesi)
-  //    resetSession sudah: bersihkan semua input, skor/predikat, halaman/hint,
-  //    set #murX-totalJuz = "0.00", update murState, sync dataset & grand total.
-  resetSession(idx);
-
-  // 2) Pastikan dataset & label tabel ikut 0.00 (jaga-jaga)
-  const cell = window.currentRowEl?.querySelector('.murajaah-cell');
+  // 2) Sinkron dataset & label di sel baris aktif (PAKAI currentRowEl, bukan window.currentRowEl)
+  const cell = currentRowEl?.querySelector('.murajaah-cell');
   if (cell){
+    // pastikan atribut sesi idx benar-benar kosong
+    delete cell.dataset[`sf${idx}`];
+    delete cell.dataset[`af${idx}`];
+    delete cell.dataset[`st${idx}`];
+    delete cell.dataset[`at${idx}`];
+    delete cell.dataset[`pf${idx}`];
+    delete cell.dataset[`pt${idx}`];
+    delete cell.dataset[`jfrom${idx}`];
+    delete cell.dataset[`jto${idx}`];
+    delete cell.dataset[`score${idx}`];
+    delete cell.dataset[`ptext${idx}`];
+    delete cell.dataset[`phuruf${idx}`];
     cell.dataset[`juz${idx}`] = '0.00';
-    // hitung ulang grand total dari murState
+
+    // hitung ulang grand total dari murState (setelah resetSession, sesi idx = 0)
     const grand =
       (Number(murState[1]?.total||0)) +
       (Number(murState[2]?.total||0)) +
       (Number(murState[3]?.total||0));
     cell.dataset.murtotal = grand.toFixed(2);
+
     const valEl = cell.querySelector('.mur-val');
     if (valEl) valEl.textContent = `${grand.toFixed(2)} juz`;
   }
 
-  // 3) Simpan (jika tersedia) + refresh dari server agar konsisten
+  // 3) Update ringkasan total di footer modal (jaga-jaga)
+  document.querySelector('#mur-t1')?.textContent = (murState[1]?.total||0).toFixed(2);
+  document.querySelector('#mur-t2')?.textContent = (murState[2]?.total||0).toFixed(2);
+  document.querySelector('#mur-t3')?.textContent = (murState[3]?.total||0).toFixed(2);
+  const grandAll = (murState[1]?.total||0)+(murState[2]?.total||0)+(murState[3]?.total||0);
+  document.querySelector('#mur-totalJuzAll')?.textContent = grandAll.toFixed(2);
+
+  // 4) Simpan ke server (kalau ada), lalu refresh agar kolom tidak balik lagi
   const statusEl = document.querySelector('#mur-save-status');
   try{
     if (typeof window.simpanDataMutabaah === 'function'){
