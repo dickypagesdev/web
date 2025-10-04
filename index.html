@@ -8570,17 +8570,19 @@ function juzOfAyah(s,a){
 
 <script>
 (function(){
-  // --- ambil helper wipe dari script utama ---
-  const $  = (s,r=document)=>r.querySelector(s);
+  // --- util ringkas
+  const $ = (s,r=document)=>r.querySelector(s);
   const getTable = ()=> document.getElementById('santri-table')
     || document.getElementById('santriTable')
     || document.querySelector('table[data-role="santri-table"]')
     || document.querySelector('table.santri-table');
 
-  // ambil kembali fungsi wipe dari localStorage
+  // DB wipe di localStorage (sudah dipakai patch sebelumnya)
   const LS_WIPE = 'murWipe:v1';
-  function _wipeDB(){ try{ return JSON.parse(localStorage.getItem(LS_WIPE)||'{}'); }catch{ return {}; } }
-  function _kelasNow(){
+  function wipeDB(){ try{ return JSON.parse(localStorage.getItem(LS_WIPE)||'{}'); }catch{ return {}; } }
+  function saveWipeDB(db){ try{ localStorage.setItem(LS_WIPE, JSON.stringify(db)); }catch{} }
+
+  function kelasNow(){
     return String(
       window.kelasSelect?.value ||
       $('#kelasSelect')?.value || $('#kelas')?.value ||
@@ -8589,9 +8591,7 @@ function juzOfAyah(s,a){
       document.body?.dataset?.kelas || ''
     ).trim();
   }
-  function _tanggalOfRow(tr){
-    const byRow = String(tr?.dataset?.tanggal||'').trim();
-    if (byRow) return byRow;
+  function tanggalNow(){
     return String(
       window.tanggalInput?.value ||
       $('#tanggalInput')?.value || $('#tanggal')?.value || $('#date')?.value ||
@@ -8599,8 +8599,7 @@ function juzOfAyah(s,a){
       document.querySelector('input[name="date"]')?.value || ''
     ).trim();
   }
-  function _rowKey(tr){
-    // perkuat: pakai data-key bila ada
+  function rowKey(tr){
     const key = String(tr?.dataset?.key||'').trim();
     if (key) return key;
     const nis = String(tr?.dataset?.nis||'').trim();
@@ -8610,305 +8609,94 @@ function juzOfAyah(s,a){
     const name = (tr?.children?.[1]?.childNodes?.[0]?.textContent || tr?.children?.[1]?.textContent || '').trim().toLowerCase();
     return name || 'unknown';
   }
-  function _wipeKey(tr, idx){ return `${_kelasNow()}|${_tanggalOfRow(tr)}|${_rowKey(tr)}|${idx}`; }
-  function wipeHas(tr, idx){ const db=_wipeDB(); return !!db[_wipeKey(tr,idx)]; }
-
-  // Hapus semua dataset sesi untuk baris tertentu jika di-wipe
-  function applyStrongWipeToRow(tr){
-    const cell = tr.querySelector('.murajaah-cell');
-    if (!cell) return;
-
-    let total = 0;
-    for (let i=1;i<=3;i++){
-      if (!wipeHas(tr,i)) {
-        // bila tidak di-wipe, akumulasi total dari data yang ada
-        const v = parseFloat(cell.dataset[`juz${i}`]||'0')||0;
-        total += v;
-        continue;
-      }
-      // benar-benar kosongkan data sesi i
-      ['sf','af','st','at','pf','pt','jfrom','jto','score','ptext','phuruf','juz'].forEach(k=>{
-        const key = `${k}${i}`;
-        if (key in cell.dataset) delete cell.dataset[key];
-      });
-      cell.dataset[`juz${i}`] = '0.00';
-      cell.dataset[`wipe${i}`] = '1';
-    }
-
-    // total = jumlah juz1..juz3 yang TIDAK di-wipe
-    total = (parseFloat(cell.dataset.juz1||'0')||0)
-          + (parseFloat(cell.dataset.juz2||'0')||0)
-          + (parseFloat(cell.dataset.juz3||'0')||0);
-
-    cell.dataset.murtotal = total.toFixed(2);
-    const valEl = cell.querySelector('.mur-val');
-    if (valEl) valEl.textContent = `${total.toFixed(2)} juz`;
+  function wipeKey(tr, idx){
+    return `${kelasNow()}|${tanggalNow()}|${rowKey(tr)}|${idx}`;
+  }
+  function wipeHas(tr, idx){
+    const db = wipeDB(); return !!db[wipeKey(tr,idx)];
+  }
+  function wipeDel(tr, idx){
+    const db = wipeDB(); delete db[wipeKey(tr,idx)]; saveWipeDB(db);
   }
 
-  // Terapkan strong-wipe ke semua baris tabel
-  function applyStrongWipeToTable(){
-    const table = getTable();
-    const rows  = table?.tBodies?.[0]?.rows || [];
-    [...rows].forEach(applyStrongWipeToRow);
+  // Paksa dataset ke nilai 0 (bukan kosong) agar server overwrite
+  function forceZeroDatasetsForWipedSessions(tr){
+    const cell = tr?.querySelector?.('.murajaah-cell'); if (!cell) return false;
+    let touched = false;
+    for (let i=1; i<=3; i++){
+      if (!wipeHas(tr,i)) continue;
+      // set semua key ke 0 / "0.00"
+      cell.dataset[`sf${i}`]    = '0';
+      cell.dataset[`af${i}`]    = '0';
+      cell.dataset[`st${i}`]    = '0';
+      cell.dataset[`at${i}`]    = '0';
+      cell.dataset[`pf${i}`]    = '0';
+      cell.dataset[`pt${i}`]    = '0';
+      cell.dataset[`jfrom${i}`] = '0';
+      cell.dataset[`jto${i}`]   = '0';
+      cell.dataset[`juz${i}`]   = '0.00';
+      // opsional clear nilai
+      delete cell.dataset[`score${i}`];
+      delete cell.dataset[`ptext${i}`];
+      delete cell.dataset[`phuruf${i}`];
+      touched = true;
+    }
+    if (touched){
+      // perbarui total display
+      const t = (parseFloat(cell.dataset.juz1||'0')||0)
+              + (parseFloat(cell.dataset.juz2||'0')||0)
+              + (parseFloat(cell.dataset.juz3||'0')||0);
+      cell.dataset.murtotal = t.toFixed(2);
+      const valEl = cell.querySelector('.mur-val');
+      if (valEl) valEl.textContent = `${t.toFixed(2)} juz`;
+    }
+    return touched;
   }
 
-  // --- patch: setelah refresh server, paksa wipe lagi ---
-  const ensurePatch = ()=>{
-    // patch refreshServer
-    if (window.murajaah && typeof window.murajaah.refreshServer === 'function' && !window.murajaah.__wipePatched){
-      const _orig = window.murajaah.refreshServer;
-      window.murajaah.refreshServer = async function(...args){
-        await _orig.apply(this,args);
-        // setelah server mengisi dataset, kita kosongkan lagi sesi yang di-wipe
-        try{ applyStrongWipeToTable(); }catch(e){ console.warn('strongWipe post-refresh err', e); }
-      };
-      window.murajaah.__wipePatched = true;
-    }
+  // Patch tombol Save: sebelum kirim → paksa 0 ke dataset; sesudah kirim → refresh & hapus wipe token
+  function ensureSavePatch(){
+    if (typeof window.simpanDataMutabaah !== 'function' || window.__simpanPatched2) return;
+    const _save = window.simpanDataMutabaah;
+    window.simpanDataMutabaah = async function(...args){
+      // cari row aktif dari modal
+      const row = window.currentRowEl || (function(){
+        const table = getTable(); return table?.querySelector('tbody tr[data-selected="1"]') || null;
+      })();
+      if (row) forceZeroDatasetsForWipedSessions(row);
 
-    // patch simpanDataMutabaah → selesai simpan, refresh+wipe
-    if (typeof window.simpanDataMutabaah === 'function' && !window.__simpanPatched){
-      const _save = window.simpanDataMutabaah;
-      window.simpanDataMutabaah = async function(...args){
-        const r = await _save.apply(this, args);
-        try{
-          if (window.murajaah?.refreshServer) await window.murajaah.refreshServer();
-          else applyStrongWipeToTable();
-        }catch(e){ console.warn('strongWipe post-save err', e); }
-        return r;
-      };
-      window.__simpanPatched = true;
-    }
-  };
+      // panggil save asli
+      const r = await _save.apply(this, args);
 
-  // jalankan saat siap
+      // refresh lalu hapus wipe token untuk sesi yang sudah dipaksa nol
+      try{
+        if (window.murajaah?.refreshServer) await window.murajaah.refreshServer();
+        if (row){
+          for (let i=1;i<=3;i++){ if (wipeHas(row,i)) wipeDel(row,i); }
+        }
+      }catch(e){ console.warn('post-save refresh/wipeDel error', e); }
+
+      return r;
+    };
+    window.__simpanPatched2 = true;
+  }
+
+  // Auto-patch saat siap
   if (document.readyState === 'loading'){
-    document.addEventListener('DOMContentLoaded', ()=>{ ensurePatch(); applyStrongWipeToTable(); });
+    document.addEventListener('DOMContentLoaded', ensureSavePatch);
   } else {
-    ensurePatch(); applyStrongWipeToTable();
+    ensureSavePatch();
   }
 
-  // bila loader data internal dipanggil ulang (ganti kelas/refresh tabel), re-apply
-  const _ld = window.loadSantriData;
+  // Jaga-jaga kalau lib memuat ulang fungsi save
+  const _origLoader = window.loadSantriData;
   window.loadSantriData = async function(...args){
-    const r = _ld ? await _ld.apply(this,args) : undefined;
-    setTimeout(()=>{ ensurePatch(); applyStrongWipeToTable(); }, 0);
+    const r = _origLoader ? await _origLoader.apply(this,args) : undefined;
+    setTimeout(ensureSavePatch, 0);
     return r;
   };
 })();
 </script>
 
-<script>
-(() => {
-  // ==== util umum ====
-  const $  = (s,r=document)=>r.querySelector(s);
-  const getTable = ()=> document.getElementById('santri-table')
-    || document.getElementById('santriTable')
-    || document.querySelector('table[data-role="santri-table"]')
-    || document.querySelector('table.santri-table');
-
-  // ==== identitas baris & kunci wipe ====
-  const LS_WIPE = 'murWipe:v1';
-  const readWipeDB  = () => { try{ return JSON.parse(localStorage.getItem(LS_WIPE)||'{}'); }catch{ return {}; } };
-  const writeWipeDB = (obj) => { try{ localStorage.setItem(LS_WIPE, JSON.stringify(obj)); }catch{} };
-
-  const kelasNow = () => String(
-    window.kelasSelect?.value ||
-    $('#kelasSelect')?.value || $('#kelas')?.value ||
-    document.querySelector('select[name="kelas"]')?.value ||
-    getTable()?.dataset?.kelas || document.body?.dataset?.kelas || ''
-  ).trim();
-
-  const tanggalNow = () => String(
-    window.tanggalInput?.value ||
-    $('#tanggalInput')?.value || $('#tanggal')?.value || $('#date')?.value ||
-    document.querySelector('input[name="tanggal"]')?.value ||
-    document.querySelector('input[name="date"]')?.value || ''
-  ).trim();
-
-  const rowKey = (tr)=>{
-    const key = String(tr?.dataset?.key||'').trim();
-    if (key) return key;
-    const nis = String(tr?.dataset?.nis||'').trim();
-    if (nis) return nis;
-    const id  = String(tr?.children?.[0]?.textContent||'').trim();
-    if (id) return id;
-    const nm  = (tr?.children?.[1]?.childNodes?.[0]?.textContent || tr?.children?.[1]?.textContent || '').trim().toLowerCase();
-    return nm || 'unknown';
-  };
-
-  const wipeKey = (tr, i) => `${kelasNow()}|${(tr?.dataset?.tanggal||tanggalNow())}|${rowKey(tr)}|${i}`;
-
-  const hasWipe = (tr,i) => !!readWipeDB()[wipeKey(tr,i)];
-  const setWipe = (tr,i,on=true) => { const db=readWipeDB(); if(on) db[wipeKey(tr,i)]=1; else delete db[wipeKey(tr,i)]; writeWipeDB(db); };
-
-  // ==== core: kosongkan UI satu sesi ====
-  function clearSessionUI(tr, i){
-    const cell = tr.querySelector('.murajaah-cell'); if(!cell) return;
-    // kosongkan semua dataset untuk sesi i
-    ['sf','af','st','at','pf','pt','jfrom','jto','score','ptext','phuruf','juz'].forEach(k=>{
-      const key = `${k}${i}`;
-      if (key in cell.dataset) delete cell.dataset[key];
-    });
-    cell.dataset[`juz${i}`] = '0.00';
-
-    // kosongkan elemen input (jika modal sedang terbuka untuk baris ini)
-    if (window.currentRowEl === tr){
-      const sel = q=>document.querySelector(q);
-      sel(`#mur${i}-juzFrom`)  && (sel(`#mur${i}-juzFrom`).value  = '');
-      sel(`#mur${i}-juzTo`)    && (sel(`#mur${i}-juzTo`).value    = '');
-      sel(`#mur${i}-pageFrom`) && (sel(`#mur${i}-pageFrom`).value = '');
-      sel(`#mur${i}-pageTo`)   && (sel(`#mur${i}-pageTo`).value   = '');
-      sel(`#mur${i}-surahFrom`)&& (sel(`#mur${i}-surahFrom`).value= '');
-      sel(`#mur${i}-ayahFrom`) && (sel(`#mur${i}-ayahFrom`).innerHTML = '<option value=""></option>');
-      sel(`#mur${i}-surahTo`)  && (sel(`#mur${i}-surahTo`).value  = '');
-      sel(`#mur${i}-ayahTo`)   && (sel(`#mur${i}-ayahTo`).innerHTML   = '<option value=""></option>');
-      sel(`#mur${i}-score`)    && (sel(`#mur${i}-score`).value    = '');
-      sel(`#mur${i}-predikatBadge`) && (sel(`#mur${i}-predikatBadge`).textContent = '–');
-      sel(`#mur${i}-pagesHint`) && (sel(`#mur${i}-pagesHint`).textContent = '');
-      sel(`#mur${i}-totalJuz`)  && (sel(`#mur${i}-totalJuz`).textContent  = '0.00');
-    }
-
-    // hitung ulang total 3 sesi
-    const total = (parseFloat(cell.dataset.juz1||'0')||0) + (parseFloat(cell.dataset.juz2||'0')||0) + (parseFloat(cell.dataset.juz3||'0')||0);
-    cell.dataset.murtotal = total.toFixed(2);
-    const v = cell.querySelector('.mur-val'); if (v) v.textContent = `${total.toFixed(2)} juz`;
-    const allTotalEl = document.querySelector('#mur-totalJuzAll');
-    if (allTotalEl && window.currentRowEl === tr) allTotalEl.textContent = total.toFixed(2);
-  }
-
-  // ==== setelah server refresh → abaikan sesi yang di-wipe ====
-  function applyWipeToTable(){
-    const table = getTable(); const rows = table?.tBodies?.[0]?.rows || [];
-    [...rows].forEach(tr=>{
-      const cell = tr.querySelector('.murajaah-cell'); if(!cell) return;
-      let changed=false;
-      for(let i=1;i<=3;i++){
-        if (hasWipe(tr,i)){
-          // kosongkan sesi i (dan tandai)
-          clearSessionUI(tr,i);
-          cell.dataset[`wipe${i}`]='1';
-          changed=true;
-        } else {
-          if ('wipe'+i in cell.dataset) delete cell.dataset[`wipe${i}`];
-        }
-      }
-      if (changed){
-        const total = (parseFloat(cell.dataset.juz1||'0')||0) + (parseFloat(cell.dataset.juz2||'0')||0) + (parseFloat(cell.dataset.juz3||'0')||0);
-        cell.dataset.murtotal = total.toFixed(2);
-        const v = cell.querySelector('.mur-val'); if (v) v.textContent = `${total.toFixed(2)} juz`;
-      }
-    });
-  }
-
-  // ==== patch fungsi refresh & save agar selalu apply wipe ====
-  function ensurePatches(){
-    // patch refreshServer
-    if (window.murajaah && typeof window.murajaah.refreshServer === 'function' && !window.murajaah.__wipePatched){
-      const _orig = window.murajaah.refreshServer;
-      window.murajaah.refreshServer = async function(...args){
-        await _orig.apply(this,args);
-        // setelah server isi dataset, kosongkan lagi sesi yang di-wipe
-        applyWipeToTable();
-      };
-      window.murajaah.__wipePatched = true;
-    }
-    // patch simpanDataMutabaah
-    if (typeof window.simpanDataMutabaah === 'function' && !window.__simpanPatched){
-      const _save = window.simpanDataMutabaah;
-      window.simpanDataMutabaah = async function(...args){
-        const r = await _save.apply(this,args);
-        try{
-          if (window.murajaah?.refreshServer) await window.murajaah.refreshServer();
-          else applyWipeToTable();
-        }catch(e){ console.warn('post-save wipe err', e); }
-        return r;
-      };
-      window.__simpanPatched = true;
-    }
-  }
-
-  // ==== override handler tombol Reset bawaan agar benar-benar wipe ====
-  function hijackResetButtons(){
-    for (let i=1;i<=3;i++){
-      const id = `mur${i}-totalJuz-reset`;
-      const btn = document.getElementById(id);
-      if (!btn || btn.__hijacked) continue;
-      btn.__hijacked = true;
-      btn.addEventListener('click', (ev)=>{
-        // hentikan handler lama (yang set 1:1)
-        ev.stopImmediatePropagation();
-        const tr = window.currentRowEl;
-        if (!tr) return;
-        // tulis token wipe, kosongkan UI, simpan
-        setWipe(tr, i, true);
-        clearSessionUI(tr, i);
-        const statusEl = document.querySelector('#mur-save-status');
-        if (typeof window.simpanDataMutabaah === 'function'){
-          window.simpanDataMutabaah(btn).then(async ()=>{
-            if (window.murajaah?.refreshServer) await window.murajaah.refreshServer();
-            if (statusEl){ statusEl.textContent='✅ Reset disimpan (0.00)'; setTimeout(()=>statusEl.textContent='',1500); }
-          }).catch(e=>{
-            console.error(e);
-            if (statusEl){ statusEl.textContent='❌ Gagal simpan'; setTimeout(()=>statusEl.textContent='',2000); }
-          });
-        } else {
-          if (statusEl){ statusEl.textContent='ℹ️ Di-reset lokal (belum disimpan ke server)'; setTimeout(()=>statusEl.textContent='',2000); }
-        }
-      }, true); // capture = true untuk mendahului handler lama
-    }
-  }
-
-  // ==== kalau user mulai input lagi pada sesi itu → hapus token wipe ====
-  function unWipeOnEdit(){
-    if (!window.currentRowEl) return;
-    const tr = window.currentRowEl;
-    [1,2,3].forEach(i=>{
-      ['juzFrom','juzTo','pageFrom','pageTo','surahFrom','surahTo','ayahFrom','ayahTo','score'].forEach(name=>{
-        const el = document.querySelector(`#mur${i}-${name}`);
-        if (!el || el.__unwipeBound) return;
-        el.__unwipeBound = true;
-        el.addEventListener('change', ()=>{ setWipe(tr, i, false); }, {passive:true});
-        if (name==='score') el.addEventListener('input', ()=>{ setWipe(tr, i, false); }, {passive:true});
-      });
-    });
-  }
-
-  // ==== hook saat modal dibuka: hijack tombol & unWipeOnEdit ====
-  function hookModalOpen(){
-    const modal = document.getElementById('murModal');
-    if (!modal || modal.__openHooked) return;
-    modal.__openHooked = true;
-    const obs = new MutationObserver(()=>{
-      if (modal.style.display === 'flex'){ // modal terbuka
-        setTimeout(()=>{ hijackResetButtons(); unWipeOnEdit(); }, 0);
-      }
-    });
-    obs.observe(modal, { attributes:true, attributeFilter:['style'] });
-  }
-
-  // ==== jalankan saat siap ====
-  function boot(){
-    ensurePatches();
-    applyWipeToTable();         // saat load/refresh browser
-    hijackResetButtons();       // pastikan tombol reset diambil alih
-    hookModalOpen();            // pasang hook untuk modal
-  }
-
-  if (document.readyState === 'loading'){
-    document.addEventListener('DOMContentLoaded', boot);
-  } else {
-    boot();
-  }
-
-  // jika aplikasi memanggil ulang loader data internal
-  const _ld = window.loadSantriData;
-  window.loadSantriData = async function(...args){
-    const r = _ld ? await _ld.apply(this,args) : undefined;
-    setTimeout(()=>{ ensurePatches(); applyWipeToTable(); hijackResetButtons(); }, 0);
-    return r;
-  };
-})();
-</script>
 
 
 
